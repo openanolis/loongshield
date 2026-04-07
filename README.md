@@ -35,16 +35,15 @@ If your host is not suitable for a native build, use the container workflow in
 ## Common Commands
 
 ```sh
-make
+make bootstrap
 make test
-make test-quick
+make install
 make rpm
-make rpm-in-anolis
+make rpm-in-docker
 ```
 
 ## Environment Notes
 
-- CI currently builds and checks the project on Anolis OS, Alibaba Cloud Linux 3, and Fedora.
 - Development, testing, and packaging workflows assume an RPM-based Linux environment.
 - `loongshield seharden` defaults to the bundled `cis_alinux_3` profile.
 - `loongshield rpm` defaults to the OpenAnolis SBOM service.
@@ -78,9 +77,5 @@ make rpm-in-anolis
 
 ## Community
 
-- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Release history: [CHANGELOG.md](CHANGELOG.md)
 - Release checklist: [RELEASING.md](RELEASING.md)
-- Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- Support: [SUPPORT.md](SUPPORT.md)
-- Security policy: [SECURITY.md](SECURITY.md)
