@@ -16,16 +16,29 @@ permissions:
 
 jobs:
     build-check:
-        name: Build on ${{ matrix.image }}
-        runs-on: ubuntu-latest
-        timeout-minutes: 45
+        name: Build on ${{ matrix.name }} (${{ matrix.arch }})
+        runs-on: ${{ matrix.runner }}
+        timeout-minutes: 60
         strategy:
             fail-fast: false
             matrix:
-                image:
-                    - "openanolis/anolisos:8"
-                    - "alibaba-cloud-linux-3-registry.cn-hangzhou.cr.aliyuncs.com/alinux3/alinux3:3.9"
-                    - "fedora:40"
+                include:
+                    - arch: x86_64
+                      runner: ubuntu-latest
+                      name: "CentOS Stream 9"
+                      image: "quay.io/centos/centos:stream9"
+                    - arch: x86_64
+                      runner: ubuntu-latest
+                      name: "Anolis OS 23"
+                      image: "registry.openanolis.cn/openanolis/anolisos:23"
+                    - arch: aarch64
+                      runner: ubuntu-24.04-arm
+                      name: "CentOS Stream 9"
+                      image: "quay.io/centos/centos:stream9"
+                    - arch: aarch64
+                      runner: ubuntu-24.04-arm
+                      name: "Anolis OS 23"
+                      image: "registry.openanolis.cn/openanolis/anolisos:23"
         container:
             image: ${{ matrix.image }}
         defaults:
@@ -37,6 +50,33 @@ jobs:
               run: |
                   set -e
                   set -x
+
+                  if [ -f /etc/yum.repos.d/CentOS-Stream.repo ]; then
+                      mkdir -p /etc/yum.repos.d/loongshield-disabled
+                      find /etc/yum.repos.d -maxdepth 1 -name '*.repo' ! -name 'CentOS-Stream.repo' -exec mv {} /etc/yum.repos.d/loongshield-disabled/ \; 2>/dev/null || true
+                      cat >/etc/yum.repos.d/CentOS-Stream.repo <<'EOF'
+                  [baseos]
+                  name=CentOS Stream 9 - BaseOS
+                  baseurl=https://mirror.stream.centos.org/9-stream/BaseOS/$basearch/os/
+                  enabled=1
+                  gpgcheck=0
+                  repo_gpgcheck=0
+
+                  [appstream]
+                  name=CentOS Stream 9 - AppStream
+                  baseurl=https://mirror.stream.centos.org/9-stream/AppStream/$basearch/os/
+                  enabled=1
+                  gpgcheck=0
+                  repo_gpgcheck=0
+
+                  [crb]
+                  name=CentOS Stream 9 - CRB
+                  baseurl=https://mirror.stream.centos.org/9-stream/CRB/$basearch/os/
+                  enabled=1
+                  gpgcheck=0
+                  repo_gpgcheck=0
+                  EOF
+                  fi
 
                   if [ -d /etc/yum.repos.d ]; then
                       sed -i -E 's|https?://mirrors.openanolis.cn/anolis/|https://mirrors.aliyun.com/anolis/|g' /etc/yum.repos.d/*.repo 2>/dev/null || true
@@ -55,19 +95,21 @@ jobs:
                       grep -q '^max_parallel_downloads=' "$conf" || sed -i '/^\[main\]$/a max_parallel_downloads=20' "$conf"
                   fi
 
-            - name: Install git (pre-checkout)
+            - name: Install bootstrap tools (pre-checkout)
               run: |
                   set -e
                   set -x
 
                   if command -v dnf >/dev/null 2>&1; then
-                      dnf install -y git
+                      PM=dnf
                   elif command -v yum >/dev/null 2>&1; then
-                      yum install -y git
+                      PM=yum
                   else
                       echo "No supported package manager found (dnf/yum)." >&2
                       exit 1
                   fi
+
+                  "$PM" install -y git make
 
             - name: Checkout code
               uses: actions/checkout@v4
