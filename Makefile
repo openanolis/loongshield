@@ -303,7 +303,6 @@ RPM_BUILD_REQUIRES := \
 	libyaml-devel \
 	libzstd-devel \
 	make \
-	NetworkManager-libnm-devel \
 	openssl-devel \
 	perl-ExtUtils-MakeMaker \
 	perl-FindBin \
