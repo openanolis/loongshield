@@ -7,11 +7,19 @@ on:
         branches: [master, main]
     workflow_dispatch:
 
+concurrency:
+    group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
 jobs:
-    # Build and package RPM using the Anolis container via docker-compose
+    # Build and package RPM using the project Docker-based packaging target
     build-rpm:
-        name: Build RPM (Anolis 23.3)
+        name: Build RPM (Docker)
         runs-on: ubuntu-latest
+        timeout-minutes: 60
 
         steps:
             - name: Set up Docker Buildx
@@ -22,20 +30,98 @@ jobs:
               with:
                   submodules: recursive
 
-            - name: Build RPM in Anolis container
-              run: make rpm-in-anolis
+            - name: Build RPM in Docker container
+              run: make rpm-in-docker
 
             - name: Upload RPM artifacts
               uses: actions/upload-artifact@v4
               with:
                   name: loongshield-rpm
-                  path: build/rpmbuild-anolis/RPMS/**/*.rpm
+                  path: build/rpmbuild-docker/RPMS/**/*.rpm
                   if-no-files-found: error
+
+    # Install and smoke-test the RPM built by the packaging job.
+    test-rpm:
+        name: Test RPM install on ${{ matrix.image }}
+        runs-on: ubuntu-latest
+        needs: build-rpm
+        timeout-minutes: 30
+        strategy:
+            fail-fast: false
+            matrix:
+                image:
+                    - "openanolis/anolisos:8"
+                    - "alibaba-cloud-linux-3-registry.cn-hangzhou.cr.aliyuncs.com/alinux3/alinux3:3.9"
+        container:
+            image: ${{ matrix.image }}
+        defaults:
+            run:
+                shell: bash
+
+        steps:
+            - name: Optimize package manager config
+              run: |
+                  set -e
+                  set -x
+
+                  if [ -d /etc/yum.repos.d ]; then
+                      sed -i -E 's|https?://mirrors.openanolis.cn/anolis/|https://mirrors.aliyun.com/anolis/|g' /etc/yum.repos.d/*.repo 2>/dev/null || true
+                      sed -i -E 's|https?://mirrors.cloud.aliyuncs.com/|https://mirrors.aliyun.com/|g' /etc/yum.repos.d/*.repo 2>/dev/null || true
+                  fi
+
+                  conf=""
+                  if [ -f /etc/dnf/dnf.conf ]; then
+                      conf=/etc/dnf/dnf.conf
+                  elif [ -f /etc/yum.conf ]; then
+                      conf=/etc/yum.conf
+                  fi
+
+                  if [ -n "$conf" ]; then
+                      sed -i 's/^max_parallel_downloads=.*/max_parallel_downloads=20/' "$conf" || true
+                      grep -q '^max_parallel_downloads=' "$conf" || sed -i '/^\[main\]$/a max_parallel_downloads=20' "$conf"
+                  fi
+
+            - name: Download RPM artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  name: loongshield-rpm
+                  path: ./rpm-packages
+
+            - name: Install RPM package
+              run: |
+                  set -e
+                  set -x
+
+                  if command -v dnf >/dev/null 2>&1; then
+                      PM=dnf
+                  elif command -v yum >/dev/null 2>&1; then
+                      PM=yum
+                  else
+                      echo "No supported package manager found (dnf/yum)." >&2
+                      exit 1
+                  fi
+
+                  mapfile -t rpms < <(find ./rpm-packages -type f -name '*.rpm' | sort)
+                  test ${#rpms[@]} -gt 0
+                  "$PM" install -y "${rpms[@]}"
+
+            - name: Verify installed package
+              run: |
+                  set -e
+                  set -x
+
+                  loongshield version
+                  test -x /usr/sbin/loongshield
+                  test -x /usr/sbin/loonjit
+                  test -f /etc/loongshield/seharden/agentos_baseline.yml
+                  test -f /etc/loongshield/seharden/cis_alinux_3.yml
+                  test -f /usr/share/licenses/loongshield/LICENSE
 
     # Multi-distro compilation check
     build-check:
         name: Build on ${{ matrix.image }}
         runs-on: ubuntu-latest
+        timeout-minutes: 45
         strategy:
             fail-fast: false
             matrix:
@@ -45,10 +131,38 @@ jobs:
                     - "fedora:40"
         container:
             image: ${{ matrix.image }}
+        defaults:
+            run:
+                shell: bash
 
         steps:
+            - name: Optimize package manager config
+              run: |
+                  set -e
+                  set -x
+
+                  if [ -d /etc/yum.repos.d ]; then
+                      sed -i -E 's|https?://mirrors.openanolis.cn/anolis/|https://mirrors.aliyun.com/anolis/|g' /etc/yum.repos.d/*.repo 2>/dev/null || true
+                      sed -i -E 's|https?://mirrors.cloud.aliyuncs.com/|https://mirrors.aliyun.com/|g' /etc/yum.repos.d/*.repo 2>/dev/null || true
+                  fi
+
+                  conf=""
+                  if [ -f /etc/dnf/dnf.conf ]; then
+                      conf=/etc/dnf/dnf.conf
+                  elif [ -f /etc/yum.conf ]; then
+                      conf=/etc/yum.conf
+                  fi
+
+                  if [ -n "$conf" ]; then
+                      sed -i 's/^max_parallel_downloads=.*/max_parallel_downloads=20/' "$conf" || true
+                      grep -q '^max_parallel_downloads=' "$conf" || sed -i '/^\[main\]$/a max_parallel_downloads=20' "$conf"
+                  fi
+
             - name: Install git (pre-checkout)
               run: |
+                  set -e
+                  set -x
+
                   if command -v dnf >/dev/null 2>&1; then
                       dnf install -y git
                   elif command -v yum >/dev/null 2>&1; then
