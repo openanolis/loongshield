@@ -102,6 +102,7 @@ CMAKE_INPUTS := CMakeLists.txt deps/CMakeLists.txt src/CMakeLists.txt src/daemon
 
 # Additional CMake flags from user
 CMAKE_FLAGS ?=
+ENV_CHECK_DEP = $(if $(filter 1,$(ALLOW_UNSUPPORTED_HOST)),,env-check)
 
 # ============================================================================
 # Main Targets
@@ -110,7 +111,7 @@ CMAKE_FLAGS ?=
 .PHONY: all bootstrap configure build daemon loonjit test test-unit test-integration \
         test-e2e test-quick kmod kmod-clean \
         rpm rpm-tarball rpm-srpm rpm-in-docker rpm-clean rpm-install install uninstall \
-        buildreqs \
+        buildreqs env-check \
         docker docker-dev docker-run-dev \
         docker-clean clean distclean mrproper submodules deps info help reconfigure check
 
@@ -119,14 +120,14 @@ all: build
 
 # One-shot local bootstrap for development environments.
 # Installs local build dependencies, initializes submodules, then builds.
-bootstrap:
+bootstrap: $(ENV_CHECK_DEP)
 	$(call msg-info,Bootstrapping local development environment)
 	$(call msg-stage,Installing build requirements...)
-	$(Q)$(MAKE) $(MAKEFLAGS_QUIET) buildreqs
+	$(Q)$(MAKE) $(MAKEFLAGS_QUIET) ALLOW_UNSUPPORTED_HOST=1 buildreqs
 	$(call msg-stage,Initializing git submodules...)
 	$(Q)$(MAKE) $(MAKEFLAGS_QUIET) submodules
 	$(call msg-stage,Building project...)
-	$(Q)$(MAKE) $(MAKEFLAGS_QUIET) build
+	$(Q)$(MAKE) $(MAKEFLAGS_QUIET) ALLOW_UNSUPPORTED_HOST=1 build
 	$(call msg-info,Bootstrap complete!)
 
 # Build everything (main target)
@@ -151,7 +152,7 @@ loonjit: configure
 
 # Configure CMake and auto-reset stale caches if the source path changed.
 # Note: submodules is an order-only prerequisite (after |) to avoid race conditions
-configure: | submodules
+configure: $(ENV_CHECK_DEP) | submodules
 	$(call msg-info,Configuring build system)
 	$(Q)mkdir -p $(BUILD_DIR)
 	$(Q)needs_configure=0; \
@@ -405,7 +406,7 @@ rpm-install: rpm
 
 # Install local build dependencies on CentOS/RHEL/Anolis-like systems.
 # Uses dnf when available, falls back to yum.
-buildreqs:
+buildreqs: $(ENV_CHECK_DEP)
 	$(call msg-info,Installing CentOS-like build dependencies)
 	$(Q)PKG_MGR=$$(command -v dnf || command -v yum || true); \
 	if [ -z "$$PKG_MGR" ]; then \
@@ -418,6 +419,52 @@ buildreqs:
 	fi; \
 	echo "==> Using package manager: $$PKG_MGR"; \
 	$$SUDO $$PKG_MGR install -y $(RPM_BUILD_REQUIRES)
+
+# Check whether the current host is a supported local build environment.
+# Supported platforms today:
+#   - EL9 style hosts (CentOS Stream 9 and compatible)
+#   - Anolis OS 23
+#   - Alibaba Cloud Linux 4 (OpenAnolis Edition)
+env-check:
+	$(call msg-info,Checking local build environment)
+	$(Q)if [ "$${ALLOW_UNSUPPORTED_HOST:-0}" = "1" ]; then \
+		printf "$(CLR_YELLOW)==>$(CLR_RESET) $(CLR_BOLD)%s$(CLR_RESET)\n" "Skipping host compatibility checks because ALLOW_UNSUPPORTED_HOST=1"; \
+		exit 0; \
+	fi; \
+	if [ "$$(uname -s)" != "Linux" ]; then \
+		echo "Error: unsupported host OS '$$(uname -s)'. Use Linux or the Docker workflow." >&2; \
+		exit 1; \
+	fi; \
+	arch=$$(uname -m); \
+	case "$$arch" in \
+		x86_64|aarch64|arm64) ;; \
+		*) \
+			echo "Error: unsupported host architecture '$$arch'. Supported architectures: x86_64, aarch64." >&2; \
+			exit 1; \
+			;; \
+	esac; \
+	if [ ! -f /etc/os-release ]; then \
+		echo "Error: /etc/os-release not found. Cannot determine whether this host is supported." >&2; \
+		exit 1; \
+	fi; \
+	. /etc/os-release; \
+	platform_id=$${PLATFORM_ID:-}; \
+	host_desc=$${PRETTY_NAME:-$${NAME:-unknown}}; \
+	case "$$platform_id" in \
+		platform:el9|platform:an23|platform:alnx4) \
+			;; \
+		*) \
+			echo "Error: unsupported local build host '$$host_desc' (ID=$${ID:-unknown}, VERSION_ID=$${VERSION_ID:-unknown}, PLATFORM_ID=$$platform_id)." >&2; \
+			echo "Supported local build hosts: CentOS Stream 9 / EL9-compatible, Anolis OS 23, Alibaba Cloud Linux 4." >&2; \
+			echo "Use 'make docker-dev' or re-run with ALLOW_UNSUPPORTED_HOST=1 to bypass this check." >&2; \
+			exit 1; \
+			;; \
+	esac; \
+	if ! command -v dnf >/dev/null 2>&1 && ! command -v yum >/dev/null 2>&1; then \
+		echo "Error: no supported package manager found. Expected dnf or yum on the local build host." >&2; \
+		exit 1; \
+	fi; \
+	printf "$(CLR_GREEN)==>$(CLR_RESET) $(CLR_BOLD)%s$(CLR_RESET)\n" "Supported local build host: $$host_desc ($$arch)"
 
 # Build RPM in the CentOS development container
 rpm-in-docker: docker-dev rpm-tarball
@@ -525,6 +572,7 @@ help:
 	$(call msg-help-section,Main Targets:)
 	$(call msg-help-item,make,Build everything (daemon + loonjit))
 	$(call msg-help-item,make bootstrap,Install build deps and init submodules before building)
+	$(call msg-help-item,make env-check,Validate whether the current host is supported)
 	$(call msg-help-item,make configure,Configure the CMake build tree)
 	$(call msg-help-item,make reconfigure,Force a fresh CMake reconfiguration)
 	$(call msg-help-item,make daemon,Build only loongshield daemon)

@@ -4,7 +4,13 @@ This page is for contributors working on Loongshield itself. Operator-facing usa
 
 ## Build Requirements
 
-Loongshield is currently built and CI-checked on RPM-based Linux environments such as Anolis OS and Fedora. If your host is not compatible, use the Docker workflow in `docs/developer/docker-development.md`.
+Loongshield currently supports local host builds on these RPM-based Linux environments:
+
+- Alibaba Cloud Linux 4 (OpenAnolis Edition)
+- Anolis OS 23
+- EL9-compatible hosts such as CentOS Stream 9
+
+If your host does not match one of the supported platforms, the Makefile now fails early during `make env-check`, `make buildreqs`, `make configure`, and `make bootstrap`. On unsupported hosts, use the Docker workflow in `docs/developer/docker-development.md`.
 
 For a fresh local checkout on a compatible host, use the one-shot bootstrap target:
 
@@ -20,14 +26,26 @@ If you prefer to run each step manually, install the required toolchain and deve
 make buildreqs
 ```
 
+To check host compatibility without installing anything:
+
+```sh
+make env-check
+```
+
+If you need to bypass the host guard intentionally, set:
+
+```sh
+ALLOW_UNSUPPORTED_HOST=1 make bootstrap
+```
+
 You can also install packages directly with `dnf` or `yum`:
 
 ```sh
 dnf install -y \
   git cmake gcc gcc-c++ make \
   perl perl-IPC-Cmd perl-FindBin which \
-  NetworkManager-libnm-devel audit-libs-devel dbus-devel \
-  elfutils-libelf-devel libarchive-devel libattr-devel \
+  audit-libs-devel dbus-devel elfutils-libelf-devel \
+  libarchive-devel libattr-devel \
   libcurl-devel libmount-devel libpsl-devel libyaml-devel \
   libcap-devel libzstd-devel openssl-devel rpm-devel \
   systemd-devel xz-devel
