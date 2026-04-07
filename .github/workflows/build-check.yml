@@ -51,9 +51,9 @@ jobs:
                   set -e
                   set -x
 
-                  if [ -f /etc/yum.repos.d/CentOS-Stream.repo ]; then
+                  if [ -f /etc/os-release ] && grep -Eq '^ID="?centos"?$' /etc/os-release; then
                       mkdir -p /etc/yum.repos.d/loongshield-disabled
-                      find /etc/yum.repos.d -maxdepth 1 -name '*.repo' ! -name 'CentOS-Stream.repo' -exec mv {} /etc/yum.repos.d/loongshield-disabled/ \; 2>/dev/null || true
+                      find /etc/yum.repos.d -maxdepth 1 -name '*.repo' -exec mv {} /etc/yum.repos.d/loongshield-disabled/ \; 2>/dev/null || true
                       cat >/etc/yum.repos.d/CentOS-Stream.repo <<'EOF'
                   [baseos]
                   name=CentOS Stream 9 - BaseOS
