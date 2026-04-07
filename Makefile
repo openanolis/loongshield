@@ -453,11 +453,32 @@ rpm-in-docker: docker-dev rpm-tarball
 # Submodules and Dependencies
 # ============================================================================
 
+SUBMODULE_SENTINELS := \
+	deps/luajit/luajit/src/lua.h \
+	deps/libuv/libuv/src/unix/async.c \
+	deps/lpeg/lpeg/lpcap.c \
+	deps/lua-openssl/lua-auxiliar/auxiliar.c \
+	deps/lua-openssl/lua-openssl/src/openssl.c \
+	deps/libcap/libcap/libcap/cap_alloc.c
+
 submodules:
-	$(Q)if [ ! -f deps/luajit/luajit/src/lua.h ]; then \
+	$(Q)missing_submodules=0; \
+	for sentinel in $(SUBMODULE_SENTINELS); do \
+		if [ ! -f "$$sentinel" ]; then \
+			missing_submodules=1; \
+			break; \
+		fi; \
+	done; \
+	if [ "$$missing_submodules" -eq 1 ]; then \
 		printf "$(CLR_GREEN)==>$(CLR_RESET) $(CLR_BOLD)%s$(CLR_RESET)\n" "Initializing git submodules"; \
 		git submodule update --init --recursive; \
-	fi
+	fi; \
+	for sentinel in $(SUBMODULE_SENTINELS); do \
+		if [ ! -f "$$sentinel" ]; then \
+			printf "$(CLR_RED)error:$(CLR_RESET) required vendored source is missing: %s\n" "$$sentinel" >&2; \
+			exit 1; \
+		fi; \
+	done
 
 deps: submodules configure
 	$(call msg-info,Building dependencies only)

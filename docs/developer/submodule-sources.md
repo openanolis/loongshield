@@ -39,7 +39,8 @@ explicitly.
 
 ## Normalized To Official Upstream
 
-- `deps/libcap/libcap` now uses `https://git.kernel.org/pub/scm/libs/libcap/libcap.git`.
-  The previous `.gitmodules` entry pointed at `sailfishos-mirror/libcap`, while
-  the checked-out submodule already used the kernel.org upstream. The repository
-  metadata is now aligned with the actual source of truth.
+- `deps/libcap/libcap` now uses `https://kernel.googlesource.com/pub/scm/libs/libcap/libcap`.
+  The previous `.gitmodules` entry pointed at `sailfishos-mirror/libcap`, and a
+  later open-source cleanup switched it to `git.kernel.org`. The repository
+  metadata now uses the googlesource mirror of the same upstream because it is
+  more reachable in some environments while preserving the same pinned commit.
