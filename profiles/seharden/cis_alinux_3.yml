@@ -1,0 +1,3226 @@
+---
+policy: "CIS Benchmark for Alibaba Cloud Linux 3"
+title: "CIS Benchmark for Alibaba Cloud Linux 3"
+id: cis_alinux_3
+version: "0.0.2"
+source: https://www.cisecurity.org/cis-benchmarks/#Alibaba_Cloud_Linux_3
+levels:
+  - id: l1_server
+  - id: l2_server
+    inherits_from:
+      - l1_server
+  - id: l1_workstation
+  - id: l2_workstation
+    inherits_from:
+      - l1_workstation
+reference_type: cis
+product: alinux3
+
+rules:
+  - id: "1.1.1.1"
+    desc: "Ensure cramfs is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: loaded_status
+        func: kmod.is_loaded
+        params: { name: "cramfs" }
+      - name: blacklist_status
+        func: kmod.is_blacklisted
+        params: { name: "cramfs" }
+      - name: install_cmd_status
+        func: kmod.get_install_command
+        params: { name: "cramfs" }
+    assertion:
+      all_of:
+        - actual: "%{probe.loaded_status}"
+          key: "loaded"
+          compare: is_falsy
+          message: "Module 'cramfs' is currently loaded but should be disabled."
+        - actual: "%{probe.blacklist_status}"
+          key: "blacklisted"
+          compare: is_true
+          message: "Module 'cramfs' is not blacklisted in /etc/modprobe.d/*."
+        - any_of:
+            - actual: "%{probe.install_cmd_status}"
+              key: "command"
+              compare: equals
+              expected: "/bin/true"
+              message: "The 'install cramfs' command is not set to /bin/true or /bin/false."
+            - actual: "%{probe.install_cmd_status}"
+              key: "command"
+              compare: equals
+              expected: "/bin/false"
+              message: "The 'install cramfs' command is not set to /bin/true or /bin/false."
+    reinforce:
+      - action: kmod.unload
+        params: { name: "cramfs" }
+      - action: kmod.blacklist
+        params: { name: "cramfs" }
+      - action: kmod.set_install_command
+        params: { name: "cramfs" }
+
+  - id: "1.1.1.2"
+    desc: "1.1.1.2 Ensure mounting of squashfs filesystems is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: loaded_status
+        func: kmod.is_loaded
+        params: { name: "squashfs" }
+      - name: blacklist_status
+        func: kmod.is_blacklisted
+        params: { name: "squashfs" }
+      - name: install_cmd_status
+        func: kmod.get_install_command
+        params: { name: "squashfs" }
+    assertion:
+      all_of:
+        - actual: "%{probe.loaded_status}"
+          key: "loaded"
+          compare: is_falsy
+          message: "Module 'squashfs' is currently loaded but should be disabled."
+        - actual: "%{probe.blacklist_status}"
+          key: "blacklisted"
+          compare: is_true
+          message: "Module 'squashfs' is not blacklisted in /etc/modprobe.d/*."
+        - any_of:
+            - actual: "%{probe.install_cmd_status}"
+              key: "command"
+              compare: equals
+              expected: "/bin/true"
+              message: "The 'install squashfs' command is not set to /bin/true or /bin/false."
+            - actual: "%{probe.install_cmd_status}"
+              key: "command"
+              compare: equals
+              expected: "/bin/false"
+              message: "The 'install squashfs' command is not set to /bin/true or /bin/false."
+    reinforce:
+      - action: kmod.unload
+        params: { name: "squashfs" }
+      - action: kmod.blacklist
+        params: { name: "squashfs" }
+      - action: kmod.set_install_command
+        params: { name: "squashfs" }
+
+  - id: "1.1.1.3"
+    desc: "Ensure mounting of udf filesystems is disabled"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: loaded_status
+        func: kmod.is_loaded
+        params: { name: "udf" }
+      - name: blacklist_status
+        func: kmod.is_blacklisted
+        params: { name: "udf" }
+      - name: install_cmd_status
+        func: kmod.get_install_command
+        params: { name: "udf" }
+    assertion:
+      all_of:
+        - actual: "%{probe.loaded_status}"
+          key: "loaded"
+          compare: is_falsy
+          message: "Module 'udf' is currently loaded but should be disabled."
+        - actual: "%{probe.blacklist_status}"
+          key: "blacklisted"
+          compare: is_true
+          message: "Module 'udf' is not blacklisted in /etc/modprobe.d/*."
+        - any_of:
+            - actual: "%{probe.install_cmd_status}"
+              key: "command"
+              compare: equals
+              expected: "/bin/true"
+              message: "The 'install udf' command is not set to /bin/true or /bin/false."
+            - actual: "%{probe.install_cmd_status}"
+              key: "command"
+              compare: equals
+              expected: "/bin/false"
+              message: "The 'install udf' command is not set to /bin/true or /bin/false."
+    reinforce:
+      - action: kmod.unload
+        params: { name: "udf" }
+      - action: kmod.blacklist
+        params: { name: "udf" }
+      - action: kmod.set_install_command
+        params: { name: "udf" }
+
+  - id: "1.1.2.1"
+    desc: "Ensure /tmp is configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: tmp_mount_info
+        func: mounts.get_mount_info
+        params: { path: "/tmp" }
+      - name: tmp_service_status
+        func: services.get_unit_properties
+        params: { name: "tmp.mount" }
+    assertion:
+      all_of:
+        - actual: "%{probe.tmp_mount_info}"
+          key: "exists"
+          compare: is_true
+          message: "/tmp is not configured as a separate mount point."
+        - actual: "%{probe.tmp_service_status}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "enabled"
+          message: "The 'tmp.mount' service is not enabled."
+
+  - id: "1.1.2.2"
+    desc: "Ensure nodev option set on /tmp partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: var_mount
+        func: mounts.get_mount_info
+        params: { path: "/tmp" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_mount}"
+          key: "options"
+          compare: has_key
+          expected: "nodev"
+          message: "The /tmp partition is not mounted with the 'nodev' option."
+
+  - id: "1.1.2.3"
+    desc: "Ensure noexec option set on /tmp partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: var_mount
+        func: mounts.get_mount_info
+        params: { path: "/tmp" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_mount}"
+          key: "options"
+          compare: has_key
+          expected: "noexec"
+          message: "The /tmp partition is not mounted with the 'noexec' option."
+
+  - id: "1.1.2.4"
+    desc: "Ensure nosuid option set on /tmp partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: var_mount
+        func: mounts.get_mount_info
+        params: { path: "/tmp" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_mount}"
+          key: "options"
+          compare: has_key
+          expected: "nosuid"
+          message: "The /tmp partition is not mounted with the 'nosuid' option."
+
+  - id: "1.1.3.1"
+    desc: "Ensure separate partition exists for /var"
+    status: automated
+    level: ["l2_server", "l2_workstation"]
+    probes:
+      - name: var_mount_info
+        func: mounts.get_mount_info
+        params: { path: "/var" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_mount_info}"
+          key: "exists"
+          compare: is_true
+          message: "/var is not configured as a separate mount point."
+
+  - id: "1.1.3.2"
+    desc: "Ensure noexec option set on /var partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: var_mount
+        func: mounts.get_mount_info
+        params: { path: "/var" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_mount}"
+          key: "options"
+          compare: has_key
+          expected: "noexec"
+          message: "The /var partition is not mounted with the 'noexec' option."
+
+  - id: "1.1.3.3"
+    desc: "Ensure nosuid option set on /var partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: var_mount
+        func: mounts.get_mount_info
+        params: { path: "/var" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_mount}"
+          key: "options"
+          compare: has_key
+          expected: "nosuid"
+          message: "The /var partition is not mounted with the 'nosuid' option."
+
+  - id: "1.1.4.1"
+    desc: "Ensure separate partition exists for /var/tmp"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: var_tmp_mount_info
+        func: mounts.get_mount_info
+        params: { path: "/var/tmp" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_tmp_mount_info}"
+          key: "exists"
+          compare: is_true
+          message: "/var/tmp is not configured as a separate mount point."
+
+  - id: "1.1.4.2"
+    desc: "Ensure noexec option set on /var/tmp partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: var_tmp_mount
+        func: mounts.get_mount_info
+        params: { path: "/var/tmp" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_tmp_mount}"
+          key: "options"
+          compare: has_key
+          expected: "noexec"
+          message: "The /var/tmp partition is not mounted with the 'noexec' option."
+
+  - id: "1.1.4.3"
+    desc: "Ensure nosuid option set on /var/tmp partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: var_tmp_mount
+        func: mounts.get_mount_info
+        params: { path: "/var/tmp" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_tmp_mount}"
+          key: "options"
+          compare: has_key
+          expected: "nosuid"
+          message: "The /var/tmp partition is not mounted with the 'nosuid' option."
+
+  - id: "1.1.4.4"
+    desc: "Ensure nodev option set on /var/tmp partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: var_tmp_mount
+        func: mounts.get_mount_info
+        params: { path: "/var/tmp" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_tmp_mount}"
+          key: "options"
+          compare: has_key
+          expected: "nodev"
+          message: "The /var/tmp partition is not mounted with the 'nodev' option."
+
+  - id: "1.1.5.1"
+    desc: "Ensure separate partition exists for /var/log"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: var_log_mount_info
+        func: mounts.get_mount_info
+        params: { path: "/var/log" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_log_mount_info}"
+          key: "exists"
+          compare: is_true
+          message: "/var/log is not configured as a separate mount point."
+
+  - id: "1.1.6.1"
+    desc: "Ensure separate partition exists for /var/log/audit"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: var_log_audit_mount_info
+        func: mounts.get_mount_info
+        params: { path: "/var/log/audit" }
+    assertion:
+      all_of:
+        - actual: "%{probe.var_log_audit_mount_info}"
+          key: "exists"
+          compare: is_true
+          message: "/var/log/audit is not configured as a separate mount point."
+
+  - id: "1.1.7.1"
+    desc: "Ensure separate partition exists for /home"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: home_mount_info
+        func: mounts.get_mount_info
+        params: { path: "/home" }
+    assertion:
+      all_of:
+        - actual: "%{probe.home_mount_info}"
+          key: "exists"
+          compare: is_true
+          message: "/home is not configured as a separate mount point."
+
+  - id: "1.1.7.3"
+    desc: "Ensure nosuid option set on /home partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: home_mount
+        func: mounts.get_mount_info
+        params: { path: "/home" }
+    assertion:
+      all_of:
+        - actual: "%{probe.home_mount}"
+          key: "options"
+          compare: has_key
+          expected: "nosuid"
+          message: "The /home partition is not mounted with the 'nosuid' option."
+
+  - id: "1.1.8.1"
+    desc: "Ensure nodev option set on /dev/shm partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: dev_shm_mount
+        func: mounts.get_mount_info
+        params: { path: "/dev/shm" }
+    assertion:
+      all_of:
+        - actual: "%{probe.dev_shm_mount}"
+          key: "options"
+          compare: has_key
+          expected: "nodev"
+          message: "The /dev/shm partition is not mounted with the 'nodev' option."
+
+  - id: "1.1.8.2"
+    desc: "Ensure noexec option set on /dev/shm partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: dev_shm_mount
+        func: mounts.get_mount_info
+        params: { path: "/dev/shm" }
+    assertion:
+      all_of:
+        - actual: "%{probe.dev_shm_mount}"
+          key: "options"
+          compare: has_key
+          expected: "noexec"
+          message: "The /dev/shm partition is not mounted with the 'noexec' option."
+
+  - id: "1.1.8.3"
+    desc: "Ensure nosuid option set on /dev/shm partition"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: dev_shm_mount
+        func: mounts.get_mount_info
+        params: { path: "/dev/shm" }
+    assertion:
+      all_of:
+        - actual: "%{probe.dev_shm_mount}"
+          key: "options"
+          compare: has_key
+          expected: "nosuid"
+          message: "The /dev/shm partition is not mounted with the 'nosuid' option."
+
+  - id: "1.1.9"
+    desc: "Disable Automounting"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: autofs_service_status
+        func: services.get_unit_properties
+        params: { name: "autofs" }
+    assertion:
+      any_of:
+        - actual: "%{probe.autofs_service_status}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'autofs' service is enabled, but should be disabled."
+        - actual: "%{probe.autofs_service_status}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'autofs' service is enabled, but should be disabled or uninstalled."
+
+  - id: "1.1.22"
+    desc: "Ensure /tmp is configured"
+    level: ["l1_server", "l1_workstation"]
+    probes:
+      - name: tmp_mount_info
+        func: mounts.get_mount_info
+        params: { path: "/tmp" }
+      - name: tmp_service_status
+        func: services.get_unit_properties
+        params: { name: "tmp.mount" }
+    assertion:
+      all_of:
+        - # Assertion 1: Verify that /tmp is a mount point. (This part is unchanged)
+          actual: "%{probe.tmp_mount_info}"
+          key: "exists"
+          compare: is_true
+          message: "/tmp is not configured as a separate mount point."
+        - # Assertion 2: Verify the systemd unit is static.
+          actual: "%{probe.tmp_service_status}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "static"
+          message: "The 'tmp.mount' service is not static."
+
+  - id: "1.2.1"
+    desc: "Ensure message of the day is configured properly"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: os_info
+        func: file.parse_key_values
+        params:
+          path: "/etc/os-release"
+      - name: motd_info_leak_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/motd"
+          pattern: "(?i)(\\\\[vrms]|%{probe.os_info.ID})"
+    assertion:
+      all_of:
+        - actual: "%{probe.motd_info_leak_check}"
+          key: "found"
+          compare: is_falsy
+          message: "Found system information (OS version, release, etc.) in /etc/motd, which is a security finding."
+
+  - id: "1.2.2"
+    desc: "Ensure local login warning banner is configured properly"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: os_info
+        func: file.parse_key_values
+        params:
+          path: "/etc/os-release"
+      - name: issue_info_leak_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/issue"
+          pattern: "(?i)(\\v|\\r|\\m|\\s|%{probe.os_info.ID})"
+    assertion:
+      all_of:
+        - actual: "%{probe.issue_info_leak_check}"
+          key: "found"
+          compare: is_falsy
+          message: "Found system information (OS version, release, etc.) in /etc/issue, which is a security finding."
+
+  - id: "1.2.3"
+    desc: "Ensure remote login warning banner is configured properly"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: os_info
+        func: file.parse_key_values
+        params:
+          path: "/etc/os-release"
+      - name: issue_net_info_leak_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/issue.net"
+          pattern: "(?i)(\\v|\\r|\\m|\\s|%{probe.os_info.ID})"
+    assertion:
+      all_of:
+        - actual: "%{probe.issue_net_info_leak_check}"
+          key: "found"
+          compare: is_falsy
+          message: "Found system information (OS version, release, etc.) in /etc/issue.net, which is a security finding."
+
+  - id: "1.2.4"
+    desc: "Ensure permissions on /etc/motd are configured"
+    level: ["l1_server", "l1_workstation"]
+    probes:
+      - name: motd_attrs
+        func: permissions.get_attributes
+        params: { path: "/etc/motd" }
+    assertion:
+      all_of:
+        - actual: "%{probe.motd_attrs}"
+          key: "mode"
+          compare: equals
+          expected: 0644
+          message: "Permissions on /etc/motd must be 0644"
+        - actual: "%{probe.motd_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "Owner of /etc/motd must be root (uid 0)"
+        - actual: "%{probe.motd_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "Group of /etc/motd must be root (gid 0)"
+
+  - id: "1.2.5"
+    desc: "Ensure permissions on /etc/issue are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: issue_attrs
+        func: permissions.get_attributes
+        params: { path: "/etc/issue" }
+    assertion:
+      all_of:
+        - actual: "%{probe.issue_attrs}"
+          key: "mode"
+          compare: equals
+          expected: 0644
+          message: "Permissions on /etc/issue must be 0644"
+        - actual: "%{probe.issue_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "Owner of /etc/issue must be root (uid 0)"
+        - actual: "%{probe.issue_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "Group of /etc/issue must be root (gid 0)"
+
+  - id: "1.2.6"
+    desc: "Ensure permissions on /etc/issue.net are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: issue_net_attrs
+        func: permissions.get_attributes
+        params: { path: "/etc/issue.net" }
+    assertion:
+      all_of:
+        - actual: "%{probe.issue_net_attrs}"
+          key: "mode"
+          compare: equals
+          expected: 0644
+          message: "Permissions on /etc/issue.net must be 0644"
+        - actual: "%{probe.issue_net_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "Owner of /etc/issue.net must be root (uid 0)"
+        - actual: "%{probe.issue_net_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "Group of /etc/issue.net must be root (gid 0)"
+
+  - id: "1.3.1"
+    desc: "Ensure GPG keys are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: manual
+    probes:
+      - name: gpgkey_in_repo_files
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/yum.repos.d/*"
+            - "/etc/dnf/dnf.conf"
+          pattern: "^%s*gpgkey%s*="
+      - name: installed_gpg_keys
+        func: packages.get_installed
+        params:
+          name: "gpg-pubkey-*"
+    assertion:
+      all_of:
+        - actual: "%{probe.gpgkey_in_repo_files}"
+          key: "found"
+          compare: is_true
+          message: "No 'gpgkey' directives were found in any yum/dnf repository files."
+        - actual: "%{probe.installed_gpg_keys}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "No 'gpg-pubkey' packages are installed, indicating no keys have been imported."
+
+  - id: "1.3.2"
+    desc: "Ensure gpgcheck is globally activated"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: dnf_conf_check
+        func: file.parse_key_values
+        params:
+          path: "/etc/dnf/dnf.conf"
+      - name: repo_gpgcheck_override
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/yum.repos.d/*"
+          pattern: "^%s*gpgcheck%s*=%s*[^1]"
+    assertion:
+      all_of:
+        - actual: "%{probe.dnf_conf_check}"
+          key: "gpgcheck"
+          compare: equals
+          expected: "1"
+          message: "gpgcheck is not set to 1 in /etc/dnf/dnf.conf."
+        - actual: "%{probe.repo_gpgcheck_override}"
+          key: "found"
+          compare: is_falsy
+          message: "Found a repository file in /etc/yum.repos.d/ that disables gpgcheck (sets it to a value other than 1)."
+
+  - id: "1.4.1"
+    desc: "Ensure AIDE is installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: aide_installed
+        func: packages.get_installed
+        params:
+          name: "aide"
+    assertion:
+      all_of:
+        - actual: "%{probe.aide_installed}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "The AIDE package is not installed."
+
+  - id: "1.4.2"
+    desc: "Ensure filesystem integrity is regularly checked"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: aide_cron_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/cron.d/*"
+            - "/etc/cron.hourly/*"
+            - "/etc/cron.daily/*"
+            - "/etc/cron.weekly/*"
+            - "/etc/cron.monthly/*"
+            - "/etc/crontab"
+            - "/var/spool/cron/*"
+          pattern: "^[^#].*/usr/s?bin/aide.*--check"
+      - name: aide_service_status
+        func: services.get_unit_properties
+        params:
+          name: "aidecheck.service"
+      - name: aide_timer_status
+        func: services.get_unit_properties
+        params:
+          name: "aidecheck.timer"
+    assertion:
+      any_of:
+        - actual: "%{probe.aide_cron_check}"
+          key: "found"
+          compare: is_true
+          message: "AIDE integrity check is not scheduled via cron or systemd timer."
+        - all_of:
+            - actual: "%{probe.aide_service_status}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "enabled"
+              message: "AIDE is configured via systemd timer, but aidecheck.service is not enabled."
+            - actual: "%{probe.aide_timer_status}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "enabled"
+              message: "AIDE is configured via systemd, but aidecheck.timer is not enabled."
+
+  - id: "1.5.1"
+    desc: "Ensure core dumps are restricted"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: coredump_pkg
+        func: packages.get_installed
+        params:
+          name: "systemd-coredump"
+      - name: coredump_conf
+        func: file.parse_key_values
+        params:
+          path: "/etc/systemd/coredump.conf"
+      - name: limits_conf_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/security/limits.conf"
+            - "/etc/security/limits.d/*"
+          pattern: "^[*]%s+hard%s+core%s+0"
+      - name: suid_dumpable_sysctl
+        func: sysctl.get_live_value
+        params:
+          key: "fs.suid_dumpable"
+    assertion:
+      all_of:
+        - any_of:
+            - actual: "%{probe.coredump_pkg}"
+              key: "count"
+              compare: equals
+              expected: 0
+              message: "systemd-coredump is installed, but its configuration is not compliant."
+            - all_of:
+                - actual: "%{probe.coredump_conf}"
+                  key: "Storage"
+                  compare: equals
+                  expected: "none"
+                  message: "systemd-coredump is installed, but Storage is not set to 'none' in /etc/systemd/coredump.conf."
+                - actual: "%{probe.coredump_conf}"
+                  key: "ProcessSizeMax"
+                  compare: equals
+                  expected: "0"
+                  message: "systemd-coredump is installed, but ProcessSizeMax is not set to '0' in /etc/systemd/coredump.conf."
+        - actual: "%{probe.limits_conf_check}"
+          key: "found"
+          compare: is_true
+          message: "A core dump limit of '* hard core 0' is not set in /etc/security/limits.conf or /etc/security/limits.d/*."
+        - actual: "%{probe.suid_dumpable_sysctl}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "The 'fs.suid_dumpable' kernel parameter is not set to 0."
+
+  - id: "1.5.2"
+    desc: "Ensure the AppArmor is installed"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: apparmor_installed
+        func: packages.get_installed
+        params:
+          name: "apparmor"
+    assertion:
+      all_of:
+        - actual: "%{probe.apparmor_installed}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "The AppArmor package is not installed."
+
+  - id: "1.5.3"
+    desc: "Ensure AppArmor is enabled in the bootloader configuration"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: apparmor_param_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/boot/grub2/grub.cfg"
+          pattern: "^%s*linux.*apparmor=1"
+      - name: security_param_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/boot/grub2/grub.cfg"
+          pattern: "^%s*linux.*security=apparmor"
+    assertion:
+      all_of:
+        - actual: "%{probe.apparmor_param_check}"
+          key: "found"
+          compare: is_true
+          message: "The 'apparmor=1' kernel parameter is not set in the bootloader configuration."
+        - actual: "%{probe.security_param_check}"
+          key: "found"
+          compare: is_true
+          message: "The 'security=apparmor' kernel parameter is not set in the bootloader configuration."
+
+  - id: "1.6.1"
+    desc: "Ensure core dumps are restricted"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: limits_conf_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/security/limits.conf"
+            - "/etc/security/limits.d/*"
+          pattern: "^[*]%s+hard%s+core%s+0"
+      - name: suid_dumpable_sysctl_live
+        func: sysctl.get_live_value
+        params:
+          key: "fs.suid_dumpable"
+      - name: suid_dumpable_sysctl_disk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*"
+          pattern: "^%s*fs%.suid_dumpable%s*=%s*0"
+      - name: coredump_service
+        func: services.get_unit_properties
+        params:
+          name: "coredump.service"
+      - name: coredump_conf
+        func: file.parse_key_values
+        params:
+          path: "/etc/systemd/coredump.conf"
+    assertion:
+      all_of:
+        - actual: "%{probe.limits_conf_check}"
+          key: "found"
+          compare: is_true
+          message: "A core dump limit of '* hard core 0' is not set in /etc/security/limits.conf or /etc/security/limits.d/*."
+        - actual: "%{probe.suid_dumpable_sysctl_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "The live 'fs.suid_dumpable' kernel parameter is not set to 0."
+        - actual: "%{probe.suid_dumpable_sysctl_disk}"
+          key: "found"
+          compare: is_true
+          message: "The 'fs.suid_dumpable=0' setting is not found in any sysctl configuration file."
+        - any_of:
+            - all_of:
+                - actual: "%{probe.coredump_service}"
+                  key: "UnitFileState"
+                  compare: is_not_equal_to
+                  expected: "enabled"
+                  message: "systemd-coredump is installed and not configured correctly."
+                - actual: "%{probe.coredump_service}"
+                  key: "UnitFileState"
+                  compare: is_not_equal_to
+                  expected: "disabled"
+                  message: "systemd-coredump is installed and not configured correctly."
+            - all_of:
+                - actual: "%{probe.coredump_conf}"
+                  key: "Storage"
+                  compare: equals
+                  expected: "none"
+                  message: "systemd-coredump is installed, but Storage is not set to 'none'."
+                - actual: "%{probe.coredump_conf}"
+                  key: "ProcessSizeMax"
+                  compare: equals
+                  expected: "0"
+                  message: "systemd-coredump is installed, but ProcessSizeMax is not set to 0."
+
+  - id: "1.6.2"
+    desc: "Ensure address space layout randomization (ASLR) is enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: aslr_live
+        func: sysctl.get_live_value
+        params:
+          key: "kernel.randomize_va_space"
+      - name: aslr_disk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*.conf"
+            - "/usr/local/lib/sysctl.d/*.conf"
+            - "/usr/lib/sysctl.d/*.conf"
+            - "/lib/sysctl.d/*.conf"
+            - "/run/sysctl.d/*.conf"
+          pattern: "^%s*kernel%.randomize_va_space%s*=%s*2"
+    assertion:
+      all_of:
+        - actual: "%{probe.aslr_live}"
+          key: "value"
+          compare: equals
+          expected: "2"
+          message: "The live 'kernel.randomize_va_space' kernel parameter is not set to 2."
+        - actual: "%{probe.aslr_disk}"
+          key: "found"
+          compare: is_true
+          message: "The 'kernel.randomize_va_space=2' setting is not found in any sysctl configuration file."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: "kernel.randomize_va_space", value: "2" }
+
+  - id: "1.6.3"
+    desc: "Ensure SELinux is not disabled in bootloader configuration"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: selinux_boot_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/boot/grub2/grub.cfg"
+          pattern: "^%s*linux.*(selinux=0|enforcing=0)"
+    assertion:
+      all_of:
+        - actual: "%{probe.selinux_boot_check}"
+          key: "found"
+          compare: is_falsy
+          message: "SELinux is disabled in the bootloader configuration (selinux=0 or enforcing=0 found)."
+
+  - id: "1.6.4"
+    desc: "Ensure the SELinux state is enforcing"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: selinux_live_enforce
+        func: file.find_pattern
+        params:
+          paths:
+            - "/sys/fs/selinux/enforce"
+          pattern: "^1$"
+      - name: selinux_conf_enforce
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/selinux/config"
+          pattern: "^SELINUX=enforcing"
+    assertion:
+      all_of:
+        - actual: "%{probe.selinux_live_enforce}"
+          key: "found"
+          compare: is_true
+          message: "SELinux is not in enforcing mode in the live system configuration."
+        - actual: "%{probe.selinux_conf_enforce}"
+          key: "found"
+          compare: is_true
+          message: "SELINUX is not set to 'enforcing' in /etc/selinux/config."
+
+  - id: "1.8.1"
+    desc: "Ensure GNOME Display Manager is removed"
+    level: ["l2_server", "l2_workstation"]
+    status: manual
+    probes:
+      - name: gdm_installed
+        func: packages.get_installed
+        params:
+          name: "gdm"
+    assertion:
+      all_of:
+        - actual: "%{probe.gdm_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "The gdm package is installed but should be removed on systems that do not require a GUI."
+
+  - id: "1.8.2"
+    desc: "Ensure GDM login banner is configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: gdm_profile_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/dconf/profile/gdm"]
+          pattern: "user-db:user"
+      - name: gdm_banner_enable_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/dconf/db/gdm.d/*"]
+          pattern: "^banner-message-enable=true"
+      - name: gdm_banner_text_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/dconf/db/gdm.d/*"]
+          pattern: "^banner-message-text="
+    assertion:
+      all_of:
+        - actual: "%{probe.gdm_profile_check}"
+          key: "found"
+          compare: is_true
+          message: "The 'user-db:user' line is not present in /etc/dconf/profile/gdm."
+        - actual: "%{probe.gdm_banner_enable_check}"
+          key: "found"
+          compare: is_true
+          message: "'banner-message-enable=true' is not set in any /etc/dconf/db/gdm.d/ file."
+        - actual: "%{probe.gdm_banner_text_check}"
+          key: "found"
+          compare: is_true
+          message: "'banner-message-text' is not set in any /etc/dconf/db/gdm.d/ file."
+
+  - id: "1.8.3"
+    desc: "Ensure last logged in user display is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: gdm_profile_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/dconf/profile/gdm"]
+          pattern: "user-db:user"
+      - name: gdm_disable_user_list_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/dconf/db/gdm.d/*"]
+          pattern: "^disable-user-list=true"
+    assertion:
+      all_of:
+        - actual: "%{probe.gdm_profile_check}"
+          key: "found"
+          compare: is_true
+          message: "The 'user-db:user' line is not present in /etc/dconf/profile/gdm."
+        - actual: "%{probe.gdm_disable_user_list_check}"
+          key: "found"
+          compare: is_true
+          message: "'disable-user-list=true' is not set in any /etc/dconf/db/gdm.d/ file."
+
+  - id: "1.8.4"
+    desc: "Ensure XDMCP is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: xdmcp_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/gdm/custom.conf"]
+          pattern: "(?i)^%s*Enable%s*=%s*true"
+    assertion:
+      all_of:
+        - actual: "%{probe.xdmcp_check}"
+          key: "found"
+          compare: is_falsy
+          message: "XDMCP is enabled in /etc/gdm/custom.conf (Enable=true found)."
+
+  - id: "1.10"
+    desc: "Ensure system-wide crypto policy is not legacy"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: crypto_legacy_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/crypto-policies/config"]
+          pattern: "(?i)^%s*LEGACY"
+    assertion:
+      all_of:
+        - actual: "%{probe.crypto_legacy_check}"
+          key: "found"
+          compare: is_falsy
+          message: "The system-wide crypto policy is set to LEGACY."
+
+  - id: "1.11"
+    desc: "Ensure system-wide crypto policy is FUTURE or FIPS"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: crypto_future_fips_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/crypto-policies/config"]
+          pattern: "(?i)^%s*(FUTURE|FIPS)"
+    assertion:
+      all_of:
+        - actual: "%{probe.crypto_future_fips_check}"
+          key: "found"
+          compare: is_true
+          message: "The system-wide crypto policy is not set to FUTURE or FIPS."
+
+  - id: "2.1.1"
+    desc: "Ensure xinetd is not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: xinetd_installed
+        func: packages.get_installed
+        params:
+          name: "xinetd"
+    assertion:
+      all_of:
+        - actual: "%{probe.xinetd_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "The xinetd package is installed."
+
+  - id: "2.2.1.1"
+    desc: "Ensure time synchronization is in use"
+    level: ["l1_server", "l1_workstation"]
+    status: manual
+    probes:
+      - name: chrony_installed
+        func: packages.get_installed
+        params:
+          name: "chrony"
+    assertion:
+      all_of:
+        - actual: "%{probe.chrony_installed}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "For physical systems, the chrony package should be installed. For virtual systems, verify host-based time sync is enabled if chrony is not installed."
+
+  - id: "2.2.2"
+    desc: "Ensure X Window System is not installed"
+    level: ["l1_server"]
+    status: automated
+    probes:
+      - name: xorg_server_pkgs
+        func: packages.get_installed
+        params:
+          name: "xorg-x11-server-*"
+    assertion:
+      all_of:
+        - actual: "%{probe.xorg_server_pkgs}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "X Window System server packages (xorg-x11-server-*) are installed."
+
+  - id: "2.2.3"
+    desc: "Ensure rsync service is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rsync_service
+        func: services.get_unit_properties
+        params:
+          name: "rsyncd"
+    assertion:
+      any_of:
+        - actual: "%{probe.rsync_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'rsyncd' service is enabled."
+        - actual: "%{probe.rsync_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'rsyncd' service is enabled."
+
+  - id: "2.2.4"
+    desc: "Ensure Avahi Server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: avahi_socket_status
+        func: services.get_unit_properties
+        params:
+          name: "avahi-daemon.socket"
+      - name: avahi_service_status
+        func: services.get_unit_properties
+        params:
+          name: "avahi-daemon.service"
+    assertion:
+      all_of:
+        - any_of:
+            - actual: "%{probe.avahi_socket_status}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "disabled"
+              message: "The 'avahi-daemon.socket' unit is enabled."
+            - actual: "%{probe.avahi_socket_status}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "not-found"
+              message: "The 'avahi-daemon.socket' unit is enabled."
+        - any_of:
+            - actual: "%{probe.avahi_service_status}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "disabled"
+              message: "The 'avahi-daemon.service' unit is enabled."
+            - actual: "%{probe.avahi_service_status}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "not-found"
+              message: "The 'avahi-daemon.service' unit is enabled."
+
+  - id: "2.2.5"
+    desc: "Ensure SNMP Server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: snmp_service
+        func: services.get_unit_properties
+        params:
+          name: "snmpd"
+    assertion:
+      any_of:
+        - actual: "%{probe.snmp_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'snmpd' service is enabled."
+        - actual: "%{probe.snmp_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'snmpd' service is enabled."
+
+  - id: "2.2.6"
+    desc: "Ensure HTTP Proxy Server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: proxy_service
+        func: services.get_unit_properties
+        params:
+          name: "squid"
+    assertion:
+      any_of:
+        - actual: "%{probe.proxy_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'squid' proxy service is enabled."
+        - actual: "%{probe.proxy_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'squid' proxy service is enabled."
+
+  - id: "2.2.7"
+    desc: "Ensure Samba is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: samba_service
+        func: services.get_unit_properties
+        params:
+          name: "smb"
+    assertion:
+      any_of:
+        - actual: "%{probe.samba_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'smb' service is enabled."
+        - actual: "%{probe.samba_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'smb' service is enabled."
+
+  - id: "2.2.8"
+    desc: "Ensure IMAP and POP3 server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: imap_pop3_service
+        func: services.get_unit_properties
+        params:
+          name: "dovecot"
+    assertion:
+      any_of:
+        - actual: "%{probe.imap_pop3_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'dovecot' (IMAP/POP3) service is enabled."
+        - actual: "%{probe.imap_pop3_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'dovecot' (IMAP/POP3) service is enabled."
+
+  - id: "2.2.9"
+    desc: "Ensure HTTP server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: httpd_service
+        func: services.get_unit_properties
+        params:
+          name: "httpd"
+    assertion:
+      all_of:
+        - any_of:
+            - actual: "%{probe.httpd_service}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "disabled"
+              message: "The 'httpd' service is enabled."
+            - actual: "%{probe.httpd_service}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "not-found"
+              message: "The 'httpd' service is enabled."
+
+  - id: "2.2.10"
+    desc: "Ensure FTP Server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ftp_service_status
+        func: services.get_unit_properties
+        params:
+          name: "vsftpd"
+    assertion:
+      any_of:
+        - actual: "%{probe.ftp_service_status}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'vsftpd' service is enabled."
+        - actual: "%{probe.ftp_service_status}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'vsftpd' service is enabled."
+
+  - id: "2.2.11"
+    desc: "Ensure DNS Server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: dns_service
+        func: services.get_unit_properties
+        params:
+          name: "named"
+    assertion:
+      any_of:
+        - actual: "%{probe.dns_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'named' (DNS) service is enabled."
+        - actual: "%{probe.dns_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'named' (DNS) service is enabled."
+
+  - id: "2.2.12"
+    desc: "Ensure NFS is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: nfs_service
+        func: services.get_unit_properties
+        params:
+          name: "nfs-server"
+    assertion:
+      any_of:
+        - actual: "%{probe.nfs_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'nfs-server' service is enabled."
+        - actual: "%{probe.nfs_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'nfs-server' service is enabled."
+
+  - id: "2.2.13"
+    desc: "Ensure RPC is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rpc_service
+        func: services.get_unit_properties
+        params:
+          name: "rpcbind"
+    assertion:
+      any_of:
+        - actual: "%{probe.rpc_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'rpcbind' service is enabled."
+        - actual: "%{probe.rpc_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'rpcbind' service is enabled."
+
+  - id: "2.2.14"
+    desc: "Ensure LDAP server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ldap_service
+        func: services.get_unit_properties
+        params:
+          name: "slapd"
+    assertion:
+      any_of:
+        - actual: "%{probe.ldap_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'slapd' (LDAP) service is enabled."
+        - actual: "%{probe.ldap_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'slapd' (LDAP) service is enabled."
+
+  - id: "2.2.15"
+    desc: "Ensure DHCP Server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: dhcp_service
+        func: services.get_unit_properties
+        params:
+          name: "dhcpd"
+    assertion:
+      any_of:
+        - actual: "%{probe.dhcp_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'dhcpd' service is enabled."
+        - actual: "%{probe.dhcp_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'dhcpd' service is enabled."
+
+  - id: "2.2.16"
+    desc: "Ensure CUPS is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: cups_service
+        func: services.get_unit_properties
+        params:
+          name: "cups"
+    assertion:
+      any_of:
+        - actual: "%{probe.cups_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'cups' service is enabled."
+        - actual: "%{probe.cups_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'cups' service is enabled."
+
+  - id: "2.2.17"
+    desc: "Ensure NIS Server is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: nis_service
+        func: services.get_unit_properties
+        params:
+          name: "ypserv"
+    assertion:
+      any_of:
+        - actual: "%{probe.nis_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "disabled"
+          message: "The 'ypserv' (NIS) service is enabled."
+        - actual: "%{probe.nis_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "not-found"
+          message: "The 'ypserv' (NIS) service is enabled."
+
+  - id: "2.3.1"
+    desc: "Ensure NIS Client is not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: nis_client_installed
+        func: packages.get_installed
+        params:
+          name: "ypbind"
+    assertion:
+      all_of:
+        - actual: "%{probe.nis_client_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "The NIS client package (nis) is installed."
+
+  - id: "2.3.2"
+    desc: "Ensure telnet client is not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: telnet_installed
+        func: packages.get_installed
+        params:
+          name: "telnet"
+    assertion:
+      all_of:
+        - actual: "%{probe.telnet_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "The telnet client package is installed."
+
+  - id: "2.3.3"
+    desc: "Ensure LDAP client is not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ldap_client_installed
+        func: packages.get_installed
+        params:
+          name: "openldap-clients"
+    assertion:
+      all_of:
+        - actual: "%{probe.ldap_client_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "The LDAP client package (openldap-clients) is installed."
+
+  - id: "3.1.2"
+    desc: "Ensure SCTP is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: sctp_install_cmd
+        func: kmod.get_install_command
+        params: { name: "sctp" }
+      - name: sctp_loaded_status
+        func: kmod.is_loaded
+        params: { name: "sctp" }
+    assertion:
+      all_of:
+        - actual: "%{probe.sctp_loaded_status}"
+          key: "loaded"
+          compare: is_falsy
+          message: "The 'sctp' kernel module is currently loaded."
+        - actual: "%{probe.sctp_install_cmd}"
+          key: "command"
+          compare: equals
+          expected: "/bin/true"
+          message: "The 'sctp' kernel module is not configured to be disabled via install command."
+
+  - id: "3.1.3"
+    desc: "Ensure DCCP is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: dccp_install_cmd
+        func: kmod.get_install_command
+        params: { name: "dccp" }
+      - name: dccp_loaded_status
+        func: kmod.is_loaded
+        params: { name: "dccp" }
+    assertion:
+      all_of:
+        - actual: "%{probe.dccp_loaded_status}"
+          key: "loaded"
+          compare: is_falsy
+          message: "The 'dccp' kernel module is currently loaded."
+        - actual: "%{probe.dccp_install_cmd}"
+          key: "command"
+          compare: equals
+          expected: "/bin/true"
+          message: "The 'dccp' kernel module is not configured to be disabled via install command."
+
+  - id: "3.2.1"
+    desc: "Ensure IP forwarding is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ipv4_forward_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.ip_forward" }
+      - name: ipv4_forward_disk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*.conf"
+            - "/usr/lib/sysctl.d/*.conf"
+            - "/run/sysctl.d/*.conf"
+          pattern: "^%s*net%.ipv4%.ip_forward%s*=%s*1"
+      - name: ipv6_forward_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv6.conf.all.forwarding" }
+      - name: ipv6_forward_disk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*.conf"
+            - "/usr/lib/sysctl.d/*.conf"
+            - "/run/sysctl.d/*.conf"
+          pattern: "^%s*net%.ipv6%.conf%.all%.forwarding%s*=%s*1"
+    assertion:
+      all_of:
+        - actual: "%{probe.ipv4_forward_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Kernel parameter net.ipv4.ip_forward is not set to 0 in the live configuration."
+        - actual: "%{probe.ipv4_forward_disk}"
+          key: "found"
+          compare: is_falsy
+          message: "IP forwarding for IPv4 is enabled in a sysctl configuration file."
+        - actual: "%{probe.ipv6_forward_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Kernel parameter net.ipv6.conf.all.forwarding is not set to 0 in the live configuration."
+        - actual: "%{probe.ipv6_forward_disk}"
+          key: "found"
+          compare: is_falsy
+          message: "IP forwarding for IPv6 is enabled in a sysctl configuration file."
+
+  - id: "3.2.2"
+    desc: "Ensure packet redirect sending is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: all_redirects_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.all.send_redirects" }
+      - name: default_redirects_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.default.send_redirects" }
+      - name: all_redirects_disk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*"
+          pattern: "^%s*net%.ipv4%.conf%.all%.send_redirects%s*=%s*1"
+      - name: default_redirects_disk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*"
+          pattern: "^%s*net%.ipv4%.conf%.default%.send_redirects%s*=%s*1"
+    assertion:
+      all_of:
+        - actual: "%{probe.all_redirects_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv4.conf.all.send_redirects is not 0."
+        - actual: "%{probe.default_redirects_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv4.conf.default.send_redirects is not 0."
+        - actual: "%{probe.all_redirects_disk}"
+          key: "found"
+          compare: is_falsy
+          message: "net.ipv4.conf.all.send_redirects is enabled in a sysctl configuration file."
+        - actual: "%{probe.default_redirects_disk}"
+          key: "found"
+          compare: is_falsy
+          message: "net.ipv4.conf.default.send_redirects is enabled in a sysctl configuration file."
+
+  - id: "3.3.1"
+    desc: "Ensure source routed packets are not accepted"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ipv4_all_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.all.accept_source_route" }
+      - name: ipv4_default_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.default.accept_source_route" }
+      - name: ipv6_all_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv6.conf.all.accept_source_route" }
+      - name: ipv6_default_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv6.conf.default.accept_source_route" }
+    assertion:
+      all_of:
+        - actual: "%{probe.ipv4_all_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv4.conf.all.accept_source_route is not 0."
+        - actual: "%{probe.ipv4_default_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv4.conf.default.accept_source_route is not 0."
+        - actual: "%{probe.ipv6_all_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv6.conf.all.accept_source_route is not 0."
+        - actual: "%{probe.ipv6_default_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv6.conf.default.accept_source_route is not 0."
+
+  - id: "3.3.2"
+    desc: "Ensure ICMP redirects are not accepted"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ipv4_all_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.all.accept_redirects" }
+      - name: ipv4_default_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.default.accept_redirects" }
+      - name: ipv6_all_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv6.conf.all.accept_redirects" }
+      - name: ipv6_default_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv6.conf.default.accept_redirects" }
+    assertion:
+      all_of:
+        - actual: "%{probe.ipv4_all_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv4.conf.all.accept_redirects is not 0."
+        - actual: "%{probe.ipv4_default_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv4.conf.default.accept_redirects is not 0."
+        - actual: "%{probe.ipv6_all_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv6.conf.all.accept_redirects is not 0."
+        - actual: "%{probe.ipv6_default_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv6.conf.default.accept_redirects is not 0."
+
+  - id: "3.3.3"
+    desc: "Ensure secure ICMP redirects are not accepted"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: all_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.all.secure_redirects" }
+      - name: default_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.default.secure_redirects" }
+    assertion:
+      all_of:
+        - actual: "%{probe.all_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv4.conf.all.secure_redirects is not 0."
+        - actual: "%{probe.default_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv4.conf.default.secure_redirects is not 0."
+
+  - id: "3.3.4"
+    desc: "Ensure suspicious packets are logged"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: all_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.all.log_martians" }
+      - name: default_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.default.log_martians" }
+    assertion:
+      all_of:
+        - actual: "%{probe.all_live}"
+          key: "value"
+          compare: equals
+          expected: "1"
+          message: "Live kernel parameter net.ipv4.conf.all.log_martians is not 1."
+        - actual: "%{probe.default_live}"
+          key: "value"
+          compare: equals
+          expected: "1"
+          message: "Live kernel parameter net.ipv4.conf.default.log_martians is not 1."
+
+  - id: "3.3.5"
+    desc: "Ensure broadcast ICMP requests are ignored"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: icmp_broadcast_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.icmp_echo_ignore_broadcasts" }
+      - name: icmp_broadcast_disk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*.conf"
+            - "/usr/lib/sysctl.d/*.conf"
+            - "/run/sysctl.d/*.conf"
+          pattern: "^%s*net%.ipv4%.icmp_echo_ignore_broadcasts%s*=%s*0"
+    assertion:
+      all_of:
+        - actual: "%{probe.icmp_broadcast_live}"
+          key: "value"
+          compare: equals
+          expected: "1"
+          message: "Live kernel parameter net.ipv4.icmp_echo_ignore_broadcasts is not 1."
+        - actual: "%{probe.icmp_broadcast_disk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "net.ipv4.icmp_echo_ignore_broadcasts is incorrectly set to 0 in a sysctl configuration file."
+
+  - id: "3.3.6"
+    desc: "Ensure bogus ICMP responses are ignored"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: icmp_bogus_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.icmp_ignore_bogus_error_responses" }
+      - name: icmp_bogus_disk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*.conf"
+            - "/usr/lib/sysctl.d/*.conf"
+            - "/run/sysctl.d/*.conf"
+          pattern: "^%s*net%.ipv4%.icmp_ignore_bogus_error_responses%s*=%s*0"
+    assertion:
+      all_of:
+        - actual: "%{probe.icmp_bogus_live}"
+          key: "value"
+          compare: equals
+          expected: "1"
+          message: "Live kernel parameter net.ipv4.icmp_ignore_bogus_error_responses is not 1."
+        - actual: "%{probe.icmp_bogus_disk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "net.ipv4.icmp_ignore_bogus_error_responses is incorrectly set to 0 in a sysctl configuration file."
+
+  - id: "3.3.7"
+    desc: "Ensure Reverse Path Filtering is enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rp_filter_all_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.all.rp_filter" }
+      - name: rp_filter_all_disk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*.conf"
+            - "/usr/lib/sysctl.d/*.conf"
+            - "/run/sysctl.d/*.conf"
+          pattern: "^%s*net%.ipv4%.conf%.all%.rp_filter%s*=%s*0"
+      - name: rp_filter_default_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.conf.default.rp_filter" }
+      - name: rp_filter_default_disk_compliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*.conf"
+            - "/usr/lib/sysctl.d/*.conf"
+            - "/run/sysctl.d/*.conf"
+          pattern: "^%s*net%.ipv4%.conf%.default%.rp_filter%s*=%s*1"
+    assertion:
+      all_of:
+        - actual: "%{probe.rp_filter_all_live}"
+          key: "value"
+          compare: equals
+          expected: "1"
+          message: "Live kernel parameter net.ipv4.conf.all.rp_filter is not 1."
+        - actual: "%{probe.rp_filter_all_disk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "net.ipv4.conf.all.rp_filter is incorrectly set to 0 in a sysctl configuration file."
+        - actual: "%{probe.rp_filter_default_live}"
+          key: "value"
+          compare: equals
+          expected: "1"
+          message: "Live kernel parameter net.ipv4.conf.default.rp_filter is not 1."
+        - actual: "%{probe.rp_filter_default_disk_compliant}"
+          key: "found"
+          compare: is_true
+          message: "net.ipv4.conf.default.rp_filter is not set to 1 in any sysctl configuration file."
+
+  - id: "3.3.8"
+    desc: "Ensure TCP SYN Cookies is enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: syncookies_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv4.tcp_syncookies" }
+      - name: syncookies_disk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*.conf"
+            - "/usr/lib/sysctl.d/*.conf"
+            - "/run/sysctl.d/*.conf"
+          pattern: "^%s*net%.ipv4%.tcp_syncookies%s*=%s*[02]"
+    assertion:
+      all_of:
+        - actual: "%{probe.syncookies_live}"
+          key: "value"
+          compare: equals
+          expected: "1"
+          message: "Live kernel parameter net.ipv4.tcp_syncookies is not 1."
+        - actual: "%{probe.syncookies_disk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "net.ipv4.tcp_syncookies is incorrectly set to 0 or 2 in a sysctl configuration file."
+
+  - id: "3.3.9"
+    desc: "Ensure IPv6 router advertisements are not accepted"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: accept_ra_all_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv6.conf.all.accept_ra" }
+      - name: accept_ra_default_live
+        func: sysctl.get_live_value
+        params: { key: "net.ipv6.conf.default.accept_ra" }
+      - name: accept_ra_all_disk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*"
+          pattern: "^%s*net%.ipv6%.conf%.all%.accept_ra%s*=%s*0"
+      - name: accept_ra_default_disk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sysctl.conf"
+            - "/etc/sysctl.d/*"
+          pattern: "^%s*net%.ipv6%.conf%.default%.accept_ra%s*=%s*0"
+    assertion:
+      all_of:
+        - actual: "%{probe.accept_ra_all_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv6.conf.all.accept_ra is not 0."
+        - actual: "%{probe.accept_ra_default_live}"
+          key: "value"
+          compare: equals
+          expected: "0"
+          message: "Live kernel parameter net.ipv6.conf.default.accept_ra is not 0."
+        - actual: "%{probe.accept_ra_all_disk}"
+          key: "found"
+          compare: is_true
+          message: "net.ipv6.conf.all.accept_ra is not set to 0 in any sysctl configuration file."
+        - actual: "%{probe.accept_ra_default_disk}"
+          key: "found"
+          compare: is_true
+          message: "net.ipv6.conf.default.accept_ra is not set to 0 in any sysctl configuration file."
+
+  - id: "3.4.1.1"
+    desc: "Ensure a Firewall package is installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: firewalld_pkg
+        func: packages.get_installed
+        params:
+          name: "firewalld"
+      - name: nftables_pkg
+        func: packages.get_installed
+        params:
+          name: "nftables"
+      - name: iptables_pkg
+        func: packages.get_installed
+        params:
+          name: "iptables"
+    assertion:
+      any_of:
+        - actual: "%{probe.firewalld_pkg}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "No firewall package (firewalld, nftables, or iptables) is installed."
+        - actual: "%{probe.nftables_pkg}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "No firewall package (firewalld, nftables, or iptables) is installed."
+        - actual: "%{probe.iptables_pkg}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "No firewall package (firewalld, nftables, or iptables) is installed."
+
+  - id: "4.1.1.1"
+    desc: "Ensure auditd is installed"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: audit_pkg
+        func: packages.get_installed
+        params:
+          name: "audit"
+      - name: audit_libs_pkg
+        func: packages.get_installed
+        params:
+          name: "audit-libs"
+    assertion:
+      all_of:
+        - actual: "%{probe.audit_pkg}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "The 'audit' package is not installed."
+        - actual: "%{probe.audit_libs_pkg}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "The 'audit-libs' package is not installed."
+
+  - id: "4.1.1.2"
+    desc: "Ensure auditd service is enabled"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: auditd_service
+        func: services.get_unit_properties
+        params:
+          name: "auditd"
+    assertion:
+      all_of:
+        - actual: "%{probe.auditd_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "enabled"
+          message: "The 'auditd' service is not enabled."
+
+  - id: "4.1.1.3"
+    desc: "Ensure auditing for processes that start prior to auditd is enabled"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: audit_boot_param
+        func: file.find_pattern
+        params:
+          paths:
+            - "/boot/grub2/grub.cfg"
+            - "/boot/grub2/grubenv"
+            - "/boot/efi/EFI/*/grub.cfg"
+          pattern: "(kernelopts|linux|kernel).*audit=1"
+    assertion:
+      all_of:
+        - actual: "%{probe.audit_boot_param}"
+          key: "found"
+          compare: is_true
+          message: "The 'audit=1' kernel parameter is not configured in the bootloader."
+
+  - id: "4.1.2.1"
+    desc: "Ensure audit log storage size is configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: auditd_conf_max_log_file
+        func: file.find_pattern
+        params:
+          paths: ["/etc/audit/auditd.conf"]
+          pattern: "^%s*max_log_file%s*="
+    assertion:
+      all_of:
+        - actual: "%{probe.auditd_conf_max_log_file}"
+          key: "found"
+          compare: is_true
+          message: "The 'max_log_file' parameter is not configured in /etc/audit/auditd.conf."
+
+  - id: "4.1.2.2"
+    desc: "Ensure audit logs are not automatically deleted"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: auditd_conf_settings
+        func: file.parse_key_values
+        params:
+          path: "/etc/audit/auditd.conf"
+          normalize_values: "lower"
+    assertion:
+      all_of:
+        - actual: "%{probe.auditd_conf_settings}"
+          key: "max_log_file_action"
+          compare: equals
+          expected: "keep_logs"
+          message: "max_log_file_action is not set to 'keep_logs' in /etc/audit/auditd.conf."
+
+  - id: "4.1.2.3"
+    desc: "Ensure system is disabled when audit logs are full"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: auditd_conf_settings
+        func: file.parse_key_values
+        params:
+          path: "/etc/audit/auditd.conf"
+          normalize_values: "lower"
+    assertion:
+      all_of:
+        - any_of:
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "space_left_action"
+              compare: equals
+              expected: "email"
+              message: "space_left_action is not set to 'email' or 'syslog' in /etc/audit/auditd.conf."
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "space_left_action"
+              compare: equals
+              expected: "syslog"
+              message: "space_left_action is not set to 'email' or 'syslog' in /etc/audit/auditd.conf."
+        - actual: "%{probe.auditd_conf_settings}"
+          key: "action_mail_acct"
+          compare: equals
+          expected: "root"
+          message: "action_mail_acct is not set to 'root' in /etc/audit/auditd.conf."
+        - actual: "%{probe.auditd_conf_settings}"
+          key: "admin_space_left_action"
+          compare: equals
+          expected: "halt"
+          message: "admin_space_left_action is not set to 'halt' in /etc/audit/auditd.conf."
+
+  - id: "4.2.1.1"
+    desc: "Ensure rsyslog is installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rsyslog_installed
+        func: packages.get_installed
+        params:
+          name: "rsyslog"
+    assertion:
+      all_of:
+        - actual: "%{probe.rsyslog_installed}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "The rsyslog package is not installed."
+
+  - id: "4.2.1.2"
+    desc: "Ensure rsyslog Service is enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rsyslog_service_status
+        func: services.get_unit_properties
+        params:
+          name: "rsyslog"
+    assertion:
+      all_of:
+        - actual: "%{probe.rsyslog_service_status}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "enabled"
+          message: "The rsyslog service is not enabled."
+
+  - id: "4.2.1.5"
+    desc: "Ensure rsyslog is configured to send logs to a remote log host"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rsyslog_remote_log_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/rsyslog.conf"
+            - "/etc/rsyslog.d/*.conf"
+          pattern: "^%s*[*][.].*@"
+    assertion:
+      all_of:
+        - actual: "%{probe.rsyslog_remote_log_check}"
+          key: "found"
+          compare: is_true
+          message: "Rsyslog is not configured to send logs to a remote log host."
+
+  - id: "4.2.2.1"
+    desc: "Ensure journald is configured to send logs to rsyslog"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: journald_conf
+        func: file.parse_key_values
+        params:
+          path: "/etc/systemd/journald.conf"
+    assertion:
+      all_of:
+        - actual: "%{probe.journald_conf}"
+          key: "ForwardToSyslog"
+          compare: equals
+          expected: "yes"
+          message: "ForwardToSyslog is not set to 'yes' in /etc/systemd/journald.conf."
+
+  - id: "4.2.2.2"
+    desc: "Ensure journald is configured to compress large log files"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: journald_conf
+        func: file.parse_key_values
+        params:
+          path: "/etc/systemd/journald.conf"
+    assertion:
+      all_of:
+        - actual: "%{probe.journald_conf}"
+          key: "Compress"
+          compare: equals
+          expected: "yes"
+          message: "Compress is not set to 'yes' in /etc/systemd/journald.conf."
+
+  - id: "4.2.2.3"
+    desc: "Ensure journald is configured to write logfiles to persistent disk"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: journald_conf
+        func: file.parse_key_values
+        params:
+          path: "/etc/systemd/journald.conf"
+    assertion:
+      all_of:
+        - actual: "%{probe.journald_conf}"
+          key: "Storage"
+          compare: equals
+          expected: "persistent"
+          message: "Storage is not set to 'persistent' in /etc/systemd/journald.conf."
+
+  - id: "5.1.1"
+    desc: "Ensure cron daemon is enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: cron_service_status
+        func: services.get_unit_properties
+        params:
+          name: "crond"
+    assertion:
+      all_of:
+        - actual: "%{probe.cron_service_status}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "enabled"
+          message: "The crond service is not enabled."
+
+  - id: "5.1.2"
+    desc: "Ensure permissions on /etc/crontab are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: crontab_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/crontab"
+    assertion:
+      all_of:
+        - actual: "%{probe.crontab_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0600
+          message: "Permissions on /etc/crontab are more permissive than 0600."
+        - actual: "%{probe.crontab_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/crontab is not root."
+        - actual: "%{probe.crontab_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/crontab is not root."
+
+  - id: "5.1.3"
+    desc: "Ensure permissions on /etc/cron.hourly are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: cron_hourly_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/cron.hourly"
+    assertion:
+      all_of:
+        - actual: "%{probe.cron_hourly_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0700
+          message: "Permissions on /etc/cron.hourly are more permissive than 0700."
+        - actual: "%{probe.cron_hourly_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/cron.hourly is not root."
+        - actual: "%{probe.cron_hourly_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/cron.hourly is not root."
+
+  - id: "5.1.4"
+    desc: "Ensure permissions on /etc/cron.daily are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: cron_daily_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/cron.daily"
+    assertion:
+      all_of:
+        - actual: "%{probe.cron_daily_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0700
+          message: "Permissions on /etc/cron.daily are more permissive than 0700."
+        - actual: "%{probe.cron_daily_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/cron.daily is not root."
+        - actual: "%{probe.cron_daily_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/cron.daily is not root."
+
+  - id: "5.1.5"
+    desc: "Ensure permissions on /etc/cron.weekly are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: cron_weekly_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/cron.weekly"
+    assertion:
+      all_of:
+        - actual: "%{probe.cron_weekly_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0700
+          message: "Permissions on /etc/cron.weekly are more permissive than 0700."
+        - actual: "%{probe.cron_weekly_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/cron.weekly is not root."
+        - actual: "%{probe.cron_weekly_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/cron.weekly is not root."
+
+  - id: "5.1.6"
+    desc: "Ensure permissions on /etc/cron.monthly are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: cron_monthly_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/cron.monthly"
+    assertion:
+      all_of:
+        - actual: "%{probe.cron_monthly_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0700
+          message: "Permissions on /etc/cron.monthly are more permissive than 0700."
+        - actual: "%{probe.cron_monthly_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/cron.monthly is not root."
+        - actual: "%{probe.cron_monthly_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/cron.monthly is not root."
+
+  - id: "5.1.7"
+    desc: "Ensure permissions on /etc/cron.d are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: cron_d_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/cron.d"
+    assertion:
+      all_of:
+        - actual: "%{probe.cron_d_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0700
+          message: "Permissions on /etc/cron.d are more permissive than 0700."
+        - actual: "%{probe.cron_d_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/cron.d is not root."
+        - actual: "%{probe.cron_d_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/cron.d is not root."
+
+  - id: "5.1.8"
+    desc: "Ensure at/cron is restricted to authorized users"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: cron_deny_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/cron.deny"
+      - name: at_deny_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/at.deny"
+      - name: cron_allow_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/cron.allow"
+      - name: at_allow_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/at.allow"
+    assertion:
+      all_of:
+        - actual: "%{probe.cron_deny_attrs}"
+          key: "exists"
+          compare: is_falsy
+          message: "/etc/cron.deny file exists."
+        - actual: "%{probe.at_deny_attrs}"
+          key: "exists"
+          compare: is_falsy
+          message: "/etc/at.deny file exists."
+        - all_of:
+            - actual: "%{probe.cron_allow_attrs}"
+              key: "exists"
+              compare: is_true
+              message: "/etc/cron.allow file does not exist."
+            - actual: "%{probe.cron_allow_attrs}"
+              key: "mode"
+              compare: is_less_than_or_equal_to
+              expected: 0600
+              message: "Permissions on /etc/cron.allow are more permissive than 0600."
+            - actual: "%{probe.cron_allow_attrs}"
+              key: "uid"
+              compare: equals
+              expected: 0
+              message: "The owner of /etc/cron.allow is not root."
+            - actual: "%{probe.cron_allow_attrs}"
+              key: "gid"
+              compare: equals
+              expected: 0
+              message: "The group owner of /etc/cron.allow is not root."
+        - all_of:
+            - actual: "%{probe.at_allow_attrs}"
+              key: "exists"
+              compare: is_true
+              message: "/etc/at.allow file does not exist."
+            - actual: "%{probe.at_allow_attrs}"
+              key: "mode"
+              compare: is_less_than_or_equal_to
+              expected: 0600
+              message: "Permissions on /etc/at.allow are more permissive than 0600."
+            - actual: "%{probe.at_allow_attrs}"
+              key: "uid"
+              compare: equals
+              expected: 0
+              message: "The owner of /etc/at.allow is not root."
+            - actual: "%{probe.at_allow_attrs}"
+              key: "gid"
+              compare: equals
+              expected: 0
+              message: "The group owner of /etc/at.allow is not root."
+
+  - id: "5.2.6"
+    desc: "Ensure SSH X11 forwarding is disabled"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: x11_effective_value
+        func: ssh.get_effective_value
+        params:
+          key: "x11forwarding"
+          conditions:
+            user: "root"
+            from: "localhost"
+      - name: x11_ondisk_enabled
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/ssh/sshd_config"
+          pattern: "(?i)^%s*x11forwarding%s+yes"
+    assertion:
+      all_of:
+        - actual: "%{probe.x11_effective_value}"
+          key: "value"
+          compare: equals
+          expected: "no"
+          message: "The effective sshd configuration for X11Forwarding is not 'no'."
+        - actual: "%{probe.x11_ondisk_enabled}"
+          key: "found"
+          compare: is_falsy
+          message: "X11Forwarding is explicitly enabled in /etc/ssh/sshd_config."
+
+  - id: "5.2.7"
+    desc: "Ensure SSH MaxAuthTries is set to 4 or less"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: max_auth_tries_effective
+        func: ssh.get_effective_value
+        params:
+          key: "maxauthtries"
+          conditions: { user: "root", from: "localhost" }
+      - name: max_auth_tries_ondisk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/ssh/sshd_config"
+          pattern: "(?i)^%s*maxauthtries%s+([5-9]|[1-9][0-9]+)"
+    assertion:
+      all_of:
+        - actual: "%{probe.max_auth_tries_effective}"
+          key: "value"
+          compare: is_less_than_or_equal_to
+          expected: 4
+          message: "The effective MaxAuthTries is greater than 4."
+        - actual: "%{probe.max_auth_tries_ondisk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "MaxAuthTries is set to a value greater than 4 in /etc/ssh/sshd_config."
+
+  - id: "5.2.8"
+    desc: "Ensure SSH IgnoreRhosts is enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ignore_rhosts_effective
+        func: ssh.get_effective_value
+        params:
+          key: "ignorerhosts"
+          conditions: { user: "root", from: "localhost" }
+      - name: ignore_rhosts_ondisk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/ssh/sshd_config"
+          pattern: "(?i)^%s*ignorerhosts%s+no"
+    assertion:
+      all_of:
+        - actual: "%{probe.ignore_rhosts_effective}"
+          key: "value"
+          compare: equals
+          expected: "yes"
+          message: "The effective setting for IgnoreRhosts is not 'yes'."
+        - actual: "%{probe.ignore_rhosts_ondisk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "IgnoreRhosts is explicitly set to 'no' in /etc/ssh/sshd_config."
+
+  - id: "5.2.9"
+    desc: "Ensure SSH HostbasedAuthentication is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: hostbased_auth_effective
+        func: ssh.get_effective_value
+        params:
+          key: "hostbasedauthentication"
+          conditions: { user: "root", from: "localhost" }
+      - name: hostbased_auth_ondisk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/ssh/sshd_config"
+          pattern: "(?i)^%s*hostbasedauthentication%s+yes"
+    assertion:
+      all_of:
+        - actual: "%{probe.hostbased_auth_effective}"
+          key: "value"
+          compare: equals
+          expected: "no"
+          message: "The effective setting for HostbasedAuthentication is not 'no'."
+        - actual: "%{probe.hostbased_auth_ondisk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "HostbasedAuthentication is explicitly set to 'yes' in /etc/ssh/sshd_config."
+
+  - id: "5.2.10"
+    desc: "Ensure SSH root login is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: permit_root_login_effective
+        func: ssh.get_effective_value
+        params:
+          key: "permitrootlogin"
+          conditions: { user: "root", from: "localhost" }
+      - name: permit_root_login_ondisk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/ssh/sshd_config"
+          pattern: "(?i)^%s*permitrootlogin%s+yes"
+    assertion:
+      all_of:
+        - actual: "%{probe.permit_root_login_effective}"
+          key: "value"
+          compare: equals
+          expected: "no"
+          message: "The effective setting for PermitRootLogin is not 'no'."
+        - actual: "%{probe.permit_root_login_ondisk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "PermitRootLogin is explicitly set to 'yes' in /etc/ssh/sshd_config."
+
+  - id: "5.3.3"
+    desc: "Ensure sudo commands use pty"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: sudo_use_pty_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sudoers"
+            - "/etc/sudoers.d/*"
+          pattern: "(?i)^%s*defaults.*use_pty"
+    assertion:
+      all_of:
+        - actual: "%{probe.sudo_use_pty_check}"
+          key: "found"
+          compare: is_true
+          message: "The 'use_pty' option is not enabled in the sudo configuration."
+
+  - id: "5.3.4"
+    desc: "Ensure users must provide password for escalation"
+    level: ["l2_server", "l2_workstation"]
+    status: automated
+    probes:
+      - name: sudo_nopasswd_check
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/sudoers"
+            - "/etc/sudoers.d/*"
+          pattern: "^[^#].*NOPASSWD"
+    assertion:
+      all_of:
+        - actual: "%{probe.sudo_nopasswd_check}"
+          key: "found"
+          compare: is_falsy
+          message: "Found sudo configurations that allow privilege escalation without a password (NOPASSWD)."
+
+  - id: "5.6.1.1"
+    desc: "Ensure password expiration is 365 days or less"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: login_defs
+        func: file.parse_key_values
+        params:
+          path: "/etc/login.defs"
+      - name: shadow_entries
+        func: users.get_shadow_entries
+        params: {}
+    assertion:
+      all_of:
+        - actual: "%{probe.login_defs}"
+          key: "PASS_MAX_DAYS"
+          compare: is_less_than_or_equal_to
+          expected: 365
+          message: "Default PASS_MAX_DAYS in /etc/login.defs is greater than 365."
+        - actual: "%{probe.shadow_entries}"
+          compare: for_all
+          message: "Found users with password expiration greater than 365 days."
+          expected:
+            all_of:
+              - key: "pass_max_days"
+                compare: is_less_than_or_equal_to
+                expected: 365
+
+  - id: "5.6.1.2"
+    desc: "Ensure minimum days between password changes is 7 or more"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: login_defs
+        func: file.parse_key_values
+        params: { path: "/etc/login.defs" }
+      - name: shadow_entries
+        func: users.get_shadow_entries
+        params: {}
+    assertion:
+      all_of:
+        - actual: "%{probe.login_defs}"
+          key: "PASS_MIN_DAYS"
+          compare: is_greater_than_or_equal_to
+          expected: 7
+          message: "Default PASS_MIN_DAYS in /etc/login.defs is less than 7."
+        - actual: "%{probe.shadow_entries}"
+          compare: for_all
+          message: "Found users with minimum days between password changes less than 7."
+          expected:
+            all_of:
+              - key: "pass_min_days"
+                compare: is_greater_than_or_equal_to
+                expected: 7
+
+  - id: "5.6.1.3"
+    desc: "Ensure password expiration warning days is 7 or more"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: login_defs
+        func: file.parse_key_values
+        params: { path: "/etc/login.defs" }
+      - name: shadow_entries
+        func: users.get_shadow_entries
+        params: {}
+    assertion:
+      all_of:
+        - actual: "%{probe.login_defs}"
+          key: "PASS_WARN_AGE"
+          compare: is_greater_than_or_equal_to
+          expected: 7
+          message: "Default PASS_WARN_AGE in /etc/login.defs is less than 7."
+        - actual: "%{probe.shadow_entries}"
+          compare: for_all
+          message: "Found users with password expiration warning days less than 7."
+          expected:
+            all_of:
+              - key: "pass_warn_age"
+                compare: is_greater_than_or_equal_to
+                expected: 7
+
+  - id: "5.6.1.4"
+    desc: "Ensure inactive password lock is 30 days or less"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: user_defaults
+        func: users.get_defaults
+        params: {}
+      - name: shadow_entries
+        func: users.get_shadow_entries
+        params: {}
+    assertion:
+      all_of:
+        - actual: "%{probe.user_defaults}"
+          key: "INACTIVE"
+          compare: is_less_than_or_equal_to
+          expected: 30
+          message: "Default INACTIVE setting is greater than 30 or disabled (-1)."
+        - actual: "%{probe.user_defaults}"
+          key: "INACTIVE"
+          compare: is_not_equal_to
+          expected: -1
+          message: "Default INACTIVE setting is disabled (-1)."
+        - actual: "%{probe.shadow_entries}"
+          compare: for_all
+          message: "Found users with an inactive password lock period greater than 30 days."
+          expected:
+            all_of:
+              - key: "inactive"
+                compare: is_less_than_or_equal_to
+                expected: 30
+              - key: "inactive"
+                compare: is_not_equal_to
+                expected: -1
+
+  - id: "6.1.3"
+    desc: "Ensure permissions on /etc/passwd are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: passwd_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/passwd"
+    assertion:
+      all_of:
+        - actual: "%{probe.passwd_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0644
+          message: "Permissions on /etc/passwd are more permissive than 0644."
+        - actual: "%{probe.passwd_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/passwd is not root."
+        - actual: "%{probe.passwd_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/passwd is not root."
+
+  - id: "6.1.4"
+    desc: "Ensure permissions on /etc/shadow are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: shadow_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/shadow"
+    assertion:
+      all_of:
+        - actual: "%{probe.shadow_attrs}"
+          key: "mode"
+          compare: equals
+          expected: 0000
+          message: "Permissions on /etc/shadow are not 0000."
+        - actual: "%{probe.shadow_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/shadow is not root."
+        - actual: "%{probe.shadow_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/shadow is not root."
+
+  - id: "6.1.5"
+    desc: "Ensure permissions on /etc/group are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: group_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/group"
+    assertion:
+      all_of:
+        - actual: "%{probe.group_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0644
+          message: "Permissions on /etc/group are more permissive than 0644."
+        - actual: "%{probe.group_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/group is not root."
+        - actual: "%{probe.group_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/group is not root."
+
+  - id: "6.1.6"
+    desc: "Ensure permissions on /etc/gshadow are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      name: gshadow_attrs
+      func: permissions.get_attributes
+      params: { path: "/etc/gshadow" }
+    assertion:
+      all_of:
+        - actual: "%{probe.gshadow_attrs}"
+          key: "mode"
+          compare: equals
+          expected: 0000
+          message: "Permissions on /etc/gshadow must be 0000"
+        - actual: "%{probe.gshadow_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "Owner of /etc/gshadow must be root (uid 0)"
+        - actual: "%{probe.gshadow_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "Group of /etc/gshadow must be root (gid 0)"
+
+  - id: "6.1.7"
+    desc: "Ensure permissions on /etc/passwd- are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: passwd_minus_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/passwd-"
+    assertion:
+      all_of:
+        - actual: "%{probe.passwd_minus_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0644
+          message: "Permissions on /etc/passwd- are more permissive than 0644."
+        - actual: "%{probe.passwd_minus_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/passwd- is not root."
+        - actual: "%{probe.passwd_minus_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/passwd- is not root."
+
+  - id: "6.1.8"
+    desc: "Ensure permissions on /etc/shadow- are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: shadow_minus_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/shadow-"
+    assertion:
+      all_of:
+        - actual: "%{probe.shadow_minus_attrs}"
+          key: "mode"
+          compare: equals
+          expected: 0000
+          message: "Permissions on /etc/shadow- are not 0000."
+        - actual: "%{probe.shadow_minus_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/shadow- is not root."
+        - actual: "%{probe.shadow_minus_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/shadow- is not root."
+
+  - id: "6.1.9"
+    desc: "Ensure permissions on /etc/group- are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: group_minus_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/group-"
+    assertion:
+      all_of:
+        - actual: "%{probe.group_minus_attrs}"
+          key: "mode"
+          compare: is_less_than_or_equal_to
+          expected: 0644
+          message: "Permissions on /etc/group- are more permissive than 0644."
+        - actual: "%{probe.group_minus_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/group- is not root."
+        - actual: "%{probe.group_minus_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/group- is not root."
+
+  - id: "6.1.10"
+    desc: "Ensure permissions on /etc/gshadow- are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: gshadow_minus_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/gshadow-"
+    assertion:
+      all_of:
+        - actual: "%{probe.gshadow_minus_attrs}"
+          key: "mode"
+          compare: equals
+          expected: 0000
+          message: "Permissions on /etc/gshadow- are not 0000."
+        - actual: "%{probe.gshadow_minus_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/gshadow- is not root."
+        - actual: "%{probe.gshadow_minus_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/gshadow- is not root."
+
+  - id: "6.2.1"
+    desc: "Ensure password fields are not empty"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: empty_password_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^[^:]*::"
+    assertion:
+      all_of:
+        - actual: "%{probe.empty_password_check}"
+          key: "found"
+          compare: is_falsy
+          message: "Found accounts in /etc/shadow with empty passwords."
+
+  - id: "6.2.7"
+    desc: "Ensure no users have .forward files"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: forward_files_check
+        func: users.find_files
+        params: { filename: ".forward" }
+    assertion:
+      all_of:
+        - actual: "%{probe.forward_files_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Users were found with .forward files."
+
+  - id: "6.2.8"
+    desc: "Ensure no users have .netrc files"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: netrc_files_check
+        func: users.find_files
+        params: { filename: ".netrc" }
+    assertion:
+      all_of:
+        - actual: "%{probe.netrc_files_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Users were found with .netrc files."
+
+  - id: "6.2.9"
+    desc: "Ensure users .netrc Files are not group or world accessible"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: netrc_files
+        func: users.find_files
+        params:
+          filename: ".netrc"
+      - name: netrc_files_attrs
+        func: meta.map
+        params:
+          source_probe: "netrc_files"
+          apply_func: "permissions.get_attributes"
+          params_template:
+            path: "%{item.path}"
+    assertion:
+      all_of:
+        - actual: "%{probe.netrc_files_attrs}"
+          compare: for_all
+          message: "Found .netrc files with permissions more permissive than 0600."
+          expected:
+            all_of:
+              - key: "mode"
+                compare: is_less_than_or_equal_to
+                expected: 0600
+
+  - id: "6.2.10"
+    desc: "Ensure no users have .rhosts files"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rhosts_files_check
+        func: users.find_files
+        params: { filename: ".rhosts" }
+    assertion:
+      all_of:
+        - actual: "%{probe.rhosts_files_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Users were found with .rhosts files."
+
+  - id: "6.2.12"
+    desc: "Ensure no duplicate UIDs exist"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: duplicate_check
+        func: file.find_duplicate_values_in_field
+        params:
+          path: "/etc/passwd"
+          field_index: 3
+          key_name: "uid"
+          value_index: 1
+    assertion:
+      all_of:
+        - actual: "%{probe.duplicate_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found duplicate UIDs in /etc/passwd."
+
+  - id: "6.2.13"
+    desc: "Ensure no duplicate GIDs exist"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: duplicate_check
+        func: file.find_duplicate_values_in_field
+        params:
+          path: "/etc/group"
+          field_index: 3
+          key_name: "gid"
+          value_index: 1
+    assertion:
+      all_of:
+        - actual: "%{probe.duplicate_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found duplicate GIDs in /etc/group."
+
+  - id: "6.2.14"
+    desc: "Ensure no duplicate user names exist"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: duplicate_check
+        func: file.find_duplicate_values_in_field
+        params:
+          path: "/etc/passwd"
+          field_index: 1
+          key_name: "username"
+          value_index: 3
+    assertion:
+      all_of:
+        - actual: "%{probe.duplicate_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found duplicate usernames in /etc/passwd."
+
+  - id: "6.2.15"
+    desc: "Ensure no duplicate group names exist"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: duplicate_check
+        func: file.find_duplicate_values_in_field
+        params:
+          path: "/etc/group"
+          field_index: 1
+          key_name: "groupname"
+          value_index: 3
+    assertion:
+      all_of:
+        - actual: "%{probe.duplicate_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found duplicate group names in /etc/group."

@@ -1,0 +1,24 @@
+loongshield_add_lua_library(
+    NAME lua-curlv3
+    SOURCES
+        Lua-cURLv3/src/l52util.c
+        Lua-cURLv3/src/lceasy.c
+        Lua-cURLv3/src/lcerror.c
+        Lua-cURLv3/src/lchttppost.c
+        Lua-cURLv3/src/lcmime.c
+        Lua-cURLv3/src/lcmulti.c
+        Lua-cURLv3/src/lcshare.c
+        Lua-cURLv3/src/lcurl.c
+        Lua-cURLv3/src/lcurlapi.c
+        Lua-cURLv3/src/lcutils.c
+    INCLUDE_DIRS
+        ${CURL_INCLUDE_DIR}
+    COMPILE_DEFINITIONS
+        LUAJIT_VERSION_NUM=20199
+    COMPILE_OPTIONS
+        -Wno-deprecated-declarations
+    DEPENDENCIES
+        curl
+    LINK_LIBRARIES
+        curl
+)

@@ -1,0 +1,55 @@
+[submodule "deps/kmod/kmod"]
+	path = deps/kmod/kmod
+	url = https://github.com/auacc/kmod.git
+[submodule "deps/lpeg/lpeg"]
+	path = deps/lpeg/lpeg
+	url = https://github.com/auacc/lpeg.git
+[submodule "deps/lua-curl/Lua-cURLv3"]
+	path = deps/lua-curl/Lua-cURLv3
+	url = https://github.com/auacc/Lua-cURLv3.git
+[submodule "deps/libuv/libuv"]
+	path = deps/libuv/libuv
+	url = https://github.com/libuv/libuv.git
+[submodule "deps/lua-cjson/lua-cjson"]
+	path = deps/lua-cjson/lua-cjson
+	url = https://github.com/mpx/lua-cjson.git
+[submodule "deps/lua-compat-5.3/lua-compat-5.3"]
+	path = deps/lua-compat-5.3/lua-compat-5.3
+	url = https://github.com/lunarmodules/lua-compat-5.3.git
+[submodule "deps/lua-openssl/lua-auxiliar"]
+	path = deps/lua-openssl/lua-auxiliar
+	url = https://github.com/zhaozg/lua-auxiliar.git
+[submodule "deps/lua-openssl/lua-openssl"]
+	path = deps/lua-openssl/lua-openssl
+	url = https://github.com/zhaozg/lua-openssl.git
+[submodule "deps/luafilesystem/luafilesystem"]
+	path = deps/luafilesystem/luafilesystem
+	url = https://github.com/lunarmodules/luafilesystem.git
+[submodule "deps/luv/luv"]
+	path = deps/luv/luv
+	url = https://github.com/luvit/luv.git
+[submodule "deps/luajit/luajit"]
+	path = deps/luajit/luajit
+	url = https://github.com/LuaJIT/LuaJIT.git
+[submodule "deps/openssl/openssl"]
+	path = deps/openssl/openssl
+	url = https://github.com/openssl/openssl.git
+[submodule "deps/luaposix/luaposix"]
+	path = deps/luaposix/luaposix
+	url = https://github.com/luaposix/luaposix.git
+[submodule "deps/curl/curl"]
+	path = deps/curl/curl
+	url = https://github.com/curl/curl.git
+[submodule "deps/libbpf/libbpf"]
+	path = deps/libbpf/libbpf
+	url = https://github.com/libbpf/libbpf.git
+	branch = v1.4.2
+[submodule "deps/luasocket/luasocket"]
+	path = deps/luasocket/luasocket
+	url = https://github.com/lunarmodules/luasocket
+[submodule "deps/lyaml/lyaml"]
+	path = deps/lyaml/lyaml
+	url = https://github.com/gvvaughan/lyaml.git
+[submodule "deps/libcap/libcap"]
+	path = deps/libcap/libcap
+	url = https://git.kernel.org/pub/scm/libs/libcap/libcap.git

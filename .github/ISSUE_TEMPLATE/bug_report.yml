@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible defect in Loongshield
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Include commands, inputs, and exact output.
+      placeholder: |
+        1. Run ...
+        2. Use profile ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Distro, version, kernel, and package/source build context.
+      placeholder: Anolis OS 23.3, kernel 5.x, built from main
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: testing
+    attributes:
+      label: Additional context
+      description: Tests run, logs, profile snippets, or packaging details.

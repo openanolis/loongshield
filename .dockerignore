@@ -1,0 +1,55 @@
+# Build artifacts
+build/
+build-docker/
+*.o
+*.so
+*.a
+*.lo
+*.la
+.libs/
+.deps/
+
+# Kernel module build artifacts
+src/kmod/*.ko
+src/kmod/*.mod
+src/kmod/*.mod.c
+src/kmod/*.o
+src/kmod/.*.cmd
+src/kmod/modules.order
+src/kmod/Module.symvers
+src/kmod/.tmp_versions/
+
+# Git
+.git/
+.gitignore
+.gitmodules
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker files (no need to copy into image)
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Notebooks
+notebooks/
+*.ipynb
+
+# Temporary files
+tmp/
+temp/
+*.tmp

@@ -1,0 +1,21 @@
+set(SRCS_LIBBPF
+    libbpf/src/bpf.c
+    libbpf/src/bpf_prog_linfo.c
+    libbpf/src/btf.c
+    libbpf/src/btf_dump.c
+    libbpf/src/elf.c
+    libbpf/src/features.c
+    libbpf/src/gen_loader.c
+    libbpf/src/hashmap.c
+    libbpf/src/libbpf.c
+    libbpf/src/libbpf_errno.c
+    libbpf/src/libbpf_probes.c
+    libbpf/src/linker.c
+    libbpf/src/netlink.c
+    libbpf/src/nlattr.c
+    libbpf/src/relo_core.c
+    libbpf/src/ringbuf.c
+    libbpf/src/str_error.c
+    libbpf/src/strset.c
+    libbpf/src/usdt.c
+    libbpf/src/zip.c)

@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a new capability or improvement
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What operator, maintainer, or contributor problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you want.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include workarounds or rejected approaches if relevant.
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Mention distro, packaging, security, or compatibility implications.

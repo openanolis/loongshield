@@ -1,0 +1,642 @@
+---
+policy: "AgentOS Security Baseline"
+title: "AgentOS Security Baseline"
+id: agentos_baseline
+version: "0.0.2"
+description: >
+  Minimal security baseline for AI agent workloads.
+  Covers kernel hardening, network isolation, filesystem protection,
+  secret file permissions, and minimal service footprint.
+  Threat model: prompt-injection privilege escalation, network abuse, resource abuse.
+
+levels:
+  - id: baseline
+
+rules:
+  # -----------------------------------------------------------------------
+  # Category: kernel
+  # -----------------------------------------------------------------------
+
+  - id: kernel.aslr
+    desc: Ensure address space layout randomization is fully enabled
+    level: [baseline]
+    status: automated
+    probes:
+      - name: aslr
+        func: sysctl.get_live_value
+        params: { key: kernel.randomize_va_space }
+    assertion:
+      actual: "%{probe.aslr}"
+      key: value
+      compare: equals
+      expected: "2"
+      message: "ASLR is not set to full randomization (expected 2)."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: kernel.randomize_va_space, value: "2" }
+
+  - id: kernel.dmesg_restrict
+    desc: Ensure kernel log access is restricted to privileged users
+    level: [baseline]
+    status: automated
+    probes:
+      - name: dmesg
+        func: sysctl.get_live_value
+        params: { key: kernel.dmesg_restrict }
+    assertion:
+      actual: "%{probe.dmesg}"
+      key: value
+      compare: equals
+      expected: "1"
+      message: "kernel.dmesg_restrict is not set to 1."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: kernel.dmesg_restrict, value: "1" }
+
+  - id: kernel.kptr_restrict
+    desc: Ensure kernel pointer addresses are hidden from unprivileged users
+    level: [baseline]
+    status: automated
+    probes:
+      - name: kptr
+        func: sysctl.get_live_value
+        params: { key: kernel.kptr_restrict }
+    assertion:
+      actual: "%{probe.kptr}"
+      key: value
+      compare: is_greater_than_or_equal_to
+      expected: 1
+      message: "kernel.kptr_restrict must be >= 1."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: kernel.kptr_restrict, value: "1" }
+
+  - id: kernel.ptrace_scope
+    desc: Ensure ptrace scope restricts process tracing to parent processes
+    level: [baseline]
+    status: automated
+    probes:
+      - name: ptrace
+        func: sysctl.get_live_value
+        params: { key: kernel.yama.ptrace_scope }
+    assertion:
+      actual: "%{probe.ptrace}"
+      key: value
+      compare: is_greater_than_or_equal_to
+      expected: 1
+      message: "kernel.yama.ptrace_scope must be >= 1."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: kernel.yama.ptrace_scope, value: "1" }
+
+  - id: kernel.suid_dumpable
+    desc: Ensure setuid programs cannot create core dumps
+    level: [baseline]
+    status: automated
+    probes:
+      - name: suid_dump
+        func: sysctl.get_live_value
+        params: { key: fs.suid_dumpable }
+    assertion:
+      actual: "%{probe.suid_dump}"
+      key: value
+      compare: equals
+      expected: "0"
+      message: "fs.suid_dumpable must be 0 — setuid core dumps can leak credentials."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: fs.suid_dumpable, value: "0" }
+
+  - id: kernel.core_uses_pid
+    desc: Ensure core dump filenames include the PID for attribution
+    level: [baseline]
+    status: automated
+    probes:
+      - name: core_pid
+        func: sysctl.get_live_value
+        params: { key: kernel.core_uses_pid }
+    assertion:
+      actual: "%{probe.core_pid}"
+      key: value
+      compare: equals
+      expected: "1"
+      message: "kernel.core_uses_pid must be 1."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: kernel.core_uses_pid, value: "1" }
+
+  # -----------------------------------------------------------------------
+  # Category: net
+  # -----------------------------------------------------------------------
+
+  - id: net.ip_forward
+    desc: Ensure IPv4 forwarding is disabled — agents are not routers
+    level: [baseline]
+    status: automated
+    probes:
+      - name: forward
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.ip_forward }
+    assertion:
+      actual: "%{probe.forward}"
+      key: value
+      compare: equals
+      expected: "0"
+      message: "net.ipv4.ip_forward must be 0."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: net.ipv4.ip_forward, value: "0" }
+
+  - id: net.send_redirects
+    desc: Disable sending ICMP redirects — agents are not routers
+    level: [baseline]
+    status: automated
+    probes:
+      - name: all
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.all.send_redirects }
+      - name: default
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.default.send_redirects }
+    assertion:
+      all_of:
+        - actual: "%{probe.all}"
+          key: value
+          compare: equals
+          expected: "0"
+          message: "net.ipv4.conf.all.send_redirects must be 0."
+        - actual: "%{probe.default}"
+          key: value
+          compare: equals
+          expected: "0"
+          message: "net.ipv4.conf.default.send_redirects must be 0."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.all.send_redirects, value: "0" }
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.default.send_redirects, value: "0" }
+
+  - id: net.accept_redirects
+    desc: Disable accepting ICMP redirects — prevents routing table manipulation
+    level: [baseline]
+    status: automated
+    probes:
+      - name: all
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.all.accept_redirects }
+      - name: default
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.default.accept_redirects }
+    assertion:
+      all_of:
+        - actual: "%{probe.all}"
+          key: value
+          compare: equals
+          expected: "0"
+          message: "net.ipv4.conf.all.accept_redirects must be 0."
+        - actual: "%{probe.default}"
+          key: value
+          compare: equals
+          expected: "0"
+          message: "net.ipv4.conf.default.accept_redirects must be 0."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.all.accept_redirects, value: "0" }
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.default.accept_redirects, value: "0" }
+
+  - id: net.source_route
+    desc: Disable acceptance of source-routed packets — prevents traffic hijacking
+    level: [baseline]
+    status: automated
+    probes:
+      - name: all
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.all.accept_source_route }
+      - name: default
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.default.accept_source_route }
+    assertion:
+      all_of:
+        - actual: "%{probe.all}"
+          key: value
+          compare: equals
+          expected: "0"
+          message: "net.ipv4.conf.all.accept_source_route must be 0."
+        - actual: "%{probe.default}"
+          key: value
+          compare: equals
+          expected: "0"
+          message: "net.ipv4.conf.default.accept_source_route must be 0."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.all.accept_source_route, value: "0" }
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.default.accept_source_route, value: "0" }
+
+  - id: net.syn_cookies
+    desc: Ensure TCP SYN cookies are enabled to mitigate SYN flood attacks
+    level: [baseline]
+    status: automated
+    probes:
+      - name: syncookies
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.tcp_syncookies }
+    assertion:
+      actual: "%{probe.syncookies}"
+      key: value
+      compare: equals
+      expected: "1"
+      message: "net.ipv4.tcp_syncookies must be 1."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: net.ipv4.tcp_syncookies, value: "1" }
+
+  - id: net.rp_filter
+    desc: Ensure reverse path filtering is enabled to block spoofed packets
+    level: [baseline]
+    status: automated
+    probes:
+      - name: rpfilter_all
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.all.rp_filter }
+      - name: rpfilter_default
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.default.rp_filter }
+    assertion:
+      all_of:
+        - actual: "%{probe.rpfilter_all}"
+          key: value
+          compare: is_greater_than_or_equal_to
+          expected: 1
+          message: "net.ipv4.conf.all.rp_filter must be >= 1."
+        - actual: "%{probe.rpfilter_default}"
+          key: value
+          compare: is_greater_than_or_equal_to
+          expected: 1
+          message: "net.ipv4.conf.default.rp_filter must be >= 1."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.all.rp_filter, value: "1" }
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.default.rp_filter, value: "1" }
+
+  - id: net.log_martians
+    desc: Ensure martian packet logging is enabled for anomaly detection
+    level: [baseline]
+    status: automated
+    probes:
+      - name: martians_all
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.all.log_martians }
+      - name: martians_default
+        func: sysctl.get_live_value
+        params: { key: net.ipv4.conf.default.log_martians }
+    assertion:
+      all_of:
+        - actual: "%{probe.martians_all}"
+          key: value
+          compare: equals
+          expected: "1"
+          message: "net.ipv4.conf.all.log_martians must be 1."
+        - actual: "%{probe.martians_default}"
+          key: value
+          compare: equals
+          expected: "1"
+          message: "net.ipv4.conf.default.log_martians must be 1."
+    reinforce:
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.all.log_martians, value: "1" }
+      - action: sysctl.set_value
+        params: { key: net.ipv4.conf.default.log_martians, value: "1" }
+
+  # -----------------------------------------------------------------------
+  # Category: fs
+  # -----------------------------------------------------------------------
+
+  - id: fs.shm_noexec
+    desc: /dev/shm must be mounted noexec to prevent in-memory code execution
+    level: [baseline]
+    status: automated
+    probes:
+      - name: shm
+        func: mounts.get_mount_info
+        params: { path: /dev/shm }
+    assertion:
+      actual: "%{probe.shm}"
+      key: options
+      compare: has_key
+      expected: noexec
+      message: "/dev/shm is not mounted with noexec."
+    reinforce:
+      - action: mounts.remount
+        params: { path: /dev/shm, add_options: [noexec] }
+
+  - id: fs.shm_nosuid
+    desc: /dev/shm must be mounted nosuid to prevent setuid escalation
+    level: [baseline]
+    status: automated
+    probes:
+      - name: shm
+        func: mounts.get_mount_info
+        params: { path: /dev/shm }
+    assertion:
+      actual: "%{probe.shm}"
+      key: options
+      compare: has_key
+      expected: nosuid
+      message: "/dev/shm is not mounted with nosuid."
+    reinforce:
+      - action: mounts.remount
+        params: { path: /dev/shm, add_options: [nosuid] }
+
+  - id: fs.shm_nodev
+    desc: /dev/shm must be mounted nodev to prevent device file creation
+    level: [baseline]
+    status: automated
+    probes:
+      - name: shm
+        func: mounts.get_mount_info
+        params: { path: /dev/shm }
+    assertion:
+      actual: "%{probe.shm}"
+      key: options
+      compare: has_key
+      expected: nodev
+      message: "/dev/shm is not mounted with nodev."
+    reinforce:
+      - action: mounts.remount
+        params: { path: /dev/shm, add_options: [nodev] }
+
+  # -----------------------------------------------------------------------
+  # Category: secrets
+  # -----------------------------------------------------------------------
+
+  - id: secrets.shadow_perms
+    desc: /etc/shadow must be root-owned with no permissions
+    level: [baseline]
+    status: automated
+    probes:
+      - name: shadow
+        func: permissions.get_attributes
+        params: { path: /etc/shadow }
+    assertion:
+      all_of:
+        - actual: "%{probe.shadow}"
+          key: uid
+          compare: equals
+          expected: 0
+          message: "/etc/shadow is not owned by root (uid 0)."
+        - actual: "%{probe.shadow}"
+          key: gid
+          compare: equals
+          expected: 0
+          message: "/etc/shadow group is not root (gid 0)."
+        - actual: "%{probe.shadow}"
+          key: mode
+          compare: equals
+          expected: 0000
+          message: "/etc/shadow permissions must be 0000."
+    reinforce:
+      - action: permissions.set_attributes
+        params: { path: /etc/shadow, uid: 0, gid: 0, mode: 0 }
+
+  - id: secrets.passwd_perms
+    desc: /etc/passwd must be root-owned and world-readable only
+    level: [baseline]
+    status: automated
+    probes:
+      - name: passwd
+        func: permissions.get_attributes
+        params: { path: /etc/passwd }
+    assertion:
+      all_of:
+        - actual: "%{probe.passwd}"
+          key: uid
+          compare: equals
+          expected: 0
+          message: "/etc/passwd is not owned by root (uid 0)."
+        - actual: "%{probe.passwd}"
+          key: gid
+          compare: equals
+          expected: 0
+          message: "/etc/passwd group is not root (gid 0)."
+        - actual: "%{probe.passwd}"
+          key: mode
+          compare: equals
+          expected: 0644
+          message: "/etc/passwd permissions must be 0644."
+    reinforce:
+      - action: permissions.set_attributes
+        params: { path: /etc/passwd, uid: 0, gid: 0, mode: 420 }
+
+  - id: secrets.gshadow_perms
+    desc: /etc/gshadow must be root-owned with no permissions
+    level: [baseline]
+    status: automated
+    probes:
+      - name: gshadow
+        func: permissions.get_attributes
+        params: { path: /etc/gshadow }
+    assertion:
+      all_of:
+        - actual: "%{probe.gshadow}"
+          key: uid
+          compare: equals
+          expected: 0
+          message: "/etc/gshadow is not owned by root (uid 0)."
+        - actual: "%{probe.gshadow}"
+          key: gid
+          compare: equals
+          expected: 0
+          message: "/etc/gshadow group is not root (gid 0)."
+        - actual: "%{probe.gshadow}"
+          key: mode
+          compare: equals
+          expected: 0000
+          message: "/etc/gshadow permissions must be 0000."
+    reinforce:
+      - action: permissions.set_attributes
+        params: { path: /etc/gshadow, uid: 0, gid: 0, mode: 0 }
+
+  - id: secrets.group_perms
+    desc: /etc/group must be root-owned and world-readable only
+    level: [baseline]
+    status: automated
+    probes:
+      - name: group
+        func: permissions.get_attributes
+        params: { path: /etc/group }
+    assertion:
+      all_of:
+        - actual: "%{probe.group}"
+          key: uid
+          compare: equals
+          expected: 0
+          message: "/etc/group is not owned by root (uid 0)."
+        - actual: "%{probe.group}"
+          key: gid
+          compare: equals
+          expected: 0
+          message: "/etc/group group is not root (gid 0)."
+        - actual: "%{probe.group}"
+          key: mode
+          compare: equals
+          expected: 0644
+          message: "/etc/group permissions must be 0644."
+    reinforce:
+      - action: permissions.set_attributes
+        params: { path: /etc/group, uid: 0, gid: 0, mode: 420 }
+
+  # -----------------------------------------------------------------------
+  # Category: services
+  # -----------------------------------------------------------------------
+
+  - id: services.xinetd_absent
+    desc: Ensure xinetd is not installed — legacy super-server with large attack surface
+    level: [baseline]
+    status: automated
+    probes:
+      - name: xinetd
+        func: packages.get_installed
+        params:
+          name: xinetd
+    assertion:
+      actual: "%{probe.xinetd}"
+      key: count
+      compare: equals
+      expected: 0
+      message: "xinetd is installed and must be removed."
+    reinforce:
+      - action: packages.remove
+        params: { name: xinetd }
+
+  - id: services.avahi_disabled
+    desc: Avahi (mDNS) must be disabled — enables network enumeration by agents
+    level: [baseline]
+    status: automated
+    probes:
+      - name: avahi
+        func: services.get_unit_properties
+        params: { name: avahi-daemon.service }
+    assertion:
+      any_of:
+        - all_of:
+            - actual: "%{probe.avahi}"
+              key: UnitFileState
+              compare: equals
+              expected: disabled
+              message: "avahi-daemon.service is not disabled."
+            - any_of:
+                - actual: "%{probe.avahi}"
+                  key: ActiveState
+                  compare: equals
+                  expected: inactive
+                  message: "avahi-daemon.service is still running."
+                - actual: "%{probe.avahi}"
+                  key: ActiveState
+                  compare: equals
+                  expected: failed
+                  message: "avahi-daemon.service is still running."
+                - actual: "%{probe.avahi}"
+                  key: ActiveState
+                  compare: equals
+                  expected: unknown
+                  message: "avahi-daemon.service is still running."
+        - all_of:
+            - actual: "%{probe.avahi}"
+              key: UnitFileState
+              compare: equals
+              expected: masked
+              message: "avahi-daemon.service is not masked."
+            - any_of:
+                - actual: "%{probe.avahi}"
+                  key: ActiveState
+                  compare: equals
+                  expected: inactive
+                  message: "avahi-daemon.service is still running."
+                - actual: "%{probe.avahi}"
+                  key: ActiveState
+                  compare: equals
+                  expected: failed
+                  message: "avahi-daemon.service is still running."
+                - actual: "%{probe.avahi}"
+                  key: ActiveState
+                  compare: equals
+                  expected: unknown
+                  message: "avahi-daemon.service is still running."
+        - actual: "%{probe.avahi}"
+          key: UnitFileState
+          compare: equals
+          expected: not-found
+          message: "avahi-daemon.service is not present."
+    reinforce:
+      - action: services.set_filestate
+        params: { name: avahi-daemon.service, state: disable }
+      - action: services.set_active_state
+        params: { name: avahi-daemon.service, state: stop }
+
+  - id: services.cups_disabled
+    desc: CUPS (print spooler) must be disabled — unnecessary network listener
+    level: [baseline]
+    status: automated
+    probes:
+      - name: cups
+        func: services.get_unit_properties
+        params: { name: cups.service }
+    assertion:
+      any_of:
+        - all_of:
+            - actual: "%{probe.cups}"
+              key: UnitFileState
+              compare: equals
+              expected: disabled
+              message: "cups.service is not disabled."
+            - any_of:
+                - actual: "%{probe.cups}"
+                  key: ActiveState
+                  compare: equals
+                  expected: inactive
+                  message: "cups.service is still running."
+                - actual: "%{probe.cups}"
+                  key: ActiveState
+                  compare: equals
+                  expected: failed
+                  message: "cups.service is still running."
+                - actual: "%{probe.cups}"
+                  key: ActiveState
+                  compare: equals
+                  expected: unknown
+                  message: "cups.service is still running."
+        - all_of:
+            - actual: "%{probe.cups}"
+              key: UnitFileState
+              compare: equals
+              expected: masked
+              message: "cups.service is not masked."
+            - any_of:
+                - actual: "%{probe.cups}"
+                  key: ActiveState
+                  compare: equals
+                  expected: inactive
+                  message: "cups.service is still running."
+                - actual: "%{probe.cups}"
+                  key: ActiveState
+                  compare: equals
+                  expected: failed
+                  message: "cups.service is still running."
+                - actual: "%{probe.cups}"
+                  key: ActiveState
+                  compare: equals
+                  expected: unknown
+                  message: "cups.service is still running."
+        - actual: "%{probe.cups}"
+          key: UnitFileState
+          compare: equals
+          expected: not-found
+          message: "cups.service is not present."
+    reinforce:
+      - action: services.set_filestate
+        params: { name: cups.service, state: disable }
+      - action: services.set_active_state
+        params: { name: cups.service, state: stop }

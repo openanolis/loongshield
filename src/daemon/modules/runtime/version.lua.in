@@ -1,0 +1,6 @@
+local version = {
+    version = "@LOONGSHIELD_VERSION@",
+    commit = "@LOONGSHIELD_COMMIT@"
+}
+
+return version

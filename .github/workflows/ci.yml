@@ -1,0 +1,73 @@
+name: CI
+
+on:
+    push:
+        branches: [master, main]
+    pull_request:
+        branches: [master, main]
+    workflow_dispatch:
+
+jobs:
+    # Build and package RPM using the Anolis container via docker-compose
+    build-rpm:
+        name: Build RPM (Anolis 23.3)
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  submodules: recursive
+
+            - name: Build RPM in Anolis container
+              run: make rpm-in-anolis
+
+            - name: Upload RPM artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: loongshield-rpm
+                  path: build/rpmbuild-anolis/RPMS/**/*.rpm
+                  if-no-files-found: error
+
+    # Multi-distro compilation check
+    build-check:
+        name: Build on ${{ matrix.image }}
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                image:
+                    - "openanolis/anolisos:8"
+                    - "alibaba-cloud-linux-3-registry.cn-hangzhou.cr.aliyuncs.com/alinux3/alinux3:3.9"
+                    - "fedora:40"
+        container:
+            image: ${{ matrix.image }}
+
+        steps:
+            - name: Install git (pre-checkout)
+              run: |
+                  if command -v dnf >/dev/null 2>&1; then
+                      dnf install -y git
+                  elif command -v yum >/dev/null 2>&1; then
+                      yum install -y git
+                  else
+                      echo "No supported package manager found (dnf/yum)." >&2
+                      exit 1
+                  fi
+
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  submodules: recursive
+
+            - name: Install dependencies
+              run: make buildreqs
+
+            - name: Build
+              run: make JOBS=$(nproc)
+
+            - name: Run quick tests
+              run: make test-quick

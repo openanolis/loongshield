@@ -1,0 +1,1643 @@
+---
+policy: "DengBao Level 3 Automated Profile for Alibaba Cloud Linux 3"
+title: "DengBao Level 3 Automated Profile for Alibaba Cloud Linux 3"
+id: dengbao_alinux3_l3
+version: "0.2.0"
+source: GB/T 22239-2019
+description: >
+  Automated, host-local checks mapped from DengBao level 3 requirements for
+  Alibaba Cloud Linux 3. Site-specific role design, deployment-specific SSH
+  source-address restrictions, external evidence for vulnerability and malware
+  controls, and other non-host-local requirements remain outside automated
+  coverage and are listed under manual_review_required.
+levels:
+  - id: l1_server
+  - id: l2_server
+    inherits_from:
+      - l1_server
+  - id: l1_workstation
+  - id: l2_workstation
+    inherits_from:
+      - l1_workstation
+reference_type: dengbao_level_3
+product: alinux3
+manual_review_required:
+  - area: access_control
+    item: "Assign ordinary user, auditor, and security officer accounts according to organizational role design."
+    reason: "Role separation and account naming are deployment-specific and cannot be inferred safely from host-local state."
+  - area: access_control
+    item: "Rename or remove environment-specific default accounts and verify default credentials are changed."
+    reason: "Default account exposure depends on the deployed software inventory and approved exceptions."
+  - area: access_control
+    item: "Validate weak-password baseline results."
+    reason: "Weak-password detection requires password dictionaries or external scanning evidence beyond host-local state."
+  - area: access_control
+    item: "Review shared, excess, and expired account cleanup evidence."
+    reason: "Account ownership, business justification, and recertification status require organizational evidence beyond host-local files."
+  - area: access_control
+    item: "Review database and application object permissions, authorized-subject policy approval, and administrator least-privilege separation."
+    reason: "Object-level authorization and approval workflows are application- and organization-specific."
+  - area: access_control
+    item: "Review sudoers authorization scope and any ALL privileges granted to non-root users."
+    reason: "Administrator command scope and approval for broad sudo privileges require deployment-specific authorization context."
+  - area: access_control
+    item: "Review deployment-created service or database accounts that fall outside the default system UID range."
+    reason: "Business-created service account classification and non-login expectations cannot be inferred safely from host-local defaults alone."
+  - area: access_control
+    item: "Review unowned or ungrouped files and directories on the root filesystem and any additional local filesystems."
+    reason: "A full host filesystem traversal is expensive on large systems, and pseudo-filesystems, bind mounts, and local storage topology require site-specific interpretation."
+  - area: audit
+    item: "Verify periodic audit backup or third-party log collector evidence when external retention is required."
+    reason: "External collectors and backup schedules cannot be proven from host-local files alone."
+  - area: audit
+    item: "Review audit partition sizing and the site-specific space_left and admin_space_left thresholds."
+    reason: "Audit event volume, partition capacity, and warning thresholds depend on local retention goals and deployment-specific log rates."
+  - area: intrusion_prevention
+    item: "Review approved service exposure and file-sharing exceptions."
+    reason: "Approved listening services, sharing exceptions, and compensating controls depend on deployment topology."
+  - area: intrusion_prevention
+    item: "Review deployment-specific SSH AllowUsers user@host allowlists."
+    reason: "Trusted management endpoints and source-address restrictions depend on deployment topology."
+  - area: intrusion_prevention
+    item: "Review vulnerability management evidence."
+    reason: "Cloud security center or equivalent patch and exposure evidence requires data beyond the host-local scan."
+  - area: intrusion_prevention
+    item: "Review intrusion detection and alerting evidence."
+    reason: "Intrusion detection coverage and alert delivery paths require external operational evidence."
+  - area: intrusion_prevention
+    item: "Review malware protection evidence."
+    reason: "Malware protection products, signatures, and managed defenses require external evidence beyond the host."
+
+rules:
+  # -----------------------------------------------------------------------
+  # Category: identity authentication
+  # -----------------------------------------------------------------------
+
+  - id: "1.1.1"
+    desc: "Ensure password fields are not empty"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: empty_password_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^[^:]*::"
+    assertion:
+      all_of:
+        - actual: "%{probe.empty_password_check}"
+          key: "found"
+          compare: is_falsy
+          message: "Found accounts in /etc/shadow with empty passwords."
+
+  - id: "1.1.2"
+    desc: "Ensure no duplicate UIDs exist"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: duplicate_uid_check
+        func: file.find_duplicate_values_in_field
+        params:
+          path: "/etc/passwd"
+          field_index: 3
+          key_name: "uid"
+          value_index: 1
+    assertion:
+      all_of:
+        - actual: "%{probe.duplicate_uid_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found duplicate UIDs in /etc/passwd."
+
+  - id: "1.1.3"
+    desc: "Ensure root is the only UID 0 account"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: root_uid_zero_check
+        func: file.find_pattern
+        params:
+          paths: ["/etc/passwd"]
+          pattern: "^root:[^:]*:0:0:"
+      - name: duplicate_uid_check
+        func: file.find_duplicate_values_in_field
+        params:
+          path: "/etc/passwd"
+          field_index: 3
+          match_key: 0
+          key_name: "uid"
+          value_index: 1
+    assertion:
+      all_of:
+        - actual: "%{probe.root_uid_zero_check}"
+          key: "found"
+          compare: is_true
+          message: "The root account is not configured with UID 0."
+        - actual: "%{probe.duplicate_uid_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found duplicate UIDs in /etc/passwd; root is not the only UID 0 account."
+
+  - id: "1.1.4"
+    desc: "Ensure password expiration is 90 days or less"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: login_defs
+        func: file.parse_key_values
+        params:
+          path: "/etc/login.defs"
+      - name: shadow_entries
+        func: users.get_login_shadow_entries
+        params: {}
+    assertion:
+      all_of:
+        - actual: "%{probe.login_defs}"
+          key: "PASS_MAX_DAYS"
+          compare: is_less_than_or_equal_to
+          expected: 90
+          message: "Default PASS_MAX_DAYS in /etc/login.defs is greater than 90."
+        - actual: "%{probe.shadow_entries}"
+          compare: for_all
+          message: "Found users with password expiration greater than 90 days."
+          expected:
+            all_of:
+              - key: "pass_max_days"
+                compare: is_less_than_or_equal_to
+                expected: 90
+
+  - id: "1.1.5"
+    desc: "Ensure minimum days between password changes is 7 or more"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: login_defs
+        func: file.parse_key_values
+        params:
+          path: "/etc/login.defs"
+      - name: shadow_entries
+        func: users.get_login_shadow_entries
+        params: {}
+    assertion:
+      all_of:
+        - actual: "%{probe.login_defs}"
+          key: "PASS_MIN_DAYS"
+          compare: is_greater_than_or_equal_to
+          expected: 7
+          message: "Default PASS_MIN_DAYS in /etc/login.defs is less than 7."
+        - actual: "%{probe.shadow_entries}"
+          compare: for_all
+          message: "Found users with minimum days between password changes less than 7."
+          expected:
+            all_of:
+              - key: "pass_min_days"
+                compare: is_greater_than_or_equal_to
+                expected: 7
+
+  - id: "1.1.6"
+    desc: "Ensure password complexity policy is enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: pwquality_check
+        func: pam.inspect_pwquality
+        params:
+          pam_paths:
+            - "/etc/pam.d/system-auth"
+            - "/etc/pam.d/password-auth"
+          config_paths:
+            - "/etc/security/pwquality.conf"
+            - "/etc/security/pwquality.conf.d/*.conf"
+          min_minlen: 8
+          min_minclass: 3
+          default_minlen: 8
+    assertion:
+      all_of:
+        - actual: "%{probe.pwquality_check}"
+          key: "missing_module_count"
+          compare: equals
+          expected: 0
+          message: "The pam_pwquality module is not enabled in all PAM password stacks."
+        - actual: "%{probe.pwquality_check}"
+          key: "weak_complexity_count"
+          compare: equals
+          expected: 0
+          message: "The effective password complexity policy does not require enough character classes in one or more PAM password stacks."
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/security/pwquality.conf", key: "minclass", value: "3", separator: "=" }
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/system-auth"
+          kind: "password"
+          module: "pam_pwquality.so"
+          control: "requisite"
+          args: ["try_first_pass", "local_users_only"]
+          anchor_kind: "password"
+          anchor_module: "pam_unix.so"
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/password-auth"
+          kind: "password"
+          module: "pam_pwquality.so"
+          control: "requisite"
+          args: ["try_first_pass", "local_users_only"]
+          anchor_kind: "password"
+          anchor_module: "pam_unix.so"
+
+  - id: "1.1.7"
+    desc: "Ensure password minimum length is configured to 8 or more"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: pwquality_check
+        func: pam.inspect_pwquality
+        params:
+          pam_paths:
+            - "/etc/pam.d/system-auth"
+            - "/etc/pam.d/password-auth"
+          config_paths:
+            - "/etc/security/pwquality.conf"
+            - "/etc/security/pwquality.conf.d/*.conf"
+          min_minlen: 8
+          min_minclass: 3
+          default_minlen: 8
+    assertion:
+      all_of:
+        - actual: "%{probe.pwquality_check}"
+          key: "weak_minlen_count"
+          compare: equals
+          expected: 0
+          message: "The effective minimum password length is less than 8 in one or more PAM password stacks."
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/security/pwquality.conf", key: "minlen", value: "8", separator: "=" }
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/system-auth"
+          kind: "password"
+          module: "pam_pwquality.so"
+          control: "requisite"
+          args: ["try_first_pass", "local_users_only"]
+          anchor_kind: "password"
+          anchor_module: "pam_unix.so"
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/password-auth"
+          kind: "password"
+          module: "pam_pwquality.so"
+          control: "requisite"
+          args: ["try_first_pass", "local_users_only"]
+          anchor_kind: "password"
+          anchor_module: "pam_unix.so"
+
+  - id: "1.1.8"
+    desc: "Ensure password reuse is restricted for at least the last 24 passwords"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: password_history_check
+        func: pam.check_password_history
+        params:
+          pam_paths:
+            - "/etc/pam.d/system-auth"
+            - "/etc/pam.d/password-auth"
+          min_remember: 24
+          config_paths:
+            - "/etc/security/pwhistory.conf"
+            - "/etc/security/pwhistory.conf.d/*.conf"
+    assertion:
+      all_of:
+        - actual: "%{probe.password_history_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Password reuse restriction is not configured for at least the last 24 passwords in all PAM password stacks."
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/security/pwhistory.conf", key: "remember", value: "24", separator: "=" }
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/system-auth"
+          kind: "password"
+          module: "pam_pwhistory.so"
+          control: "required"
+          args: ["use_authtok"]
+          anchor_kind: "password"
+          anchor_module: "pam_unix.so"
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/password-auth"
+          kind: "password"
+          module: "pam_pwhistory.so"
+          control: "required"
+          args: ["use_authtok"]
+          anchor_kind: "password"
+          anchor_module: "pam_unix.so"
+
+  - id: "1.1.9"
+    desc: "Ensure login failure lockout policy is configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: faillock_check
+        func: pam.inspect_faillock
+        params:
+          pam_paths:
+            - "/etc/pam.d/system-auth"
+            - "/etc/pam.d/password-auth"
+          config_path: "/etc/security/faillock.conf"
+          default_deny: 3
+          default_unlock_time: 600
+    assertion:
+      all_of:
+        - actual: "%{probe.faillock_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "The PAM login-failure lockout policy is incomplete or misconfigured."
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/security/faillock.conf", key: "deny", value: "3", separator: "=" }
+      - action: file.set_key_value
+        params: { path: "/etc/security/faillock.conf", key: "unlock_time", value: "600", separator: "=" }
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/system-auth"
+          kind: "auth"
+          module: "pam_faillock.so"
+          control: "required"
+          args: ["preauth"]
+          match_args: ["preauth"]
+          anchor_kind: "auth"
+          anchor_module: "pam_unix.so"
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/system-auth"
+          kind: "auth"
+          module: "pam_faillock.so"
+          control: "sufficient"
+          args: ["authsucc"]
+          match_args: ["authsucc"]
+          anchor_kind: "auth"
+          anchor_module: "pam_unix.so"
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/system-auth"
+          kind: "auth"
+          module: "pam_faillock.so"
+          control: "[default=die]"
+          args: ["authfail"]
+          match_args: ["authfail"]
+          anchor_kind: "auth"
+          anchor_module: "pam_unix.so"
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/password-auth"
+          kind: "auth"
+          module: "pam_faillock.so"
+          control: "required"
+          args: ["preauth"]
+          match_args: ["preauth"]
+          anchor_kind: "auth"
+          anchor_module: "pam_unix.so"
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/password-auth"
+          kind: "auth"
+          module: "pam_faillock.so"
+          control: "sufficient"
+          args: ["authsucc"]
+          match_args: ["authsucc"]
+          anchor_kind: "auth"
+          anchor_module: "pam_unix.so"
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/password-auth"
+          kind: "auth"
+          module: "pam_faillock.so"
+          control: "[default=die]"
+          args: ["authfail"]
+          match_args: ["authfail"]
+          anchor_kind: "auth"
+          anchor_module: "pam_unix.so"
+
+  - id: "1.2.1"
+    desc: "Ensure session timeout is configured to 30 minutes or less"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: session_timeout_check
+        func: shell.find_tmout_assignments
+        params:
+          paths:
+            - "/etc/profile"
+            - "/etc/bashrc"
+            - "/etc/profile.d/*.sh"
+          max_value: 1800
+    assertion:
+      all_of:
+        - actual: "%{probe.session_timeout_check}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "No compliant TMOUT setting of 1800 seconds or less was found in system-wide profiles."
+        - actual: "%{probe.session_timeout_check}"
+          key: "conflicting_count"
+          compare: equals
+          expected: 0
+          message: "Found explicit TMOUT settings that disable or weaken the session timeout policy."
+
+  - id: "1.2.2"
+    desc: "Ensure SSH protocol 1 is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ssh_protocol1_ondisk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/ssh/sshd_config"
+            - "/etc/ssh/sshd_config.d/*.conf"
+          pattern: "(?i)^%s*protocol%s+1([,%s]|$)|^%s*protocol%s+[^#]*,%s*1([,%s]|$)"
+    assertion:
+      all_of:
+        - actual: "%{probe.ssh_protocol1_ondisk}"
+          key: "found"
+          compare: is_falsy
+          message: "SSH configuration explicitly enables protocol 1."
+
+  - id: "1.2.3"
+    desc: "Ensure SSH root login is disabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: permit_root_login_effective
+        func: ssh.get_effective_value
+        params:
+          key: "permitrootlogin"
+          conditions:
+            user: "root"
+            from: "localhost"
+      - name: permit_root_login_ondisk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/ssh/sshd_config"
+            - "/etc/ssh/sshd_config.d/*.conf"
+          pattern: "(?i)^%s*PermitRootLogin%s+(yes|prohibit-password|without-password|forced-commands-only)(%s|#|$)"
+    assertion:
+      all_of:
+        - actual: "%{probe.permit_root_login_effective}"
+          key: "value"
+          compare: equals
+          expected: "no"
+          message: "The effective SSH configuration for PermitRootLogin is not 'no'."
+        - actual: "%{probe.permit_root_login_ondisk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "PermitRootLogin is explicitly set to a non-'no' value in an SSH configuration file."
+
+  - id: "1.2.4"
+    desc: "Ensure SSH MaxAuthTries is set to 4 or less"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: max_auth_tries_effective
+        func: ssh.get_effective_value
+        params:
+          key: "maxauthtries"
+          conditions:
+            user: "root"
+            from: "localhost"
+      - name: max_auth_tries_ondisk_noncompliant
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/ssh/sshd_config"
+            - "/etc/ssh/sshd_config.d/*.conf"
+          pattern: "(?i)^%s*maxauthtries%s+([5-9]|[1-9][0-9]+)"
+    assertion:
+      all_of:
+        - actual: "%{probe.max_auth_tries_effective}"
+          key: "value"
+          compare: is_less_than_or_equal_to
+          expected: 4
+          message: "The effective MaxAuthTries is greater than 4."
+        - actual: "%{probe.max_auth_tries_ondisk_noncompliant}"
+          key: "found"
+          compare: is_falsy
+          message: "MaxAuthTries is set to a value greater than 4 in SSH configuration."
+
+  - id: "1.2.5"
+    desc: "Ensure SSH LoginGraceTime is set to 60 seconds or less"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: login_grace_time_effective
+        func: ssh.get_effective_value
+        params:
+          key: "logingracetime"
+          value_type: "duration_seconds"
+          conditions:
+            user: "root"
+            from: "localhost"
+    assertion:
+      all_of:
+        - actual: "%{probe.login_grace_time_effective}"
+          key: "value"
+          compare: is_less_than_or_equal_to
+          expected: 60
+          message: "The effective LoginGraceTime is greater than 60 seconds."
+
+  - id: "1.2.6"
+    desc: "Ensure SSH idle session disconnect is configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: client_alive_interval_effective
+        func: ssh.get_effective_value
+        params:
+          key: "clientaliveinterval"
+          conditions:
+            user: "root"
+            from: "localhost"
+      - name: client_alive_count_max_effective
+        func: ssh.get_effective_value
+        params:
+          key: "clientalivecountmax"
+          conditions:
+            user: "root"
+            from: "localhost"
+    assertion:
+      all_of:
+        - actual: "%{probe.client_alive_interval_effective}"
+          key: "value"
+          compare: is_greater_than
+          expected: 0
+          message: "The effective ClientAliveInterval is not configured."
+        - actual: "%{probe.client_alive_interval_effective}"
+          key: "value"
+          compare: is_less_than_or_equal_to
+          expected: 300
+          message: "The effective ClientAliveInterval is greater than 300 seconds."
+        - actual: "%{probe.client_alive_count_max_effective}"
+          key: "value"
+          compare: is_less_than_or_equal_to
+          expected: 2
+          message: "The effective ClientAliveCountMax is greater than 2."
+
+  - id: "1.2.7"
+    desc: "Ensure telnet packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: telnet_installed
+        func: packages.get_installed
+        params:
+          name: "telnet*"
+    assertion:
+      all_of:
+        - actual: "%{probe.telnet_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Telnet packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "telnet*" }
+
+  # -----------------------------------------------------------------------
+  # Category: access control
+  # -----------------------------------------------------------------------
+
+  - id: "2.1.1"
+    desc: "Ensure user home directory permissions are 750 or more restrictive"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: local_user_home_directories
+        func: users.get_existing_home_directories
+        params: {}
+      - name: local_user_home_attrs
+        func: meta.map
+        params:
+          source_probe: "local_user_home_directories"
+          apply_func: "permissions.get_attributes"
+          params_template:
+            path: "%{item.path}"
+    assertion:
+      all_of:
+        - actual: "%{probe.local_user_home_attrs}"
+          compare: for_all
+          message: "Found user home directories with permissions more permissive than 0750."
+          expected:
+            all_of:
+              - key: "mode"
+                compare: mode_is_no_more_permissive
+                expected: 0750
+
+  - id: "2.1.2"
+    desc: "Ensure default UMASK in /etc/login.defs is 027 or more restrictive"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: login_defs_settings
+        func: file.parse_key_values
+        params:
+          path: "/etc/login.defs"
+      - name: login_defs_umask
+        func: shell.check_umask_value
+        params:
+          value: "%{probe.login_defs_settings.UMASK}"
+          baseline: "027"
+    assertion:
+      all_of:
+        - actual: "%{probe.login_defs_umask}"
+          key: "compliant"
+          compare: is_true
+          message: "UMASK is not set to 027 or a more restrictive value in /etc/login.defs."
+    reinforce:
+      - action: file.set_key_value
+        params:
+          path: "/etc/login.defs"
+          key: "UMASK"
+          value: "027"
+          separator: " "
+
+  - id: "2.1.3"
+    desc: "Ensure system-wide shell UMASK is 027 or more restrictive"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: shell_umask_check
+        func: shell.find_umask_commands
+        params:
+          paths:
+            - "/etc/profile"
+            - "/etc/bashrc"
+            - "/etc/profile.d/*.sh"
+          baseline: "027"
+    assertion:
+      all_of:
+        - actual: "%{probe.shell_umask_check}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "No system-wide shell umask of 027 or a more restrictive value was found."
+        - actual: "%{probe.shell_umask_check}"
+          key: "conflicting_count"
+          compare: equals
+          expected: 0
+          message: "Found explicit system-wide shell umask settings that are weaker than 027."
+
+  - id: "2.1.4"
+    desc: "Ensure sudo commands use pty"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: sudo_use_pty_check
+        func: sudo.find_use_pty
+        params:
+          paths: ["/etc/sudoers"]
+    assertion:
+      all_of:
+        - actual: "%{probe.sudo_use_pty_check}"
+          key: "found"
+          compare: is_true
+          message: "The 'use_pty' option is not enabled in sudo configuration."
+        - actual: "%{probe.sudo_use_pty_check}"
+          key: "conflicting_count"
+          compare: equals
+          expected: 0
+          message: "Found explicit sudo configuration that disables 'use_pty'."
+    reinforce:
+      - action: sudo.set_use_pty
+        params: { root_path: "/etc/sudoers" }
+
+  - id: "2.1.5"
+    desc: "Ensure users must provide password for privilege escalation"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: sudo_nopasswd_check
+        func: sudo.find_nopasswd_entries
+        params:
+          paths: ["/etc/sudoers"]
+    assertion:
+      all_of:
+        - actual: "%{probe.sudo_nopasswd_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found sudo configurations that allow privilege escalation without a password (NOPASSWD)."
+
+  - id: "2.1.6"
+    desc: "Ensure permissions on active sudoers configuration paths are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: sudoers_permission_paths
+        func: sudo.collect_permission_paths
+        params:
+          paths:
+            - "/etc/sudoers"
+      - name: sudoers_permission_attrs
+        func: meta.map
+        params:
+          source_probe: "sudoers_permission_paths"
+          apply_func: "permissions.get_attributes"
+          params_template:
+            path: "%{item.path}"
+    assertion:
+      all_of:
+        - actual: "%{probe.sudoers_permission_attrs}"
+          compare: for_all
+          message: "Found active sudoers configuration paths with non-compliant permissions or ownership."
+          expected:
+            any_of:
+              - all_of:
+                  - key: "path_type"
+                    compare: equals
+                    expected: "file"
+                  - key: "mode"
+                    compare: mode_is_no_more_permissive
+                    expected: 0440
+                  - key: "uid"
+                    compare: equals
+                    expected: 0
+                  - key: "gid"
+                    compare: equals
+                    expected: 0
+              - all_of:
+                  - key: "path_type"
+                    compare: equals
+                    expected: "directory"
+                  - key: "mode"
+                    compare: mode_is_no_more_permissive
+                    expected: 0750
+                  - key: "uid"
+                    compare: equals
+                    expected: 0
+                  - key: "gid"
+                    compare: equals
+                    expected: 0
+
+  - id: "2.1.7"
+    desc: "Ensure permissions on /etc/passwd are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: passwd_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/passwd"
+    assertion:
+      all_of:
+        - actual: "%{probe.passwd_attrs}"
+          key: "mode"
+          compare: mode_is_no_more_permissive
+          expected: 0644
+          message: "Permissions on /etc/passwd are more permissive than 0644."
+        - actual: "%{probe.passwd_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/passwd is not root."
+        - actual: "%{probe.passwd_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/passwd is not root."
+    reinforce:
+      - action: permissions.set_attributes
+        params: { path: "/etc/passwd", uid: 0, gid: 0, mode: 420 }
+
+  - id: "2.1.8"
+    desc: "Ensure permissions on /etc/shadow are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: shadow_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/shadow"
+    assertion:
+      all_of:
+        - actual: "%{probe.shadow_attrs}"
+          key: "mode"
+          compare: equals
+          expected: 0000
+          message: "Permissions on /etc/shadow are not 0000."
+        - actual: "%{probe.shadow_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/shadow is not root."
+        - actual: "%{probe.shadow_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/shadow is not root."
+    reinforce:
+      - action: permissions.set_attributes
+        params: { path: "/etc/shadow", uid: 0, gid: 0, mode: 0 }
+
+  - id: "2.1.9"
+    desc: "Ensure permissions on /etc/group are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: group_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/group"
+    assertion:
+      all_of:
+        - actual: "%{probe.group_attrs}"
+          key: "mode"
+          compare: mode_is_no_more_permissive
+          expected: 0644
+          message: "Permissions on /etc/group are more permissive than 0644."
+        - actual: "%{probe.group_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/group is not root."
+        - actual: "%{probe.group_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/group is not root."
+    reinforce:
+      - action: permissions.set_attributes
+        params: { path: "/etc/group", uid: 0, gid: 0, mode: 420 }
+
+  - id: "2.1.10"
+    desc: "Ensure permissions on /etc/gshadow are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: gshadow_attrs
+        func: permissions.get_attributes
+        params:
+          path: "/etc/gshadow"
+    assertion:
+      all_of:
+        - actual: "%{probe.gshadow_attrs}"
+          key: "mode"
+          compare: equals
+          expected: 0000
+          message: "Permissions on /etc/gshadow are not 0000."
+        - actual: "%{probe.gshadow_attrs}"
+          key: "uid"
+          compare: equals
+          expected: 0
+          message: "The owner of /etc/gshadow is not root."
+        - actual: "%{probe.gshadow_attrs}"
+          key: "gid"
+          compare: equals
+          expected: 0
+          message: "The group owner of /etc/gshadow is not root."
+    reinforce:
+      - action: permissions.set_attributes
+        params: { path: "/etc/gshadow", uid: 0, gid: 0, mode: 0 }
+
+  - id: "2.1.11"
+    desc: "Ensure non-root system accounts use non-login shells"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: interactive_system_accounts
+        func: users.find_interactive_system_accounts
+        params: {}
+    assertion:
+      all_of:
+        - actual: "%{probe.interactive_system_accounts}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found non-root system accounts with interactive login shells."
+
+  - id: "2.1.12"
+    desc: "Ensure su access is restricted through pam_wheel"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: su_pam_wheel_check
+        func: pam.inspect_wheel
+        params:
+          pam_paths:
+            - "/etc/pam.d/su"
+    assertion:
+      all_of:
+        - actual: "%{probe.su_pam_wheel_check}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "The su PAM stack is not restricted with pam_wheel.so use_uid."
+    reinforce:
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/su"
+          kind: "auth"
+          module: "pam_wheel.so"
+          control: "required"
+          args: ["use_uid"]
+
+  - id: "2.1.13"
+    desc: "Ensure SSH host public key permissions and ownership are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ssh_host_public_keys
+        func: file.list_paths
+        params:
+          paths: ["/etc/ssh/ssh_host_*_key.pub"]
+      - name: ssh_host_public_key_attrs
+        func: meta.map
+        params:
+          source_probe: "ssh_host_public_keys"
+          apply_func: "permissions.get_attributes"
+          params_template:
+            path: "%{item.path}"
+    assertion:
+      all_of:
+        - actual: "%{probe.ssh_host_public_keys}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "No SSH host public key files were found."
+        - actual: "%{probe.ssh_host_public_key_attrs}"
+          compare: for_all
+          message: "Found SSH host public keys with non-compliant permissions or ownership."
+          expected:
+            all_of:
+              - key: "mode"
+                compare: mode_is_no_more_permissive
+                expected: 0644
+              - key: "uid"
+                compare: equals
+                expected: 0
+              - key: "gid"
+                compare: equals
+                expected: 0
+
+  - id: "2.1.14"
+    desc: "Ensure SSH host private key permissions and ownership are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ssh_host_private_keys
+        func: file.list_paths
+        params:
+          paths: ["/etc/ssh/ssh_host_*_key"]
+      - name: ssh_host_private_key_attrs
+        func: meta.map
+        params:
+          source_probe: "ssh_host_private_keys"
+          apply_func: "permissions.get_attributes"
+          params_template:
+            path: "%{item.path}"
+    assertion:
+      all_of:
+        - actual: "%{probe.ssh_host_private_keys}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "No SSH host private key files were found."
+        - actual: "%{probe.ssh_host_private_key_attrs}"
+          compare: for_all
+          message: "Found SSH host private keys with non-compliant permissions or ownership."
+          expected:
+            all_of:
+              - key: "mode"
+                compare: mode_is_no_more_permissive
+                expected: 0600
+              - key: "uid"
+                compare: equals
+                expected: 0
+              - key: "gid"
+                compare: equals
+                expected: 0
+
+  - id: "2.2.1"
+    desc: "Ensure the shutdown and halt accounts are locked"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: shutdown_account_present
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^shutdown:"
+      - name: shutdown_account_lock_status
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^shutdown:[!*]"
+      - name: halt_account_present
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^halt:"
+      - name: halt_account_lock_status
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^halt:[!*]"
+    assertion:
+      all_of:
+        - any_of:
+            - actual: "%{probe.shutdown_account_lock_status}"
+              key: "found"
+              compare: is_true
+              message: "The 'shutdown' account is neither removed nor locked in /etc/shadow."
+            - actual: "%{probe.shutdown_account_present}"
+              key: "found"
+              compare: is_falsy
+              message: "The 'shutdown' account is neither removed nor locked in /etc/shadow."
+        - any_of:
+            - actual: "%{probe.halt_account_lock_status}"
+              key: "found"
+              compare: is_true
+              message: "The 'halt' account is neither removed nor locked in /etc/shadow."
+            - actual: "%{probe.halt_account_present}"
+              key: "found"
+              compare: is_falsy
+              message: "The 'halt' account is neither removed nor locked in /etc/shadow."
+
+  # -----------------------------------------------------------------------
+  # Category: security audit
+  # -----------------------------------------------------------------------
+
+  - id: "3.1.1"
+    desc: "Ensure auditd is installed, enabled, and running"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: audit_pkg
+        func: packages.get_installed
+        params:
+          name: "audit"
+      - name: auditd_service
+        func: services.get_unit_properties
+        params:
+          name: "auditd"
+    assertion:
+      all_of:
+        - actual: "%{probe.audit_pkg}"
+          key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "The audit package is not installed."
+        - actual: "%{probe.auditd_service}"
+          key: "UnitFileState"
+          compare: equals
+          expected: "enabled"
+          message: "The auditd service is not enabled."
+        - actual: "%{probe.auditd_service}"
+          key: "ActiveState"
+          compare: equals
+          expected: "active"
+          message: "The auditd service is not active."
+    reinforce:
+      - action: packages.install
+        params: { name: "audit" }
+      - action: services.set_filestate
+        params: { name: "auditd", state: "enable" }
+      - action: services.set_active_state
+        params: { name: "auditd", state: "start" }
+
+  - id: "3.1.2"
+    desc: "Ensure rsyslog or syslog-ng is installed, enabled, and running"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rsyslog_pkg
+        func: packages.get_installed
+        params:
+          name: "rsyslog"
+      - name: rsyslog_service
+        func: services.get_unit_properties
+        params:
+          name: "rsyslog"
+      - name: syslog_ng_pkg
+        func: packages.get_installed
+        params:
+          name: "syslog-ng"
+      - name: syslog_ng_service
+        func: services.get_unit_properties
+        params:
+          name: "syslog-ng"
+    assertion:
+      any_of:
+        - all_of:
+            - actual: "%{probe.rsyslog_pkg}"
+              key: "count"
+              compare: is_greater_than
+              expected: 0
+              message: "The rsyslog package is not installed."
+            - actual: "%{probe.rsyslog_service}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "enabled"
+              message: "The rsyslog service is not enabled."
+            - actual: "%{probe.rsyslog_service}"
+              key: "ActiveState"
+              compare: equals
+              expected: "active"
+              message: "The rsyslog service is not active."
+        - all_of:
+            - actual: "%{probe.syslog_ng_pkg}"
+              key: "count"
+              compare: is_greater_than
+              expected: 0
+              message: "The syslog-ng package is not installed."
+            - actual: "%{probe.syslog_ng_service}"
+              key: "UnitFileState"
+              compare: equals
+              expected: "enabled"
+              message: "The syslog-ng service is not enabled."
+            - actual: "%{probe.syslog_ng_service}"
+              key: "ActiveState"
+              compare: equals
+              expected: "active"
+              message: "The syslog-ng service is not active."
+    reinforce:
+      - action: packages.install
+        params: { name: "rsyslog" }
+      - action: services.set_filestate
+        params: { name: "rsyslog", state: "enable" }
+      - action: services.set_active_state
+        params: { name: "rsyslog", state: "start" }
+
+  - id: "3.1.3"
+    desc: "Ensure audit log size and retention are configured"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: auditd_conf_settings
+        func: file.parse_key_values
+        params:
+          path: "/etc/audit/auditd.conf"
+          normalize_values: "lower"
+    assertion:
+      all_of:
+        - actual: "%{probe.auditd_conf_settings}"
+          key: "max_log_file"
+          compare: is_greater_than
+          expected: 0
+          message: "The 'max_log_file' parameter is missing or not greater than 0 in /etc/audit/auditd.conf."
+        - any_of:
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "max_log_file_action"
+              compare: equals
+              expected: "keep_logs"
+              message: "Audit log retention is not configured with 'keep_logs' or rotating logs in /etc/audit/auditd.conf."
+            - all_of:
+                - actual: "%{probe.auditd_conf_settings}"
+                  key: "max_log_file_action"
+                  compare: equals
+                  expected: "rotate"
+                  message: "Audit log retention is not configured with 'keep_logs' or rotating logs in /etc/audit/auditd.conf."
+                - actual: "%{probe.auditd_conf_settings}"
+                  key: "num_logs"
+                  compare: is_greater_than_or_equal_to
+                  expected: 2
+                  message: "The 'num_logs' parameter must be at least 2 when 'max_log_file_action=rotate' in /etc/audit/auditd.conf."
+    reinforce:
+      - action: file.set_key_value
+        params:
+          path: "/etc/audit/auditd.conf"
+          key: "max_log_file"
+          value: "8"
+          separator: "="
+      - action: file.set_key_value
+        params:
+          path: "/etc/audit/auditd.conf"
+          key: "max_log_file_action"
+          value: "keep_logs"
+          separator: "="
+
+  - id: "3.1.4"
+    desc: "Ensure audit logs are not automatically deleted"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: auditd_conf_settings
+        func: file.parse_key_values
+        params:
+          path: "/etc/audit/auditd.conf"
+          normalize_values: "lower"
+    assertion:
+      all_of:
+        - actual: "%{probe.auditd_conf_settings}"
+          key: "max_log_file_action"
+          compare: equals
+          expected: "keep_logs"
+          message: "max_log_file_action is not set to 'keep_logs' in /etc/audit/auditd.conf."
+    reinforce:
+      - action: file.set_key_value
+        params:
+          path: "/etc/audit/auditd.conf"
+          key: "max_log_file_action"
+          value: "keep_logs"
+          separator: "="
+
+  - id: "3.1.5"
+    desc: "Ensure the system reacts safely when audit logs are full"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: auditd_conf_settings
+        func: file.parse_key_values
+        params:
+          path: "/etc/audit/auditd.conf"
+          normalize_values: "lower"
+    assertion:
+      all_of:
+        - any_of:
+            - all_of:
+                - actual: "%{probe.auditd_conf_settings}"
+                  key: "space_left_action"
+                  compare: equals
+                  expected: "email"
+                  message: "space_left_action is not set to 'email' or 'syslog' in /etc/audit/auditd.conf."
+                - actual: "%{probe.auditd_conf_settings}"
+                  key: "action_mail_acct"
+                  compare: equals
+                  expected: "root"
+                  message: "action_mail_acct must be set to 'root' when space_left_action=email."
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "space_left_action"
+              compare: equals
+              expected: "syslog"
+              message: "space_left_action is not set to 'email' or 'syslog' in /etc/audit/auditd.conf."
+        - any_of:
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "admin_space_left_action"
+              compare: equals
+              expected: "single"
+              message: "admin_space_left_action is not set to 'single' or 'halt' in /etc/audit/auditd.conf."
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "admin_space_left_action"
+              compare: equals
+              expected: "halt"
+              message: "admin_space_left_action is not set to 'single' or 'halt' in /etc/audit/auditd.conf."
+        - any_of:
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "disk_full_action"
+              compare: equals
+              expected: "single"
+              message: "disk_full_action is not set to 'single' or 'halt' in /etc/audit/auditd.conf."
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "disk_full_action"
+              compare: equals
+              expected: "halt"
+              message: "disk_full_action is not set to 'single' or 'halt' in /etc/audit/auditd.conf."
+        - any_of:
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "disk_error_action"
+              compare: equals
+              expected: "syslog"
+              message: "disk_error_action is not set to 'syslog', 'single', or 'halt' in /etc/audit/auditd.conf."
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "disk_error_action"
+              compare: equals
+              expected: "single"
+              message: "disk_error_action is not set to 'syslog', 'single', or 'halt' in /etc/audit/auditd.conf."
+            - actual: "%{probe.auditd_conf_settings}"
+              key: "disk_error_action"
+              compare: equals
+              expected: "halt"
+              message: "disk_error_action is not set to 'syslog', 'single', or 'halt' in /etc/audit/auditd.conf."
+    reinforce:
+      - action: file.set_key_value
+        params:
+          path: "/etc/audit/auditd.conf"
+          key: "space_left_action"
+          value: "syslog"
+          separator: "="
+      - action: file.set_key_value
+        params:
+          path: "/etc/audit/auditd.conf"
+          key: "admin_space_left_action"
+          value: "single"
+          separator: "="
+      - action: file.set_key_value
+        params:
+          path: "/etc/audit/auditd.conf"
+          key: "disk_full_action"
+          value: "single"
+          separator: "="
+      - action: file.set_key_value
+        params:
+          path: "/etc/audit/auditd.conf"
+          key: "disk_error_action"
+          value: "syslog"
+          separator: "="
+
+  - id: "3.1.5.1"
+    desc: "Ensure auditing for processes that start prior to auditd is enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: audit_boot_param
+        func: file.find_pattern
+        params:
+          paths:
+            - "/boot/grub2/grub.cfg"
+            - "/boot/grub2/grubenv"
+            - "/boot/efi/EFI/*/grub.cfg"
+          pattern: "^[[:space:]]*(kernelopts|linux|kernel).*audit=1([^0-9]|$)"
+    assertion:
+      all_of:
+        - actual: "%{probe.audit_boot_param}"
+          key: "found"
+          compare: is_true
+          message: "The 'audit=1' kernel parameter is not configured in the bootloader."
+
+  - id: "3.1.6"
+    desc: "Ensure file deletion events are collected by audit"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: login_defs
+        func: file.parse_key_values
+        params:
+          path: "/etc/login.defs"
+      - name: audit_arches
+        func: system.get_supported_audit_arches
+        params: {}
+      - name: file_delete_audit_rule
+        func: audit.find_syscall_rule
+        params:
+          syscalls: ["unlink", "unlinkat", "rename", "renameat", "renameat2", "rmdir"]
+          auid_min: "%{probe.login_defs.UID_MIN}"
+          required_arches: "%{probe.audit_arches.arches}"
+    assertion:
+      all_of:
+        - actual: "%{probe.file_delete_audit_rule}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "No audit rule was found to collect user file deletion events."
+    reinforce:
+      - action: audit.ensure_syscall_rule
+        params:
+          syscalls: ["unlink", "unlinkat", "rename", "renameat", "renameat2", "rmdir"]
+          auid_min: "%{probe.login_defs.UID_MIN}"
+          required_arches: "%{probe.audit_arches.arches}"
+
+  - id: "3.1.7"
+    desc: "Ensure changes to sudoers configuration are collected by audit"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: sudoers_audit_paths
+        func: sudo.collect_audit_paths
+        params:
+          paths:
+            - "/etc/sudoers"
+      - name: sudoers_watch_rules
+        func: meta.map
+        params:
+          source_probe: "sudoers_audit_paths"
+          apply_func: "audit.find_watch_rule"
+          params_template:
+            path: "%{item.path}"
+            permissions: "wa"
+            require_key: false
+    assertion:
+      all_of:
+        - actual: "%{probe.sudoers_watch_rules}"
+          compare: for_all
+          message: "Missing audit watch rules for active sudoers configuration paths."
+          expected:
+            all_of:
+              - key: "found"
+                compare: is_true
+    reinforce:
+      - action: sudo.ensure_audit_watches
+        params: { root_path: "/etc/sudoers", permissions: "wa" }
+
+  - id: "3.1.8"
+    desc: "Ensure changes to user and group information are collected by audit"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: passwd_watch_rule
+        func: audit.find_watch_rule
+        params:
+          path: "/etc/passwd"
+          permissions: "wa"
+          require_key: false
+      - name: group_watch_rule
+        func: audit.find_watch_rule
+        params:
+          path: "/etc/group"
+          permissions: "wa"
+          require_key: false
+      - name: shadow_watch_rule
+        func: audit.find_watch_rule
+        params:
+          path: "/etc/shadow"
+          permissions: "wa"
+          require_key: false
+      - name: gshadow_watch_rule
+        func: audit.find_watch_rule
+        params:
+          path: "/etc/gshadow"
+          permissions: "wa"
+          require_key: false
+    assertion:
+      all_of:
+        - actual: "%{probe.passwd_watch_rule}"
+          key: "found"
+          compare: is_true
+          message: "No audit watch rule was found for /etc/passwd."
+        - actual: "%{probe.group_watch_rule}"
+          key: "found"
+          compare: is_true
+          message: "No audit watch rule was found for /etc/group."
+        - actual: "%{probe.shadow_watch_rule}"
+          key: "found"
+          compare: is_true
+          message: "No audit watch rule was found for /etc/shadow."
+        - actual: "%{probe.gshadow_watch_rule}"
+          key: "found"
+          compare: is_true
+          message: "No audit watch rule was found for /etc/gshadow."
+    reinforce:
+      - action: audit.ensure_watch_rule
+        params: { path: "/etc/passwd", permissions: "wa" }
+      - action: audit.ensure_watch_rule
+        params: { path: "/etc/group", permissions: "wa" }
+      - action: audit.ensure_watch_rule
+        params: { path: "/etc/shadow", permissions: "wa" }
+      - action: audit.ensure_watch_rule
+        params: { path: "/etc/gshadow", permissions: "wa" }
+
+  # -----------------------------------------------------------------------
+  # Category: intrusion prevention
+  # -----------------------------------------------------------------------
+
+  - id: "4.1.1"
+    desc: "Ensure Avahi packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: avahi_installed
+        func: packages.get_installed
+        params:
+          name: "avahi-daemon*"
+    assertion:
+      all_of:
+        - actual: "%{probe.avahi_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Avahi packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "avahi-daemon*" }
+
+  - id: "4.1.2"
+    desc: "Ensure Bluetooth packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: bluetooth_installed
+        func: packages.get_installed
+        params:
+          name: "bluez*"
+    assertion:
+      all_of:
+        - actual: "%{probe.bluetooth_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Bluetooth packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "bluez*" }
+
+  - id: "4.1.3"
+    desc: "Ensure Kdump packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: kdump_installed
+        func: packages.get_installed
+        params:
+          name: "kexec-tools"
+    assertion:
+      all_of:
+        - actual: "%{probe.kdump_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Kdump packages (kexec-tools) are installed."
+    reinforce:
+      - action: packages.remove
+        params: { name: "kexec-tools" }
+
+  - id: "4.1.4"
+    desc: "Ensure firstboot packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: firstboot_installed
+        func: packages.get_installed
+        params:
+          name: "firstboot*"
+    assertion:
+      all_of:
+        - actual: "%{probe.firstboot_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Firstboot packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "firstboot*" }
+
+  - id: "4.1.5"
+    desc: "Ensure wdaemon packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: wdaemon_installed
+        func: packages.get_installed
+        params:
+          name: "wdaemon*"
+    assertion:
+      all_of:
+        - actual: "%{probe.wdaemon_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "wdaemon packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "wdaemon*" }
+
+  - id: "4.1.6"
+    desc: "Ensure wpa_supplicant packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: wpa_supplicant_installed
+        func: packages.get_installed
+        params:
+          name: "wpa_supplicant*"
+    assertion:
+      all_of:
+        - actual: "%{probe.wpa_supplicant_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "wpa_supplicant packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "wpa_supplicant*" }
+
+  - id: "4.1.7"
+    desc: "Ensure ypbind packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ypbind_installed
+        func: packages.get_installed
+        params:
+          name: "ypbind*"
+    assertion:
+      all_of:
+        - actual: "%{probe.ypbind_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "ypbind packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "ypbind*" }
+
+  - id: "4.1.8"
+    desc: "Ensure high-risk management and sharing ports are not listening"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: high_risk_ports
+        func: network.find_listening_ports
+        params:
+          ports: [21, 23, 25, 111, 427, 631]
+    assertion:
+      all_of:
+        - actual: "%{probe.high_risk_ports}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found listening high-risk management or sharing ports."
