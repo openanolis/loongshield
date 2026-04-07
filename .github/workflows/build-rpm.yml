@@ -40,16 +40,18 @@ jobs:
                   if-no-files-found: error
 
     test-rpm:
-        name: Test RPM install on ${{ matrix.image }}
+        name: Test RPM install on ${{ matrix.name }}
         runs-on: ubuntu-latest
         needs: build-rpm
         timeout-minutes: 30
         strategy:
             fail-fast: false
             matrix:
-                image:
-                    - "openanolis/anolisos:8"
-                    - "alibaba-cloud-linux-3-registry.cn-hangzhou.cr.aliyuncs.com/alinux3/alinux3:3.9"
+                include:
+                    - name: "CentOS Stream 9"
+                      image: "quay.io/centos/centos:stream9"
+                    - name: "Anolis OS 23"
+                      image: "registry.openanolis.cn/openanolis/anolisos:23"
         container:
             image: ${{ matrix.image }}
         defaults:
@@ -61,6 +63,33 @@ jobs:
               run: |
                   set -e
                   set -x
+
+                  if [ -f /etc/yum.repos.d/CentOS-Stream.repo ]; then
+                      mkdir -p /etc/yum.repos.d/loongshield-disabled
+                      find /etc/yum.repos.d -maxdepth 1 -name '*.repo' ! -name 'CentOS-Stream.repo' -exec mv {} /etc/yum.repos.d/loongshield-disabled/ \; 2>/dev/null || true
+                      cat >/etc/yum.repos.d/CentOS-Stream.repo <<'EOF'
+                  [baseos]
+                  name=CentOS Stream 9 - BaseOS
+                  baseurl=https://mirror.stream.centos.org/9-stream/BaseOS/$basearch/os/
+                  enabled=1
+                  gpgcheck=0
+                  repo_gpgcheck=0
+
+                  [appstream]
+                  name=CentOS Stream 9 - AppStream
+                  baseurl=https://mirror.stream.centos.org/9-stream/AppStream/$basearch/os/
+                  enabled=1
+                  gpgcheck=0
+                  repo_gpgcheck=0
+
+                  [crb]
+                  name=CentOS Stream 9 - CRB
+                  baseurl=https://mirror.stream.centos.org/9-stream/CRB/$basearch/os/
+                  enabled=1
+                  gpgcheck=0
+                  repo_gpgcheck=0
+                  EOF
+                  fi
 
                   if [ -d /etc/yum.repos.d ]; then
                       sed -i -E 's|https?://mirrors.openanolis.cn/anolis/|https://mirrors.aliyun.com/anolis/|g' /etc/yum.repos.d/*.repo 2>/dev/null || true
