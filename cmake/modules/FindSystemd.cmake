@@ -1,9 +1,9 @@
-# FindSystemd.cmake - Proper systemd detection (replaces fragile ldd+grep)
+# FindSystemd.cmake - Locate the public libsystemd development interface
 #
 # Provides:
 #   LOONGSHIELD_SYSTEMD_FOUND       - Whether systemd was found
 #   LOONGSHIELD_SYSTEMD_LIBRARIES   - Main systemd library
-#   LOONGSHIELD_SYSTEMD_SHARED      - systemd-shared library (for internal APIs)
+#   LOONGSHIELD_SYSTEMD_INCLUDE_DIRS - Include directories for systemd headers
 
 find_package(PkgConfig QUIET)
 
@@ -34,45 +34,14 @@ else()
     endif()
 endif()
 
-# Find systemd-shared library (for internal APIs)
-# This replaces the fragile: ldd `which systemd` | grep libsystemd-shared
-if(LOONGSHIELD_SYSTEMD_FOUND)
-    # Search common locations for systemd-shared
-    set(SYSTEMD_SHARED_SEARCH_PATHS
-        "${LOONGSHIELD_LIB_DIR}/systemd"
-        /usr/lib64/systemd
-        /usr/lib/systemd
-        /lib64/systemd
-        /lib/systemd
-        /usr/lib/x86_64-linux-gnu/systemd
-        /usr/lib/aarch64-linux-gnu/systemd
-    )
-
-    # Try to find versioned library via glob
-    foreach(search_path ${SYSTEMD_SHARED_SEARCH_PATHS})
-        file(GLOB SYSTEMD_SHARED_CANDIDATES "${search_path}/libsystemd-shared-*.so")
-        if(SYSTEMD_SHARED_CANDIDATES)
-            list(GET SYSTEMD_SHARED_CANDIDATES 0 LOONGSHIELD_SYSTEMD_SHARED)
-            break()
-        endif()
-    endforeach()
-
-    # If not found via glob, try direct name
-    if(NOT LOONGSHIELD_SYSTEMD_SHARED)
-        find_library(LOONGSHIELD_SYSTEMD_SHARED
-            NAMES systemd-shared
-            PATHS ${SYSTEMD_SHARED_SEARCH_PATHS}
-            NO_DEFAULT_PATH
-        )
-    endif()
-endif()
-
 if(LOONGSHIELD_SYSTEMD_FOUND)
     message(STATUS "Found systemd: ${LOONGSHIELD_SYSTEMD_LIBRARIES}")
-    if(LOONGSHIELD_SYSTEMD_SHARED)
-        message(STATUS "Found systemd-shared: ${LOONGSHIELD_SYSTEMD_SHARED}")
-    else()
-        message(STATUS "systemd-shared not found (some features may not work)")
+    if(NOT TARGET Systemd::Systemd)
+        add_library(Systemd::Systemd INTERFACE IMPORTED)
+        set_target_properties(Systemd::Systemd PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${LOONGSHIELD_SYSTEMD_INCLUDE_DIRS}"
+            INTERFACE_LINK_LIBRARIES "${LOONGSHIELD_SYSTEMD_LIBRARIES}"
+        )
     endif()
 else()
     message(WARNING "systemd not found - some features will be disabled")

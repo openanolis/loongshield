@@ -104,9 +104,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(${RUNTIME_NAME} PRIVATE ${LIBS_DYNAMIC})
     # DBus via imported target
     target_link_libraries(${RUNTIME_NAME} PRIVATE DBus::DBus)
-    # Systemd shared library
-    if(LOONGSHIELD_SYSTEMD_SHARED)
-        target_link_libraries(${RUNTIME_NAME} PRIVATE ${LOONGSHIELD_SYSTEMD_SHARED})
+    # Public libsystemd API
+    if(TARGET Systemd::Systemd)
+        target_link_libraries(${RUNTIME_NAME} PRIVATE Systemd::Systemd)
     endif()
 endif()
 
@@ -143,9 +143,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(${DAEMON_NAME} PRIVATE ${LIBS_DYNAMIC})
     # DBus via imported target
     target_link_libraries(${DAEMON_NAME} PRIVATE DBus::DBus)
-    # Systemd shared library
-    if(LOONGSHIELD_SYSTEMD_SHARED)
-        target_link_libraries(${DAEMON_NAME} PRIVATE ${LOONGSHIELD_SYSTEMD_SHARED})
+    # Public libsystemd API
+    if(TARGET Systemd::Systemd)
+        target_link_libraries(${DAEMON_NAME} PRIVATE Systemd::Systemd)
     endif()
 endif()
 
