@@ -18,7 +18,7 @@ Start from a clean branch with submodules initialized:
 ```sh
 git submodule update --init --recursive
 make test
-make rpm-in-anolis
+make rpm-in-docker
 ```
 
 Run additional validation when relevant:
@@ -61,7 +61,7 @@ Then publish the hosted release entry using the same version number and changelo
 If you distribute RPM artifacts, upload the packages built under:
 
 ```text
-build/rpmbuild-anolis/RPMS/
+build/rpmbuild-docker/RPMS/
 ```
 
 ## Post-Release Follow-Up
