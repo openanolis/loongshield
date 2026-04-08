@@ -3,7 +3,7 @@
 %global debug_package %{nil}
 
 Name: loongshield
-Version: %{!?pkg_version:1.1.2}%{?pkg_version}
+Version: %{!?pkg_version:1.1.3}%{?pkg_version}
 Release: %{anolis_release}%{?dist}
 Summary: security shield framework for alinux/anolis
 Group: Development/Tools
@@ -95,6 +95,13 @@ install -m 0644 deps/luasocket/luasocket/LICENSE %{buildroot}%{_licensedir}/%{na
 %license %{_licensedir}/%{name}/third-party/*
 
 %changelog
+* Wed Apr  8 2026 Zongyao Chen - 1.1.3-1
+- Add public governance and release process documents for the open-source release line.
+- Refresh README/docs structure and codify 1.x compatibility expectations.
+- Improve build and CI portability across supported EL9 and arm64 environments.
+- Refactor SEHarden internals to share schema, parser, loader, and output helpers.
+- Fix rule-schema validation so inactive rules with newer comparators do not break other levels.
+
 * Thu Mar 26 2026 Zongyao Chen - 1.1.2-1
 - Improve SEHarden scan diagnostics and human-friendly verbose reporting.
 - Split operator verbose output from developer debug tracing.

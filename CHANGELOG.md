@@ -8,6 +8,17 @@ All notable changes to this project will be documented in this file.
 - None yet.
 
 ### Added
+- None yet.
+
+### Changed
+- None yet.
+
+### Fixed
+- None yet.
+
+## [1.1.3] - 2026-04-08
+
+### Added
 - Public project governance and contribution documents: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `SUPPORT.md`, and `RELEASING.md`.
 - Repository contribution scaffolding: `.editorconfig`, issue templates, and a pull request template.
 
@@ -17,6 +28,7 @@ All notable changes to this project will be documented in this file.
 - CI now runs `make test-quick` in the distro build matrix, not just compilation.
 - RPM packaging metadata was cleaned up for public distribution by removing private repository references and corporate email addresses.
 - `seharden` no longer exposes a separate `--debug` shortcut; use `--log-level debug` when developer trace output is needed.
+- `seharden` now centralizes executable rule-schema validation and shares output, loader, and config-parsing helpers across engine, probes, and enforcers.
 
 ### Fixed
 - Repository community/process links now resolve to checked-in governance documents.
@@ -24,6 +36,9 @@ All notable changes to this project will be documented in this file.
 - Service enforcers now fail on non-zero `systemctl` exit status instead of treating stderr text alone as the source of truth.
 - RPM file list parsing no longer breaks on paths containing spaces.
 - Persistent hardening config writers now use temp-file plus rename and refuse symlink overwrite for safer remediation.
+- `seharden` now rejects malformed active rules more consistently while allowing inactive rules with unknown comparators to remain loadable for other profile levels.
+- Local builds now fail early on unsupported host distributions instead of failing later in the pipeline.
+- Build and CI packaging flows now align with supported EL9 and arm64 environments, use public `libsystemd`, and avoid the unused `libnm` dependency.
 
 ## [1.1.2] - 2026-03-26
 

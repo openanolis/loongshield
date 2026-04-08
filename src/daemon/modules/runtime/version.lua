@@ -1,6 +1,6 @@
 local version = {
-    version = "1.1.2",
-    commit = "2f69d69daec9a43aab9af24c58d537a6c3c8e8a4"
+    version = "1.1.3",
+    commit = "fe23e3e960d26660a47339b90f874bbec3856f4f"
 }
 
 return version
