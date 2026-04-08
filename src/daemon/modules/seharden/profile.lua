@@ -1,4 +1,5 @@
 local log = require('runtime.log')
+local rule_schema = require('seharden.rule_schema')
 local utils = require('seharden.util')
 local lyaml = require('lyaml')
 local M = {}
@@ -135,28 +136,23 @@ function M.validate(profile_data)
 
     local rule_ids = {}
     for i, rule in ipairs(profile_data.rules) do
-        if type(rule) ~= "table" then
-            return nil, string.format("rules[%d] must be a table.", i)
-        end
-        if not is_non_empty_string(rule.id) then
-            return nil, string.format("rules[%d].id must be a non-empty string.", i)
+        local ok, err = rule_schema.validate_rule(
+            rule,
+            string.format("rules[%d]", i),
+            { validate_comparators = false }
+        )
+        if not ok then
+            return nil, err
         end
         if rule_ids[rule.id] then
             return nil, string.format("Duplicate rule id '%s'.", rule.id)
         end
         rule_ids[rule.id] = true
 
-        if not is_non_empty_string(rule.desc) then
-            return nil, string.format("rules[%d].desc must be a non-empty string.", i)
-        end
-        if type(rule.assertion) ~= "table" then
-            return nil, string.format("rules[%d].assertion must be a table.", i)
-        end
-
         if rule.level ~= nil then
-            local ok, err = validate_string_list(rule.level, string.format("rules[%d].level", i))
-            if not ok then
-                return nil, err
+            local levels_ok, levels_err = validate_string_list(rule.level, string.format("rules[%d].level", i))
+            if not levels_ok then
+                return nil, levels_err
             end
             for _, level_id in ipairs(rule.level) do
                 if not level_ids[level_id] then
@@ -164,13 +160,6 @@ function M.validate(profile_data)
                         "rules[%d].level references unknown level '%s'.", i, level_id)
                 end
             end
-        end
-
-        if rule.probes ~= nil and type(rule.probes) ~= "table" then
-            return nil, string.format("rules[%d].probes must be a table if present.", i)
-        end
-        if rule.reinforce ~= nil and type(rule.reinforce) ~= "table" then
-            return nil, string.format("rules[%d].reinforce must be a table if present.", i)
         end
     end
 
@@ -277,12 +266,28 @@ function M.get_rules_for_level(profile_data, target_level_id)
     end
 
     local rules_to_run = {}
-    for _, rule in ipairs(profile_data.rules) do
+    for index, rule in ipairs(profile_data.rules) do
         if not rule.level then
+            local ok, err = rule_schema.validate_rule(
+                rule,
+                string.format("rules[%d]", index),
+                { validate_comparators = true }
+            )
+            if not ok then
+                return nil, err
+            end
             table.insert(rules_to_run, rule)
         elseif type(rule.level) == 'table' then
             for _, rule_level_id in ipairs(rule.level) do
                 if active_levels[rule_level_id] then
+                    local ok, err = rule_schema.validate_rule(
+                        rule,
+                        string.format("rules[%d]", index),
+                        { validate_comparators = true }
+                    )
+                    if not ok then
+                        return nil, err
+                    end
                     table.insert(rules_to_run, rule)
                     break
                 end

@@ -50,7 +50,10 @@ function test_get_rules_for_level_rejects_unknown_rule_level_reference()
                 id = "rule.1",
                 desc = "bad level reference",
                 level = { "strict" },
-                assertion = {}
+                assertion = {
+                    compare = "is_true",
+                    actual = true,
+                }
             }
         }
     }, "baseline")
@@ -58,6 +61,165 @@ function test_get_rules_for_level_rejects_unknown_rule_level_reference()
     assert(rules == nil, "Expected unknown rule level reference to be rejected")
     assert(err:find("unknown level 'strict'", 1, true),
         "Expected schema error to surface the unknown level id")
+end
+
+function test_get_rules_for_level_rejects_probe_task_missing_name()
+    local rules, err = profile.get_rules_for_level({
+        levels = {
+            { id = "baseline" }
+        },
+        rules = {
+            {
+                id = "rule.1",
+                desc = "bad probe",
+                probes = {
+                    {
+                        func = "permissions.get_attributes",
+                        params = { path = "/etc/passwd" },
+                    }
+                },
+                assertion = {
+                    compare = "is_true",
+                    actual = true,
+                }
+            }
+        }
+    }, "baseline")
+
+    assert(rules == nil, "Expected malformed probe schema to be rejected during profile validation")
+    assert(err:find("rules[1].probes[1].name must be a non-empty string.", 1, true),
+        "Expected schema error to point at the invalid probe task")
+end
+
+function test_get_rules_for_level_rejects_unknown_assertion_comparator()
+    local rules, err = profile.get_rules_for_level({
+        levels = {
+            { id = "baseline" }
+        },
+        rules = {
+            {
+                id = "rule.1",
+                desc = "bad comparator",
+                assertion = {
+                    compare = "does_not_exist",
+                    actual = true,
+                }
+            }
+        }
+    }, "baseline")
+
+    assert(rules == nil, "Expected unknown comparators to be rejected during profile validation")
+    assert(err:find("rules[1].assertion.compare references unknown comparator 'does_not_exist'.", 1, true),
+        "Expected schema error to surface the invalid comparator")
+end
+
+function test_load_allows_inactive_rules_to_use_unknown_comparators()
+    with_stubbed_profile({
+        util = {
+            read_file_content = function()
+                return "stub"
+            end
+        },
+        lyaml = {
+            load = function()
+                return {
+                    levels = {
+                        { id = "baseline" },
+                        { id = "strict" },
+                    },
+                    rules = {
+                        {
+                            id = "rule.baseline",
+                            desc = "baseline rule",
+                            level = { "baseline" },
+                            assertion = {
+                                compare = "is_true",
+                                actual = true,
+                            }
+                        },
+                        {
+                            id = "rule.strict",
+                            desc = "strict rule",
+                            level = { "strict" },
+                            assertion = {
+                                compare = "does_not_exist",
+                                actual = true,
+                            }
+                        }
+                    }
+                }
+            end
+        }
+    }, function(stubbed_profile)
+        local loaded = stubbed_profile.load("mixed_profile")
+        assert(loaded ~= nil, "Expected structural profile loading to ignore inactive-rule comparator capability")
+    end)
+end
+
+function test_get_rules_for_level_ignores_unknown_comparator_in_inactive_rule()
+    local rules, err = profile.get_rules_for_level({
+        levels = {
+            { id = "baseline" },
+            { id = "strict" },
+        },
+        rules = {
+            {
+                id = "rule.baseline",
+                desc = "baseline rule",
+                level = { "baseline" },
+                assertion = {
+                    compare = "is_true",
+                    actual = true,
+                }
+            },
+            {
+                id = "rule.strict",
+                desc = "strict rule",
+                level = { "strict" },
+                assertion = {
+                    compare = "does_not_exist",
+                    actual = true,
+                }
+            }
+        }
+    }, "baseline")
+
+    assert(err == nil, "Expected inactive unknown comparators not to poison the selected rule set")
+    assert(#rules == 1 and rules[1].id == "rule.baseline",
+        "Expected only the selected level's valid rules to be returned")
+end
+
+function test_get_rules_for_level_rejects_unknown_comparator_in_active_rule()
+    local rules, err = profile.get_rules_for_level({
+        levels = {
+            { id = "baseline" },
+            { id = "strict" },
+        },
+        rules = {
+            {
+                id = "rule.baseline",
+                desc = "baseline rule",
+                level = { "baseline" },
+                assertion = {
+                    compare = "is_true",
+                    actual = true,
+                }
+            },
+            {
+                id = "rule.strict",
+                desc = "strict rule",
+                level = { "strict" },
+                assertion = {
+                    compare = "does_not_exist",
+                    actual = true,
+                }
+            }
+        }
+    }, "strict")
+
+    assert(rules == nil, "Expected active unknown comparators to be rejected after level filtering")
+    assert(err:find("rules%[2%]%.assertion%.compare references unknown comparator 'does_not_exist'%."),
+        "Expected active rule validation to surface the unsupported comparator")
 end
 
 function test_get_rules_for_level_includes_inherited_levels()
@@ -71,13 +233,19 @@ function test_get_rules_for_level_includes_inherited_levels()
                 id = "rule.baseline",
                 desc = "baseline rule",
                 level = { "baseline" },
-                assertion = {}
+                assertion = {
+                    compare = "is_true",
+                    actual = true,
+                }
             },
             {
                 id = "rule.strict",
                 desc = "strict rule",
                 level = { "strict" },
-                assertion = {}
+                assertion = {
+                    compare = "is_true",
+                    actual = true,
+                }
             }
         }
     }, "strict"))
@@ -157,7 +325,10 @@ function test_load_rejects_invalid_schema_before_runtime()
                             id = "rule.1",
                             desc = "demo rule",
                             level = { "baseline" },
-                            assertion = {}
+                            assertion = {
+                                compare = "is_true",
+                                actual = true,
+                            }
                         }
                     }
                 }
@@ -166,5 +337,43 @@ function test_load_rejects_invalid_schema_before_runtime()
     }, function(stubbed_profile)
         local loaded = stubbed_profile.load("broken_profile")
         assert(loaded == nil, "Expected invalid profile schema to fail during load")
+    end)
+end
+
+function test_load_rejects_invalid_rule_schema_before_runtime()
+    with_stubbed_profile({
+        util = {
+            read_file_content = function()
+                return "stub"
+            end
+        },
+        lyaml = {
+            load = function()
+                return {
+                    levels = {
+                        { id = "baseline" }
+                    },
+                    rules = {
+                        {
+                            id = "rule.1",
+                            desc = "demo rule",
+                            probes = {
+                                {
+                                    func = "permissions.get_attributes",
+                                    params = { path = "/etc/passwd" },
+                                }
+                            },
+                            assertion = {
+                                compare = "is_true",
+                                actual = true,
+                            }
+                        }
+                    }
+                }
+            end
+        }
+    }, function(stubbed_profile)
+        local loaded = stubbed_profile.load("broken_profile")
+        assert(loaded == nil, "Expected invalid rule schema to fail during load")
     end)
 end

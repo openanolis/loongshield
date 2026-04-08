@@ -201,6 +201,28 @@ function test_engine_unknown_comparator_fails()
     assert(rc == 1, "Expected unknown comparator to fail")
 end
 
+function test_engine_invalid_probe_schema_fails_without_throwing()
+    local rule = {
+        id = "TEST-BAD-PROBE-SCHEMA",
+        desc = "bad probe schema",
+        probes = {
+            {
+                func = "meta.always_false",
+                params = {}
+            }
+        },
+        assertion = {
+            compare = "is_true",
+            actual = true
+        }
+    }
+
+    local ok, rc = pcall(run_rule, rule)
+
+    assert(ok, "Expected malformed rule schema to be handled without throwing")
+    assert(rc == 1, "Expected malformed rule schema to fail the run")
+end
+
 function test_engine_probe_error_fails()
     local loader = require('seharden.loader')
     local saved = loader.get_probe
@@ -500,7 +522,7 @@ function test_engine_verbose_mode_focuses_relevant_probe_keys_and_compacts_large
             assertion = {
                 all_of = {
                     {
-                        compare = "less_than_or_equal",
+                        compare = "is_less_than_or_equal_to",
                         actual = "%{probe.login_defs}",
                         key = "PASS_MAX_DAYS",
                         expected = 90,

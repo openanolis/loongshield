@@ -3,6 +3,7 @@ local utils = require('seharden.util')
 local loader = require('seharden.loader')
 local comparators = require('seharden.comparators')
 local output = require('seharden.output')
+local rule_schema = require('seharden.rule_schema')
 
 local M = {}
 
@@ -80,18 +81,6 @@ local function _get_actual_value(node, contexts)
     end
 
     return resolve_value(node.actual, contexts)
-end
-
-local function _normalize_probe_tasks(rule_probes)
-    if type(rule_probes) ~= "table" then
-        return {}
-    end
-
-    if rule_probes.func then
-        return { rule_probes }
-    end
-
-    return rule_probes
 end
 
 --------------------------------------------------------------------------------
@@ -174,7 +163,7 @@ local function run_audit(rule, opts)
 
     if rule.probes then
         log.debug("--- Probing Data for Rule ID: %s ---", rule.id)
-        local probes_to_run = _normalize_probe_tasks(rule.probes)
+        local probes_to_run = rule_schema.normalize_probe_tasks(rule.probes)
 
         for _, task in ipairs(probes_to_run) do
             local probe_func = loader.get_probe(task.func)
@@ -210,37 +199,9 @@ local function run_audit(rule, opts)
     end
 end
 
---------------------------------------------------------------------------------
--- The Reinforce Logic
---------------------------------------------------------------------------------
-
-local function validate_reinforce_steps(rule)
-    if not rule.reinforce then return true end
-    if type(rule.reinforce) ~= "table" then
-        return false, "rule.reinforce must be a list"
-    end
-    for i, task in ipairs(rule.reinforce) do
-        if type(task.action) ~= "string" or task.action == "" then
-            return false, string.format("reinforce[%d] missing or empty 'action' string", i)
-        end
-        if not task.action:match("^[%w_]+%.[%w_]+$") then
-            return false, string.format("reinforce[%d] action '%s' must be in 'module.function' format", i, task.action)
-        end
-        if task.params ~= nil and type(task.params) ~= "table" then
-            return false, string.format("reinforce[%d] 'params' must be a table if present", i)
-        end
-    end
-    return true
-end
-
 local function run_enforce(rule, probed_data, dry_run)
     if not rule.reinforce then
         return "MANUAL", "No reinforce steps defined for this rule."
-    end
-
-    local valid, schema_err = validate_reinforce_steps(rule)
-    if not valid then
-        return "ERROR", string.format("Invalid reinforce schema: %s", schema_err)
     end
 
     for _, task in ipairs(rule.reinforce) do
@@ -307,50 +268,59 @@ function M.run(mode, rules, opts)
     log.debug("Executing %d rules.", total_checks)
 
     for _, rule in ipairs(rules) do
-        local status, message, probed_data, reason = run_audit(rule, opts)
+        local valid, schema_err = rule_schema.validate_rule(rule)
+        local probe_tasks = valid and rule_schema.normalize_probe_tasks(rule.probes) or {}
+        local rule_id = type(rule) == "table" and rule.id or "<unknown>"
 
-        if status == "ERROR" then
-            log.error("[%s] Engine Error: %s", rule.id, message)
+        if not valid then
+            log.error("[%s] Engine Error: Invalid rule schema: %s", tostring(rule_id), schema_err)
             hard_failures = hard_failures + 1
-        elseif status == "PASS" then
-            if opts.verbose then
-                output.emit_verbose_rule_details(
-                    rule, status, probed_data, nil, _normalize_probe_tasks(rule.probes))
-            end
-            passed = passed + 1
-        elseif mode == "reinforce" then
-            if opts.verbose then
-                output.emit_verbose_rule_details(
-                    rule, status, probed_data, reason, _normalize_probe_tasks(rule.probes))
-            end
-            local enforce_status, enforce_err = run_enforce(rule, probed_data, dry_run)
-
-            if enforce_status == "MANUAL" then
-                log.info("[%s] MANUAL: %s", rule.id, enforce_err)
-                manual = manual + 1
-            elseif enforce_status == "ERROR" then
-                log.error("[%s] ENFORCE-ERROR: %s", rule.id, enforce_err)
-                hard_failures = hard_failures + 1
-            elseif enforce_status == "SKIP" then
-                log.info("[%s] DRY-RUN: would apply %d action(s)",
-                    rule.id, #(rule.reinforce or {}))
-                dry_run_pending = dry_run_pending + 1
-            elseif enforce_status == "DONE" then
-                local verify_status, verify_msg = run_audit(rule)
-                if verify_status == "PASS" then
-                    log.info("[%s] FIXED: %s", rule.id, rule.desc)
-                    fixed = fixed + 1
-                else
-                    log.error("[%s] FAILED-TO-FIX: %s", rule.id, verify_msg)
-                    hard_failures = hard_failures + 1
-                end
-            end
         else
-            if opts.verbose then
-                output.emit_verbose_rule_details(
-                    rule, status, probed_data, reason, _normalize_probe_tasks(rule.probes))
+            local status, message, probed_data, reason = run_audit(rule, opts)
+
+            if status == "ERROR" then
+                log.error("[%s] Engine Error: %s", rule.id, message)
+                hard_failures = hard_failures + 1
+            elseif status == "PASS" then
+                if opts.verbose then
+                    output.emit_verbose_rule_details(
+                        rule, status, probed_data, nil, probe_tasks)
+                end
+                passed = passed + 1
+            elseif mode == "reinforce" then
+                if opts.verbose then
+                    output.emit_verbose_rule_details(
+                        rule, status, probed_data, reason, probe_tasks)
+                end
+                local enforce_status, enforce_err = run_enforce(rule, probed_data, dry_run)
+
+                if enforce_status == "MANUAL" then
+                    log.info("[%s] MANUAL: %s", rule.id, enforce_err)
+                    manual = manual + 1
+                elseif enforce_status == "ERROR" then
+                    log.error("[%s] ENFORCE-ERROR: %s", rule.id, enforce_err)
+                    hard_failures = hard_failures + 1
+                elseif enforce_status == "SKIP" then
+                    log.info("[%s] DRY-RUN: would apply %d action(s)",
+                        rule.id, #(rule.reinforce or {}))
+                    dry_run_pending = dry_run_pending + 1
+                elseif enforce_status == "DONE" then
+                    local verify_status, verify_msg = run_audit(rule)
+                    if verify_status == "PASS" then
+                        log.info("[%s] FIXED: %s", rule.id, rule.desc)
+                        fixed = fixed + 1
+                    else
+                        log.error("[%s] FAILED-TO-FIX: %s", rule.id, verify_msg)
+                        hard_failures = hard_failures + 1
+                    end
+                end
+            else
+                if opts.verbose then
+                    output.emit_verbose_rule_details(
+                        rule, status, probed_data, reason, probe_tasks)
+                end
+                hard_failures = hard_failures + 1
             end
-            hard_failures = hard_failures + 1
         end
     end
 
