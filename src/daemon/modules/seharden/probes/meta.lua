@@ -1,4 +1,4 @@
-local probes = require('seharden.probeloader')
+local loader = require('seharden.loader')
 local log = require('runtime.log')
 local M = {}
 
@@ -51,7 +51,7 @@ function M.map(params, probed_data)
         return nil, string.format("Source probe '%s' for map did not return a list.", params.source_probe)
     end
 
-    local probe_func = probes.get(params.apply_func)
+    local probe_func = loader.get_probe(params.apply_func)
     if not probe_func then
         return nil, string.format("Function '%s' not found for map.", params.apply_func)
     end

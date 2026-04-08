@@ -1,7 +1,6 @@
 local log = require('runtime.log')
 local utils = require('seharden.util')
-local probes = require('seharden.probeloader')
-local enforcers = require('seharden.enforcerloader')
+local loader = require('seharden.loader')
 local comparators = require('seharden.comparators')
 local output = require('seharden.output')
 
@@ -178,7 +177,7 @@ local function run_audit(rule, opts)
         local probes_to_run = _normalize_probe_tasks(rule.probes)
 
         for _, task in ipairs(probes_to_run) do
-            local probe_func = probes.get(task.func)
+            local probe_func = loader.get_probe(task.func)
             if not probe_func then
                 return "ERROR", string.format("Probe '%s' not found", task.func)
             end
@@ -246,7 +245,7 @@ local function run_enforce(rule, probed_data, dry_run)
 
     for _, task in ipairs(rule.reinforce) do
         local resolved_params = resolve_value(task.params, { probe = probed_data })
-        local enforcer_func, path = enforcers.get(task.action)
+        local enforcer_func, path = loader.get_enforcer(task.action)
 
         if dry_run then
             if not enforcer_func then

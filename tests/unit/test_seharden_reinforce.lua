@@ -2,7 +2,7 @@
 -- Tests FIXED / FAILED-TO-FIX / MANUAL / DRY-RUN result categories.
 
 local engine = require('seharden.engine')
-local enforcerloader = require('seharden.enforcerloader')
+local loader = require('seharden.loader')
 
 -- Helper: build a minimal rule that always FAILs the audit
 local function make_failing_rule(id, reinforce_steps)
@@ -39,34 +39,30 @@ local function make_passing_rule(id)
     }
 end
 
--- Stub probeloader so we don't need real system probes
-local probeloader = require('seharden.probeloader')
-local original_get = probeloader.get
-
+-- Stub probe resolution so we don't need real system probes
 local function with_probe_stubs(overrides, fn)
-    local saved = probeloader.get
-    probeloader.get = function(path)
+    local saved = loader.get_probe
+    loader.get_probe = function(path)
         if overrides[path] then
             return overrides[path]
         end
         return saved(path)
     end
     local ok, err = pcall(fn)
-    probeloader.get = saved
+    loader.get_probe = saved
     if not ok then error(err, 2) end
 end
 
--- Stub enforcerloader
 local function with_enforcer_stubs(overrides, fn)
-    local saved = enforcerloader.get
-    enforcerloader.get = function(path)
+    local saved = loader.get_enforcer
+    loader.get_enforcer = function(path)
         if overrides[path] then
             return overrides[path], path
         end
         return saved(path)
     end
     local ok, err = pcall(fn)
-    enforcerloader.get = saved
+    loader.get_enforcer = saved
     if not ok then error(err, 2) end
 end
 
@@ -171,7 +167,7 @@ function test_reinforce_error_when_enforcer_not_found()
     with_probe_stubs({
         ["meta.always_fail"] = function() return false end,
     }, function()
-        -- Don't stub the enforcer — let enforcerloader return nil
+        -- Don't stub the enforcer — let loader return nil
         local ret = engine.run("reinforce", { rule }, {})
         assert(ret == 1, "Expected exit 1 when enforcer not found")
     end)

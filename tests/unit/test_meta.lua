@@ -1,11 +1,11 @@
 local Mocks = {}
-local saved_probeloader
+local saved_loader
 
 local function setup(mock_probe_result)
     Mocks.result = mock_probe_result
-    saved_probeloader = package.loaded["seharden.probeloader"]
-    package.loaded["seharden.probeloader"] = {
-        get = function()
+    saved_loader = package.loaded["seharden.loader"]
+    package.loaded["seharden.loader"] = {
+        get_probe = function()
             return function()
                 -- Return a shallow copy so each call gets a distinct table;
                 -- setmetatable in meta.map mutates the returned table, which
@@ -20,7 +20,7 @@ local function setup(mock_probe_result)
 end
 
 local function teardown()
-    package.loaded["seharden.probeloader"] = saved_probeloader
+    package.loaded["seharden.loader"] = saved_loader
 end
 
 function test_map_applies_probe_to_each_item()
@@ -61,9 +61,9 @@ function test_map_handles_missing_source()
 end
 
 function test_map_propagates_inner_probe_nil_error()
-    saved_probeloader = package.loaded["seharden.probeloader"]
-    package.loaded["seharden.probeloader"] = {
-        get = function()
+    saved_loader = package.loaded["seharden.loader"]
+    package.loaded["seharden.loader"] = {
+        get_probe = function()
             return function()
                 return nil, "inner failure"
             end

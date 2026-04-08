@@ -171,9 +171,9 @@ function test_engine_preserves_false_probe_values()
         }
     }
 
-    local probeloader = require('seharden.probeloader')
-    local saved = probeloader.get
-    probeloader.get = function(path)
+    local loader = require('seharden.loader')
+    local saved = loader.get_probe
+    loader.get_probe = function(path)
         if path == "meta.always_false" then
             return function() return false end, path
         end
@@ -181,7 +181,7 @@ function test_engine_preserves_false_probe_values()
     end
 
     local ok, rc = pcall(run_rule, rule)
-    probeloader.get = saved
+    loader.get_probe = saved
 
     assert(ok, "Expected false-valued probe test to run without throwing")
     assert(rc == 0, "Expected false probe value to remain false in assertions")
@@ -202,9 +202,9 @@ function test_engine_unknown_comparator_fails()
 end
 
 function test_engine_probe_error_fails()
-    local probeloader = require('seharden.probeloader')
-    local saved = probeloader.get
-    probeloader.get = function(path)
+    local loader = require('seharden.loader')
+    local saved = loader.get_probe
+    loader.get_probe = function(path)
         if path == "file.find_pattern" then
             return function()
                 error("probe failed")
@@ -227,7 +227,7 @@ function test_engine_probe_error_fails()
     }
 
     local ok, rc = pcall(run_rule, rule)
-    probeloader.get = saved
+    loader.get_probe = saved
 
     assert(ok, "Expected probe error test to complete without throwing")
     assert(rc == 1, "Expected engine to fail when probe errors")
@@ -271,9 +271,9 @@ function test_engine_failure_message_formats_actual_once()
 end
 
 function test_engine_failure_message_uses_probe_error_when_actual_is_nil()
-    local probeloader = require('seharden.probeloader')
-    local saved = probeloader.get
-    probeloader.get = function(path)
+    local loader = require('seharden.loader')
+    local saved = loader.get_probe
+    loader.get_probe = function(path)
         if path == "meta.probe_error" then
             return function()
                 return {
@@ -301,7 +301,7 @@ function test_engine_failure_message_uses_probe_error_when_actual_is_nil()
             }
         })
     end)
-    probeloader.get = saved
+    loader.get_probe = saved
 
     local output = table.concat(lines, "\n")
 
@@ -347,9 +347,9 @@ function test_engine_for_all_failure_reports_first_failing_item()
 end
 
 function test_engine_verbose_mode_prints_human_friendly_probe_summaries()
-    local probeloader = require('seharden.probeloader')
-    local saved = probeloader.get
-    probeloader.get = function(path)
+    local loader = require('seharden.loader')
+    local saved = loader.get_probe
+    loader.get_probe = function(path)
         if path == "meta.verbose_failure_probe" then
             return function()
                 return { value = "yes", available = true }
@@ -378,7 +378,7 @@ function test_engine_verbose_mode_prints_human_friendly_probe_summaries()
             }
         }, { verbose = true })
     end)
-    probeloader.get = saved
+    loader.get_probe = saved
     local output = table.concat(lines, "\n")
 
     assert(rc == 1, "Expected verbose failure rule to fail")
@@ -399,9 +399,9 @@ function test_engine_verbose_mode_prints_human_friendly_probe_summaries()
 end
 
 function test_engine_verbose_mode_prints_passed_rule_headings()
-    local probeloader = require('seharden.probeloader')
-    local saved = probeloader.get
-    probeloader.get = function(path)
+    local loader = require('seharden.loader')
+    local saved = loader.get_probe
+    loader.get_probe = function(path)
         if path == "meta.verbose_pass_probe" then
             return function()
                 return { value = "ok" }
@@ -429,7 +429,7 @@ function test_engine_verbose_mode_prints_passed_rule_headings()
             }
         }, { verbose = true })
     end)
-    probeloader.get = saved
+    loader.get_probe = saved
     local output = table.concat(lines, "\n")
 
     assert(rc == 0, "Expected verbose passing rule to succeed")
@@ -440,9 +440,9 @@ function test_engine_verbose_mode_prints_passed_rule_headings()
 end
 
 function test_engine_verbose_mode_focuses_relevant_probe_keys_and_compacts_large_maps()
-    local probeloader = require('seharden.probeloader')
-    local saved = probeloader.get
-    probeloader.get = function(path)
+    local loader = require('seharden.loader')
+    local saved = loader.get_probe
+    loader.get_probe = function(path)
         if path == "meta.login_defs_verbose" then
             return function()
                 return {
@@ -516,7 +516,7 @@ function test_engine_verbose_mode_focuses_relevant_probe_keys_and_compacts_large
             }
         }, { verbose = true })
     end)
-    probeloader.get = saved
+    loader.get_probe = saved
     local output = table.concat(lines, "\n")
 
     assert(rc == 1, "Expected focused verbose rule to fail")
