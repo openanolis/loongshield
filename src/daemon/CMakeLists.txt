@@ -3,24 +3,30 @@
 # Uses centralized paths from cmake/modules/Dependencies.cmake
 # Uses DBus/Systemd detection from cmake/modules/Find*.cmake
 
-# Version metadata for embedded Lua module
-set(LOONGSHIELD_VERSION_FILE "${CMAKE_SOURCE_DIR}/VERSION")
-if(EXISTS "${LOONGSHIELD_VERSION_FILE}")
-    file(READ "${LOONGSHIELD_VERSION_FILE}" LOONGSHIELD_VERSION)
-    string(STRIP "${LOONGSHIELD_VERSION}" LOONGSHIELD_VERSION)
-else()
-    set(LOONGSHIELD_VERSION "0.0.0")
+# Version metadata for embedded Lua module.
+# Packaging can override these values explicitly so release artifacts remain
+# stable even when building from an exported source tarball without .git.
+if(NOT DEFINED LOONGSHIELD_VERSION OR "${LOONGSHIELD_VERSION}" STREQUAL "")
+    set(LOONGSHIELD_VERSION_FILE "${CMAKE_SOURCE_DIR}/VERSION")
+    if(EXISTS "${LOONGSHIELD_VERSION_FILE}")
+        file(READ "${LOONGSHIELD_VERSION_FILE}" LOONGSHIELD_VERSION)
+        string(STRIP "${LOONGSHIELD_VERSION}" LOONGSHIELD_VERSION)
+    else()
+        set(LOONGSHIELD_VERSION "0.0.0")
+    endif()
 endif()
 
-execute_process(
-    COMMAND git rev-parse HEAD
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    OUTPUT_VARIABLE LOONGSHIELD_COMMIT
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
-if(NOT LOONGSHIELD_COMMIT)
-    set(LOONGSHIELD_COMMIT "unknown")
+if(NOT DEFINED LOONGSHIELD_COMMIT OR "${LOONGSHIELD_COMMIT}" STREQUAL "")
+    execute_process(
+        COMMAND git rev-parse HEAD
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE LOONGSHIELD_COMMIT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(NOT LOONGSHIELD_COMMIT)
+        set(LOONGSHIELD_COMMIT "unknown")
+    endif()
 endif()
 
 configure_file(

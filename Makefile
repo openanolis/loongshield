@@ -315,10 +315,13 @@ RPM_BUILD_REQUIRES := \
 	systemd-devel \
 	which \
 	xz-devel
+GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+
 RPM_DEFINES := \
 	--define "_topdir $(RPM_BUILD_ROOT)" \
 	--define "_tmppath $(RPM_TMPDIR)" \
-	--define "pkg_version $(VERSION)"
+	--define "pkg_version $(VERSION)" \
+	--define "pkg_commit $(GIT_COMMIT)"
 
 rpm: rpm-tarball
 	$(call msg-info,Building RPM package)
@@ -478,21 +481,22 @@ rpm-in-docker: docker-dev rpm-tarball
 		-v $(BUILD_DIR)/rpmbuild-docker:/root/rpmbuild \
 		-w /root \
 		loongshield-dev:latest \
-		/bin/bash -lc '\
-			set -e; \
-			echo "==> Setting up rpmbuild tree..."; \
-			mkdir -p ~/rpmbuild/tmp; \
-			rpmdev-setuptree; \
-			cp /workspace/dist/$(PROJECT)-$(VERSION).tar.gz ~/rpmbuild/SOURCES/; \
-			cp /workspace/dist/loongshield.spec ~/rpmbuild/SPECS/; \
-			echo "==> Building RPM..."; \
-			rpmbuild -bb \
-				--define "_tmppath %{getenv:HOME}/rpmbuild/tmp" \
-				--define "pkg_version $(VERSION)" \
-				~/rpmbuild/SPECS/loongshield.spec; \
-			echo "==> Build complete!"; \
-			ls -la ~/rpmbuild/RPMS/*/ \
-		'
+			/bin/bash -lc '\
+				set -e; \
+				echo "==> Setting up rpmbuild tree..."; \
+				mkdir -p ~/rpmbuild/tmp; \
+				rpmdev-setuptree; \
+				cp /workspace/dist/$(PROJECT)-$(VERSION).tar.gz ~/rpmbuild/SOURCES/; \
+				cp /workspace/dist/loongshield.spec ~/rpmbuild/SPECS/; \
+				echo "==> Building RPM..."; \
+				rpmbuild -bb \
+					--define "_tmppath %{getenv:HOME}/rpmbuild/tmp" \
+					--define "pkg_version $(VERSION)" \
+					--define "pkg_commit $(GIT_COMMIT)" \
+					~/rpmbuild/SPECS/loongshield.spec; \
+				echo "==> Build complete!"; \
+				ls -la ~/rpmbuild/RPMS/*/ \
+			'
 	$(call msg-info,RPM packages available at: $(BUILD_DIR)/rpmbuild-docker/RPMS/)
 
 # ============================================================================

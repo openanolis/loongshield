@@ -1,14 +1,16 @@
-name: Build RPM
+name: RPM CI
 
 on:
     push:
         branches: [master, main]
+        tags:
+            - "v*"
     pull_request:
         branches: [master, main]
     workflow_dispatch:
 
 concurrency:
-    group: build-rpm-${{ github.event.pull_request.number || github.ref }}
+    group: rpm-ci-${{ github.event.pull_request.number || github.ref }}
     cancel-in-progress: true
 
 permissions:
@@ -16,18 +18,51 @@ permissions:
 
 jobs:
     build-rpm:
-        name: Build RPM (Docker)
-        runs-on: ubuntu-latest
+        name: Build RPM (${{ matrix.arch }})
+        runs-on: ${{ matrix.runner }}
         timeout-minutes: 60
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - arch: x86_64
+                      runner: ubuntu-latest
+                    - arch: aarch64
+                      runner: ubuntu-24.04-arm
 
         steps:
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v3
-
             - name: Checkout code
               uses: actions/checkout@v4
               with:
                   submodules: recursive
+
+            - name: Validate release metadata
+              if: startsWith(github.ref, 'refs/tags/v')
+              shell: bash
+              run: |
+                  set -euo pipefail
+
+                  tag_version="${GITHUB_REF#refs/tags/v}"
+                  version="$(tr -d '\n' < VERSION)"
+                  spec_version="$(sed -n 's/^Version: %{!?pkg_version:\([^}]*\)}%{?pkg_version}$/\1/p' dist/loongshield.spec)"
+
+                  if [[ "$tag_version" != "$version" ]]; then
+                      echo "Tag version '$tag_version' does not match VERSION '$version'." >&2
+                      exit 1
+                  fi
+
+                  if [[ "$spec_version" != "$version" ]]; then
+                      echo "Spec version '$spec_version' does not match VERSION '$version'." >&2
+                      exit 1
+                  fi
+
+                  if ! grep -q "^## \[$version\] - " CHANGELOG.md; then
+                      echo "CHANGELOG.md is missing a release section for $version." >&2
+                      exit 1
+                  fi
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
 
             - name: Build RPM in Docker container
               run: make rpm-in-docker
@@ -35,13 +70,13 @@ jobs:
             - name: Upload RPM artifacts
               uses: actions/upload-artifact@v4
               with:
-                  name: loongshield-rpm
+                  name: loongshield-rpm-${{ matrix.arch }}
                   path: build/rpmbuild-docker/RPMS/**/*.rpm
                   if-no-files-found: error
 
     test-rpm:
-        name: Test RPM install on ${{ matrix.name }}
-        runs-on: ubuntu-latest
+        name: Test RPM install on ${{ matrix.name }} (${{ matrix.arch }})
+        runs-on: ${{ matrix.runner }}
         needs: build-rpm
         timeout-minutes: 30
         strategy:
@@ -49,8 +84,20 @@ jobs:
             matrix:
                 include:
                     - name: "CentOS Stream 9"
+                      arch: x86_64
+                      runner: ubuntu-latest
                       image: "quay.io/centos/centos:stream9"
                     - name: "Anolis OS 23"
+                      arch: x86_64
+                      runner: ubuntu-latest
+                      image: "registry.openanolis.cn/openanolis/anolisos:23"
+                    - name: "CentOS Stream 9"
+                      arch: aarch64
+                      runner: ubuntu-24.04-arm
+                      image: "quay.io/centos/centos:stream9"
+                    - name: "Anolis OS 23"
+                      arch: aarch64
+                      runner: ubuntu-24.04-arm
                       image: "registry.openanolis.cn/openanolis/anolisos:23"
         container:
             image: ${{ matrix.image }}
@@ -111,12 +158,12 @@ jobs:
             - name: Download RPM artifacts
               uses: actions/download-artifact@v4
               with:
-                  name: loongshield-rpm
+                  name: loongshield-rpm-${{ matrix.arch }}
                   path: ./rpm-packages
 
             - name: Install RPM package
               run: |
-                  set -e
+                  set -euo pipefail
                   set -x
 
                   if command -v dnf >/dev/null 2>&1; then
@@ -130,16 +177,108 @@ jobs:
 
                   mapfile -t rpms < <(find ./rpm-packages -type f -name '*.rpm' | sort)
                   test ${#rpms[@]} -gt 0
+                  rpm_arch="$(rpm -qp --qf '%{ARCH}\n' "${rpms[0]}")"
+                  test "$rpm_arch" = "${{ matrix.arch }}"
                   "$PM" install -y "${rpms[@]}"
 
             - name: Verify installed package
               run: |
-                  set -e
+                  set -euo pipefail
                   set -x
 
-                  loongshield version
+                  version_line="$(loongshield version | tail -n 1 | tr -d '\r')"
+                  pkg_version="$(rpm -q --qf '%{VERSION}\n' loongshield)"
+                  pkg_arch="$(rpm -q --qf '%{ARCH}\n' loongshield)"
+                  pkg_version_re="${pkg_version//./\\.}"
+
+                  printf '%s\n' "$version_line"
+                  test "$pkg_arch" = "${{ matrix.arch }}"
+                  [[ "$version_line" =~ ^loongshield[[:space:]]+$pkg_version_re[[:space:]]+commit[[:space:]]+[0-9a-f]{40}$ ]]
+
                   test -x /usr/sbin/loongshield
                   test -x /usr/sbin/loonjit
                   test -f /etc/loongshield/seharden/agentos_baseline.yml
                   test -f /etc/loongshield/seharden/cis_alinux_3.yml
                   test -f /usr/share/licenses/loongshield/LICENSE
+
+    release:
+        name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        runs-on: ubuntu-latest
+        needs: test-rpm
+        timeout-minutes: 30
+        permissions:
+            contents: write
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Detect prerelease tag
+              id: prerelease
+              shell: bash
+              run: |
+                  set -euo pipefail
+
+                  tag="${GITHUB_REF#refs/tags/}"
+                  prerelease=false
+                  if [[ "$tag" == *alpha* || "$tag" == *beta* || "$tag" == *rc* ]]; then
+                      prerelease=true
+                  fi
+                  echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+            - name: Validate release metadata and extract notes
+              shell: bash
+              run: |
+                  set -euo pipefail
+
+                  tag_version="${GITHUB_REF#refs/tags/v}"
+                  version="$(tr -d '\n' < VERSION)"
+                  spec_version="$(sed -n 's/^Version: %{!?pkg_version:\([^}]*\)}%{?pkg_version}$/\1/p' dist/loongshield.spec)"
+
+                  if [[ "$tag_version" != "$version" ]]; then
+                      echo "Tag version '$tag_version' does not match VERSION '$version'." >&2
+                      exit 1
+                  fi
+
+                  if [[ "$spec_version" != "$version" ]]; then
+                      echo "Spec version '$spec_version' does not match VERSION '$version'." >&2
+                      exit 1
+                  fi
+
+                  awk -v version="$version" '
+                      $0 ~ "^## \\[" version "\\] - " { capture = 1; next }
+                      capture && $0 ~ "^## \\[" { exit }
+                      capture { print }
+                  ' CHANGELOG.md > release-notes.md
+
+                  if [[ ! -s release-notes.md ]]; then
+                      echo "CHANGELOG.md is missing release notes for $version." >&2
+                      exit 1
+                  fi
+
+            - name: Download RPM artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  pattern: loongshield-rpm-*
+                  path: ./release-artifacts
+                  merge-multiple: true
+
+            - name: Verify release artifacts
+              shell: bash
+              run: |
+                  set -euo pipefail
+
+                  mapfile -t rpms < <(find ./release-artifacts -type f -name '*.rpm' | sort)
+                  test ${#rpms[@]} -gt 0
+                  printf '%s\n' "${rpms[@]}"
+
+                  printf '%s\n' "${rpms[@]}" | grep -Eq '\.x86_64\.rpm$'
+                  printf '%s\n' "${rpms[@]}" | grep -Eq '\.(aarch64|arm64)\.rpm$'
+
+            - name: Publish GitHub release
+              uses: softprops/action-gh-release@v2
+              with:
+                  prerelease: ${{ steps.prerelease.outputs.prerelease == 'true' }}
+                  body_path: ./release-notes.md
+                  files: ./release-artifacts/**/*.rpm

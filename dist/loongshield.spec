@@ -35,8 +35,6 @@ BuildRequires:  perl-IPC-Cmd
 BuildRequires:  perl-FindBin
 BuildRequires:  perl-ExtUtils-MakeMaker
 BuildRequires:  which
-BuildRequires:  git
-
 %description
 security shield framework for alinux/anolis
 
@@ -49,7 +47,10 @@ cd build
 # Clear RPM hardened flags that break LuaJIT architecture detection
 # LuaJIT handles its own optimization and security flags
 unset CFLAGS CXXFLAGS FFLAGS FCFLAGS LDFLAGS
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLOONGSHIELD_VERSION:STRING=%{version} \
+    -DLOONGSHIELD_COMMIT:STRING=%{!?pkg_commit:unknown}%{?pkg_commit}
 make %{?_smp_mflags}
 
 %install
