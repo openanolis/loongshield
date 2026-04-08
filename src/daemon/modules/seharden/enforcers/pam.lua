@@ -1,5 +1,7 @@
 local lfs = require('lfs')
 local fsutil = require('seharden.enforcers.fsutil')
+local pam_parser = require('seharden.parsers.pam')
+local text = require('seharden.text')
 local M = {}
 
 local _default_dependencies = {
@@ -30,9 +32,7 @@ end
 
 M._test_set_dependencies()
 
-local function trim(value)
-    return tostring(value or ""):match("^%s*(.-)%s*$")
-end
+local trim = text.trim
 
 local function is_safe_path(path)
     return type(path) == "string" and path ~= "" and not path:find("[%c\n\r]")
@@ -59,44 +59,6 @@ local function normalize_tokens(values, field_name)
     end
 
     return normalized
-end
-
-local function parse_pam_line(line)
-    local trimmed = trim(line)
-    if trimmed == "" or trimmed:match("^#") then
-        return nil
-    end
-
-    local kind, remainder = trimmed:match("^(%S+)%s+(.+)$")
-    if not kind or not remainder then
-        return nil
-    end
-
-    local control
-    local module_name
-    local args_text
-
-    if remainder:sub(1, 1) == "[" then
-        control, module_name, args_text = remainder:match("^(%b[])%s+(%S+)%s*(.*)$")
-    else
-        control, module_name, args_text = remainder:match("^(%S+)%s+(%S+)%s*(.*)$")
-    end
-
-    if not control or not module_name then
-        return nil
-    end
-
-    local args = {}
-    for token in tostring(args_text or ""):gmatch("%S+") do
-        args[#args + 1] = token
-    end
-
-    return {
-        kind = kind,
-        control = control,
-        module = module_name,
-        args = args,
-    }
 end
 
 local function entry_has_args(args, required_args)
@@ -208,7 +170,7 @@ function M.ensure_entry(params)
     local inserted = false
 
     for _, line in ipairs(original_lines) do
-        local entry = parse_pam_line(line)
+        local entry = pam_parser.parse_line(line)
         local is_target = entry
             and entry.kind == params.kind
             and entry.module == params.module

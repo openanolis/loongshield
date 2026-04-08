@@ -1,4 +1,6 @@
 local lfs = require('lfs')
+local sudoers = require('seharden.parsers.sudoers')
+local text = require('seharden.text')
 local M = {}
 
 local _default_dependencies = {
@@ -34,9 +36,7 @@ end
 
 M._test_set_dependencies()
 
-local function trim(value)
-    return (tostring(value or ""):match("^%s*(.-)%s*$"))
-end
+local trim = text.trim
 
 local function get_defaults_scope(text)
     local lowered_text = trim(text):lower()
@@ -65,180 +65,15 @@ local function get_defaults_flag_state(text, flag_name)
     return state
 end
 
-local function get_dirname(path)
-    return path:match("^(.*)/[^/]+$") or "."
-end
-
-local function resolve_include_path(raw_path, current_path)
-    local path = trim(raw_path)
-    if path:sub(1, 1) == '"' and path:sub(-1) == '"' and #path >= 2 then
-        path = path:sub(2, -2)
-    end
-
-    path = path:gsub("%%h", _dependencies.get_short_hostname() or "")
-    path = path:gsub("\\ ", " ")
-    path = path:gsub("\\\\", "\\")
-
-    if path:sub(1, 1) ~= "/" then
-        path = get_dirname(current_path) .. "/" .. path
-    end
-
-    return path
-end
-
-local function parse_include_directive(line)
-    local path = line:match("^[@#]includedir%s+(.+)$")
-    if path then
-        return "includedir", path
-    end
-
-    path = line:match("^[@#]include%s+(.+)$")
-    if path then
-        return "include", path
-    end
-
-    return nil, nil
-end
-
-local function list_directory_files(path)
-    local attr = _dependencies.lfs_attributes(path)
-    if not attr or attr.mode ~= "directory" then
-        return nil, string.format("Could not open sudoers include directory '%s'.", path)
-    end
-
-    local entries = {}
-    for name in _dependencies.lfs_dir(path) do
-        local is_includedir_member = name ~= "."
-            and name ~= ".."
-            and not name:find("%.", 1, true)
-            and not name:match("~$")
-
-        if is_includedir_member then
-            local full_path = path .. "/" .. name
-            local full_attr = _dependencies.lfs_attributes(full_path)
-            if full_attr and full_attr.mode == "file" then
-                entries[#entries + 1] = full_path
-            end
-        end
-    end
-
-    table.sort(entries)
-    return entries
-end
-
-local visit_path
-
-local function record_unique_path(paths, seen, path, path_type)
-    local key = tostring(path_type) .. ":" .. tostring(path)
-    if not seen[key] then
-        seen[key] = true
-        paths[#paths + 1] = {
-            path = path,
-            path_type = path_type,
-        }
-    end
-end
-
-local function visit_directory(path, state, depth)
-    record_unique_path(state.audit_paths, state.audit_path_set, path, "directory")
-    record_unique_path(state.permission_paths, state.permission_path_set, path, "directory")
-
-    local entries, err = list_directory_files(path)
-    if not entries then
-        return nil, err
-    end
-
-    for _, entry in ipairs(entries) do
-        record_unique_path(state.permission_paths, state.permission_path_set, entry, "file")
-        local ok, visit_err = visit_path(entry, state, depth + 1, false)
-        if not ok then
-            return nil, visit_err
-        end
-    end
-
-    return true
-end
-
-visit_path = function(path, state, depth, record_path_for_audit)
-    if depth > 128 then
-        return nil, "Sudoers include depth exceeded the supported limit."
-    end
-    if state.stack[path] then
-        return nil, string.format("Detected a sudoers include loop at '%s'.", path)
-    end
-
-    if record_path_for_audit ~= false then
-        record_unique_path(state.audit_paths, state.audit_path_set, path, "file")
-    end
-    record_unique_path(state.permission_paths, state.permission_path_set, path, "file")
-
-    local attr = _dependencies.lfs_attributes(path)
-    if not attr or attr.mode ~= "file" then
-        return nil, string.format("Could not open sudoers file '%s'.", path)
-    end
-
-    local file = _dependencies.io_open(path, "r")
-    if not file then
-        return nil, string.format("Could not open sudoers file '%s'.", path)
-    end
-
-    state.stack[path] = true
-
-    for line in file:lines() do
-        local trimmed = trim(line)
-        if trimmed ~= "" then
-            local include_kind, include_arg = parse_include_directive(trimmed)
-            if include_kind == "include" then
-                local include_path = resolve_include_path(include_arg, path)
-                local ok, err = visit_path(include_path, state, depth + 1)
-                if not ok then
-                    file:close()
-                    state.stack[path] = nil
-                    return nil, err
-                end
-            elseif include_kind == "includedir" then
-                local include_path = resolve_include_path(include_arg, path)
-                local ok, err = visit_directory(include_path, state, depth + 1)
-                if not ok then
-                    file:close()
-                    state.stack[path] = nil
-                    return nil, err
-                end
-            elseif not trimmed:match("^#") then
-                local active = trim((trimmed:gsub("%s+#.*$", "")))
-                if active ~= "" then
-                    state.lines[#state.lines + 1] = {
-                        path = path,
-                        text = active,
-                    }
-                end
-            end
-        end
-    end
-
-    file:close()
-    state.stack[path] = nil
-    return true
-end
-
 local function load_sudoers_state(paths)
-    local state = {
-        lines = {},
-        stack = {},
-        audit_paths = {},
-        audit_path_set = {},
-        permission_paths = {},
-        permission_path_set = {},
-    }
-
-    for _, path in ipairs(paths) do
-        local ok, err = visit_path(path, state, 1)
-        if not ok then
-            return nil, err
-        end
-    end
-
-    return state
+    return sudoers.load(paths, {
+        dependencies = {
+            io_open = _dependencies.io_open,
+            lfs_attributes = _dependencies.lfs_attributes,
+            lfs_dir = _dependencies.lfs_dir,
+            get_short_hostname = _dependencies.get_short_hostname,
+        },
+    })
 end
 
 local function load_sudoers_lines(paths)

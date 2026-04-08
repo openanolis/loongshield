@@ -1,5 +1,7 @@
 local lfs = require('lfs')
 local fsutil = require('seharden.enforcers.fsutil')
+local sudoers = require('seharden.parsers.sudoers')
+local text = require('seharden.text')
 local M = {}
 
 local _default_dependencies = {
@@ -44,167 +46,22 @@ end
 
 M._test_set_dependencies()
 
-local function trim(value)
-    return tostring(value or ""):match("^%s*(.-)%s*$")
-end
-
-local function get_dirname(path)
-    return path:match("^(.*)/[^/]+$") or "."
-end
+local trim = text.trim
 
 local function is_safe_path(path)
     return type(path) == "string" and path ~= "" and not path:find("[%c\n\r]")
 end
 
-local function record_unique_path(paths, seen, path)
-    if not seen[path] then
-        seen[path] = true
-        paths[#paths + 1] = path
-    end
-end
-
-local function resolve_include_path(raw_path, current_path)
-    local path = trim(raw_path)
-    if path:sub(1, 1) == '"' and path:sub(-1) == '"' and #path >= 2 then
-        path = path:sub(2, -2)
-    end
-
-    path = path:gsub("%%h", _dependencies.get_short_hostname() or "")
-    path = path:gsub("\\ ", " ")
-    path = path:gsub("\\\\", "\\")
-
-    if path:sub(1, 1) ~= "/" then
-        path = get_dirname(current_path) .. "/" .. path
-    end
-
-    return path
-end
-
-local function parse_include_directive(line)
-    local path = line:match("^[@#]includedir%s+(.+)$")
-    if path then
-        return "includedir", path
-    end
-
-    path = line:match("^[@#]include%s+(.+)$")
-    if path then
-        return "include", path
-    end
-
-    return nil, nil
-end
-
-local function list_directory_files(path, context)
-    local attr = _dependencies.lfs_attributes(path)
-    if not attr or attr.mode ~= "directory" then
-        return nil, string.format("%s: could not open sudoers include directory '%s'", context, path)
-    end
-
-    local entries = {}
-    for name in _dependencies.lfs_dir(path) do
-        local is_member = name ~= "."
-            and name ~= ".."
-            and not name:find(".", 1, true)
-            and not name:match("~$")
-
-        if is_member then
-            local full_path = path .. "/" .. name
-            local full_attr = _dependencies.lfs_attributes(full_path)
-            if full_attr and full_attr.mode == "file" then
-                entries[#entries + 1] = full_path
-            end
-        end
-    end
-
-    table.sort(entries)
-    return entries
-end
-
-local visit_path
-
-visit_path = function(path, state, depth, context, record_path_for_audit)
-    if depth > 128 then
-        return nil, string.format("%s: sudoers include depth exceeded the supported limit", context)
-    end
-    if state.stack[path] then
-        return nil, string.format("%s: detected a sudoers include loop at '%s'", context, path)
-    end
-
-    if record_path_for_audit ~= false then
-        record_unique_path(state.audit_paths, state.audit_path_set, path)
-    end
-    if state.seen[path] then
-        return true
-    end
-
-    local attr = _dependencies.lfs_attributes(path)
-    if not attr or attr.mode ~= "file" then
-        return nil, string.format("%s: could not open sudoers file '%s'", context, path)
-    end
-
-    local file = _dependencies.io_open(path, "r")
-    if not file then
-        return nil, string.format("%s: could not open sudoers file '%s'", context, path)
-    end
-
-    state.stack[path] = true
-    state.seen[path] = true
-    record_unique_path(state.paths, state.path_set, path)
-
-    for line in file:lines() do
-        local trimmed = trim(line)
-        if trimmed ~= "" then
-            local include_kind, include_arg = parse_include_directive(trimmed)
-            if include_kind == "include" then
-                local include_path = resolve_include_path(include_arg, path)
-                local ok, err = visit_path(include_path, state, depth + 1, context)
-                if not ok then
-                    file:close()
-                    state.stack[path] = nil
-                    return nil, err
-                end
-            elseif include_kind == "includedir" then
-                local include_path = resolve_include_path(include_arg, path)
-                record_unique_path(state.audit_paths, state.audit_path_set, include_path)
-                local entries, err = list_directory_files(include_path, context)
-                if not entries then
-                    file:close()
-                    state.stack[path] = nil
-                    return nil, err
-                end
-                for _, entry in ipairs(entries) do
-                    local ok, visit_err = visit_path(entry, state, depth + 1, context, false)
-                    if not ok then
-                        file:close()
-                        state.stack[path] = nil
-                        return nil, visit_err
-                    end
-                end
-            end
-        end
-    end
-
-    file:close()
-    state.stack[path] = nil
-    return true
-end
-
 local function collect_state(root_path, context)
-    local state = {
-        paths = {},
-        path_set = {},
-        audit_paths = {},
-        audit_path_set = {},
-        seen = {},
-        stack = {},
-    }
-
-    local ok, err = visit_path(root_path, state, 1, context)
-    if not ok then
-        return nil, err
-    end
-
-    return state
+    return sudoers.load({ root_path }, {
+        dependencies = {
+            io_open = _dependencies.io_open,
+            lfs_attributes = _dependencies.lfs_attributes,
+            lfs_dir = _dependencies.lfs_dir,
+            get_short_hostname = _dependencies.get_short_hostname,
+        },
+        error_context = context,
+    })
 end
 
 local function collect_paths(root_path, context)
@@ -213,7 +70,7 @@ local function collect_paths(root_path, context)
         return nil, err
     end
 
-    return state.paths
+    return state.files
 end
 
 local function collect_audit_paths(root_path, context)
@@ -222,7 +79,12 @@ local function collect_audit_paths(root_path, context)
         return nil, err
     end
 
-    return state.audit_paths
+    local paths = {}
+    for _, entry in ipairs(state.audit_paths) do
+        paths[#paths + 1] = entry.path
+    end
+
+    return paths
 end
 
 local function read_lines(path)

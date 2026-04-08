@@ -38,6 +38,13 @@ function test_get_installed_glob_match()
     assert(result.count == 2, "Expected glob to match both xorg packages")
 end
 
+function test_get_installed_glob_supports_negated_character_classes()
+    setup("pkg1\npkga\n")
+    local result = packages_probe.get_installed({ name = "pkg[!0-9]" })
+    assert(result.count == 1, "Expected negated character classes to exclude numeric suffixes")
+    assert(result.details[1].name == "pkga", "Expected the negated class match to preserve the matching package name")
+end
+
 function test_get_installed_gpg_pubkey_special_case()
     setup("gpg-pubkey\n")
     local result = packages_probe.get_installed({ name = "gpg-pubkey-*" })

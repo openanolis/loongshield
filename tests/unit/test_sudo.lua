@@ -308,3 +308,55 @@ function test_collect_permission_paths_tracks_included_files_and_directories()
         assert(result.details[4].path == "/etc/sudoers.d/10-hardening", "Expected includedir member file to be included")
     end)
 end
+
+function test_collect_permission_paths_skips_includedir_members_with_dots()
+    with_dependencies({
+        lfs_attributes = function(path)
+            if path == "/etc/sudoers" or path == "/etc/sudoers.d/10-hardening" or path == "/etc/sudoers.d/README.md" then
+                return { mode = "file" }
+            end
+            if path == "/etc/sudoers.d" then
+                return { mode = "directory" }
+            end
+            return nil
+        end,
+        lfs_dir = function(path)
+            assert(path == "/etc/sudoers.d", "Expected sudo probe to enumerate the includedir")
+            local entries = {
+                ".",
+                "..",
+                "10-hardening",
+                "README.md",
+            }
+            local index = 0
+            return function()
+                index = index + 1
+                return entries[index]
+            end
+        end,
+        io_open = function(path, mode)
+            assert(mode == "r", "Expected sudo probe to open files read-only")
+            if path == "/etc/sudoers" then
+                return make_reader({
+                    "#includedir /etc/sudoers.d",
+                })
+            end
+            if path == "/etc/sudoers.d/10-hardening" then
+                return make_reader({
+                    "Defaults use_pty",
+                })
+            end
+            error("Unexpected path: " .. path)
+        end
+    }, function()
+        local result = sudo_probe.collect_permission_paths({
+            paths = { "/etc/sudoers" }
+        })
+
+        assert(result.count == 3, "Expected includedir members with dots to be skipped")
+        for _, detail in ipairs(result.details) do
+            assert(detail.path ~= "/etc/sudoers.d/README.md",
+                "Expected dotted includedir members to be excluded from sudoers traversal")
+        end
+    end)
+end

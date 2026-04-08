@@ -1,5 +1,6 @@
 local lfs = require('lfs')
 local log = require('runtime.log')
+local text = require('seharden.text')
 local M = {}
 
 local _default_dependencies = {
@@ -38,38 +39,6 @@ local function path_mode(path)
     return attr and attr.mode or nil
 end
 
-local function glob_to_pattern(glob)
-    local pattern = { "^" }
-    local i = 1
-    while i <= #glob do
-        local c = glob:sub(i, i)
-        if c == "*" then
-            pattern[#pattern + 1] = ".*"
-        elseif c == "?" then
-            pattern[#pattern + 1] = "."
-        elseif c == "[" then
-            local j = glob:find("]", i + 1, true)
-            if j then
-                local cls = glob:sub(i + 1, j - 1)
-                if cls:sub(1, 1) == "!" then
-                    cls = "^" .. cls:sub(2)
-                end
-                pattern[#pattern + 1] = "[" .. cls .. "]"
-                i = j
-            else
-                pattern[#pattern + 1] = "%["
-            end
-        elseif c:match("[%^%$%(%)%%%.%+%-%/]") then
-            pattern[#pattern + 1] = "%" .. c
-        else
-            pattern[#pattern + 1] = c
-        end
-        i = i + 1
-    end
-    pattern[#pattern + 1] = "$"
-    return table.concat(pattern)
-end
-
 local function expand_glob_path(path_glob)
     local is_abs = path_glob:sub(1, 1) == "/"
     local parts = {}
@@ -102,7 +71,7 @@ local function expand_glob_path(path_glob)
         end
 
         if has_wildcard(part) then
-            local pat = glob_to_pattern(part)
+            local pat = text.glob_to_pattern(part)
             local new_bases = {}
             local seen = {}
             for _, base in ipairs(bases) do

@@ -1,4 +1,6 @@
 local file_probe = require('seharden.probes.file')
+local pam_parser = require('seharden.parsers.pam')
+local text = require('seharden.text')
 local M = {}
 
 local _default_dependencies = {
@@ -28,9 +30,7 @@ end
 
 M._test_set_dependencies()
 
-local function trim(value)
-    return (tostring(value or ""):match("^%s*(.-)%s*$"))
-end
+local trim = text.trim
 
 local function resolve_pam_paths(params, probe_name)
     local pam_paths = params and params.pam_paths
@@ -149,44 +149,6 @@ local function load_optional_key_value_files(path_specs)
     return values, found
 end
 
-local function parse_pam_line(line)
-    local trimmed = trim(line)
-    if trimmed == "" or trimmed:match("^#") then
-        return nil
-    end
-
-    local kind, remainder = trimmed:match("^(%S+)%s+(.+)$")
-    if not kind or not remainder then
-        return nil
-    end
-
-    local control
-    local module_name
-    local args_text
-
-    if remainder:sub(1, 1) == "[" then
-        control, module_name, args_text = remainder:match("^(%b[])%s+(%S+)%s*(.*)$")
-    else
-        control, module_name, args_text = remainder:match("^(%S+)%s+(%S+)%s*(.*)$")
-    end
-
-    if not control or not module_name then
-        return nil
-    end
-
-    local tokens = {}
-    for token in tostring(args_text or ""):gmatch("%S+") do
-        tokens[#tokens + 1] = token
-    end
-
-    return {
-        kind = kind,
-        control = control,
-        module = module_name,
-        args = tokens,
-    }
-end
-
 local function parse_option(args, option_name)
     for _, arg in ipairs(args) do
         local value = arg:match("^" .. option_name .. "=(.+)$")
@@ -238,7 +200,7 @@ local function load_pam_entries(path)
 
     local entries = {}
     for line in file:lines() do
-        local entry = parse_pam_line(line)
+        local entry = pam_parser.parse_line(line)
         if entry then
             entries[#entries + 1] = entry
         end

@@ -1,4 +1,5 @@
 local log = require('runtime.log')
+local text = require('seharden.text')
 local M = {}
 
 local _default_dependencies = {
@@ -65,37 +66,8 @@ local function get_all_packages()
     return packages
 end
 
-local function glob_to_pattern(glob)
-    local pattern = { "^" }
-    local i = 1
-    while i <= #glob do
-        local c = glob:sub(i, i)
-        if c == "*" then
-            pattern[#pattern + 1] = ".*"
-        elseif c == "?" then
-            pattern[#pattern + 1] = "."
-        elseif c == "[" then
-            local j = glob:find("]", i + 1, true)
-            if j then
-                local cls = glob:sub(i + 1, j - 1)
-                pattern[#pattern + 1] = "[" .. cls .. "]"
-                i = j
-            else
-                pattern[#pattern + 1] = "%["
-            end
-        elseif c:match("[%^%$%(%)%%%.%+%-%/]") then
-            pattern[#pattern + 1] = "%" .. c
-        else
-            pattern[#pattern + 1] = c
-        end
-        i = i + 1
-    end
-    pattern[#pattern + 1] = "$"
-    return table.concat(pattern)
-end
-
 local function compile_glob_pattern(glob)
-    local matcher = glob_to_pattern(glob)
+    local matcher = text.glob_to_pattern(glob)
     local ok = pcall(string.match, "", matcher)
     if not ok then
         return nil, string.format("packages.remove_matching: invalid package pattern '%s'", tostring(glob))
