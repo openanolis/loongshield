@@ -59,10 +59,12 @@ git push origin vX.Y.Z
 
 Then publish the hosted release entry using the same version number and changelog summary.
 
-If you distribute RPM artifacts, upload the packages built under:
+The release workflow publishes:
 
 ```text
 build/rpmbuild-docker/RPMS/
+build/rpmbuild-docker/SRPMS/
+build/release-artifacts/
 ```
 
 ## Post-Release Follow-Up

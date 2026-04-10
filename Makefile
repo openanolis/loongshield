@@ -15,6 +15,10 @@ RPM_SOURCE_SCRIPT := $(SRC_DIR)/dist/scripts/rpm-sources.sh
 RPM_SOURCE_OUTPUT_DIR := $(SRC_DIR)/dist
 RPM_BUILD_ROOT := $(BUILD_DIR)/rpmbuild
 RPM_TMPDIR := $(RPM_BUILD_ROOT)/tmp
+RELEASE_ARTIFACT_DIR := $(BUILD_DIR)/release-artifacts
+SOURCE_BUNDLE_NAME := $(PROJECT)-$(VERSION)-rpm-source-bundle
+SOURCE_BUNDLE_DIR := $(RELEASE_ARTIFACT_DIR)/$(SOURCE_BUNDLE_NAME)
+SOURCE_BUNDLE_ARCHIVE := $(RELEASE_ARTIFACT_DIR)/$(SOURCE_BUNDLE_NAME).tar.gz
 RPM_BUILD_REQUIRES := \
 	audit-libs-devel \
 	cmake \
@@ -67,7 +71,7 @@ SUBMODULE_SENTINELS := \
 	test test-quick test-integration \
 	kmod install \
 	buildreqs env-check \
-	rpm-sources rpm rpm-srpm \
+	rpm-sources source-bundle rpm rpm-srpm srpm-in-docker release-assets \
 	docker-dev docker-run-dev rpm-in-docker \
 	clean distclean help
 
@@ -170,6 +174,18 @@ env-check:
 rpm-sources: submodules
 	@"$(RPM_SOURCE_SCRIPT)" build --repo-root "$(SRC_DIR)" --out-dir "$(RPM_SOURCE_OUTPUT_DIR)" --project "$(PROJECT)" --version "$(VERSION)"
 
+source-bundle: rpm-sources
+	@rm -rf "$(SOURCE_BUNDLE_DIR)" "$(SOURCE_BUNDLE_ARCHIVE)"
+	@mkdir -p "$(SOURCE_BUNDLE_DIR)/SOURCES" "$(SOURCE_BUNDLE_DIR)/SPECS"
+	@while IFS= read -r source_file; do \
+		cp "$$source_file" "$(SOURCE_BUNDLE_DIR)/SOURCES/"; \
+	done < <("$(RPM_SOURCE_SCRIPT)" list --repo-root "$(SRC_DIR)" --out-dir "$(RPM_SOURCE_OUTPUT_DIR)" --project "$(PROJECT)" --version "$(VERSION)")
+	@cp "$(RPM_SPEC)" "$(SOURCE_BUNDLE_DIR)/SPECS/"
+	@cp "$(SRC_DIR)/dist/rpm-vendor-sources.txt" "$(SOURCE_BUNDLE_DIR)/"
+	@(cd "$(SOURCE_BUNDLE_DIR)" && sha256sum SOURCES/* SPECS/loongshield.spec rpm-vendor-sources.txt > SHA256SUMS)
+	@mkdir -p "$(RELEASE_ARTIFACT_DIR)"
+	@tar -C "$(RELEASE_ARTIFACT_DIR)" -czf "$(SOURCE_BUNDLE_ARCHIVE)" "$(SOURCE_BUNDLE_NAME)"
+
 rpm: rpm-sources
 	@mkdir -p "$(RPM_BUILD_ROOT)"/BUILD "$(RPM_BUILD_ROOT)"/RPMS "$(RPM_BUILD_ROOT)"/SOURCES "$(RPM_BUILD_ROOT)"/SPECS "$(RPM_BUILD_ROOT)"/SRPMS "$(RPM_TMPDIR)"
 	@while IFS= read -r source_file; do \
@@ -185,6 +201,33 @@ rpm-srpm: rpm-sources
 	done < <("$(RPM_SOURCE_SCRIPT)" list --repo-root "$(SRC_DIR)" --out-dir "$(RPM_SOURCE_OUTPUT_DIR)" --project "$(PROJECT)" --version "$(VERSION)")
 	@cp "$(RPM_SPEC)" "$(RPM_BUILD_ROOT)/SPECS/"
 	@rpmbuild -bs $(RPM_DEFINES) "$(RPM_BUILD_ROOT)/SPECS/loongshield.spec"
+
+srpm-in-docker: docker-dev rpm-sources
+	@mkdir -p "$(BUILD_DIR)/rpmbuild-docker"
+	@$(DOCKER_API_ENV) docker run --rm \
+		--network host \
+		--user 0:0 \
+		-v "$(SRC_DIR)":/workspace:ro \
+		-v "$(BUILD_DIR)/rpmbuild-docker":/root/rpmbuild \
+		-w /root \
+		"$(DOCKER_IMAGE)" \
+		/bin/bash -lc '\
+			set -e; \
+			mkdir -p ~/rpmbuild/tmp; \
+			rpmdev-setuptree; \
+			while IFS= read -r source_file; do \
+				cp "$$source_file" ~/rpmbuild/SOURCES/; \
+			done < <(/workspace/dist/scripts/rpm-sources.sh list --repo-root /workspace --out-dir /workspace/dist --project $(PROJECT) --version $(VERSION)); \
+			cp /workspace/dist/loongshield.spec ~/rpmbuild/SPECS/; \
+			rpmbuild -bs \
+				--define "_tmppath %{getenv:HOME}/rpmbuild/tmp" \
+				--define "pkg_version $(VERSION)" \
+				--define "pkg_commit $(GIT_COMMIT)" \
+				~/rpmbuild/SPECS/loongshield.spec; \
+			ls -la ~/rpmbuild/SRPMS/ \
+		'
+
+release-assets: source-bundle srpm-in-docker
 
 docker-dev: submodules
 	@$(DOCKER_API_ENV) docker build \
@@ -276,8 +319,10 @@ help:
 		'make buildreqs        Install local RPM build requirements' \
 		'make env-check        Validate the local host platform' \
 		'make rpm-sources      Prepare Source0 plus vendor SourceN tarballs' \
+		'make source-bundle    Build a release source bundle from Source0 plus SourceN' \
 		'make rpm              Build a binary RPM locally' \
 		'make rpm-srpm         Build a source RPM locally' \
+		'make release-assets   Build release source assets (bundle + SRPM)' \
 		'make docker-dev       Build the development container image' \
 		'make docker-run-dev   Start an interactive development container' \
 		'make rpm-in-docker    Build RPMs inside the development container' \
