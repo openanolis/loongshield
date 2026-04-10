@@ -110,7 +110,7 @@ ENV_CHECK_DEP = $(if $(filter 1,$(ALLOW_UNSUPPORTED_HOST)),,env-check)
 
 .PHONY: all bootstrap configure build daemon loonjit test test-unit test-integration \
         test-e2e test-quick kmod kmod-clean \
-        rpm rpm-tarball rpm-srpm rpm-in-docker rpm-clean rpm-install install uninstall \
+        rpm rpm-sources rpm-tarball rpm-srpm rpm-in-docker rpm-clean rpm-install install uninstall \
         buildreqs env-check \
         docker docker-dev docker-run-dev \
         docker-clean clean distclean mrproper submodules deps info help reconfigure check
@@ -283,9 +283,10 @@ docker-clean:
 # ============================================================================
 
 RPM_SPEC := $(SRC_DIR)/dist/loongshield.spec
-RPM_TARBALL := $(SRC_DIR)/dist/$(PROJECT)-$(VERSION).tar.gz
+RPM_SOURCE_SCRIPT := $(SRC_DIR)/dist/scripts/rpm-sources.sh
+RPM_SOURCE_OUTPUT_DIR := $(SRC_DIR)/dist
+RPM_TARBALL := $(RPM_SOURCE_OUTPUT_DIR)/$(PROJECT)-$(VERSION).tar.gz
 RPM_BUILD_ROOT := $(BUILD_DIR)/rpmbuild
-RPM_STAGING := $(BUILD_DIR)/rpm-staging
 RPM_TMPDIR := $(RPM_BUILD_ROOT)/tmp
 RPM_BUILD_REQUIRES := \
 	audit-libs-devel \
@@ -323,46 +324,42 @@ RPM_DEFINES := \
 	--define "pkg_version $(VERSION)" \
 	--define "pkg_commit $(GIT_COMMIT)"
 
-rpm: rpm-tarball
+rpm: rpm-sources
 	$(call msg-info,Building RPM package)
 	$(call msg-stage,Setting up rpmbuild tree...)
 	$(Q)mkdir -p $(RPM_BUILD_ROOT)/{BUILD,RPMS,SOURCES,SPECS,SRPMS} $(RPM_TMPDIR)
-	$(Q)cp $(RPM_TARBALL) $(RPM_BUILD_ROOT)/SOURCES/
+	$(Q)while IFS= read -r source_file; do \
+		cp "$$source_file" "$(RPM_BUILD_ROOT)/SOURCES/"; \
+	done < <($(RPM_SOURCE_SCRIPT) list --repo-root $(SRC_DIR) --out-dir $(RPM_SOURCE_OUTPUT_DIR) --project $(PROJECT) --version $(VERSION))
 	$(Q)cp $(RPM_SPEC) $(RPM_BUILD_ROOT)/SPECS/
 	$(call msg-stage,Building RPM...)
 	$(Q)rpmbuild -bb $(RPM_DEFINES) $(RPM_BUILD_ROOT)/SPECS/loongshield.spec
 	$(call msg-info,RPM built: $(RPM_BUILD_ROOT)/RPMS/)
 
-# Create source tarball with submodules using git archive
-# This is the standard, portable way to create release tarballs
-rpm-tarball: submodules
-	$(call msg-info,Creating source tarball)
-	$(Q)mkdir -p $(dir $(RPM_TARBALL)) $(RPM_STAGING)
-	$(Q)rm -rf $(RPM_STAGING)/$(PROJECT)-$(VERSION)
-	$(call msg-stage,Exporting main repository...)
-	$(Q)git archive --format=tar --prefix=$(PROJECT)-$(VERSION)/ HEAD | \
-		tar -C $(RPM_STAGING) -xf -
-	$(call msg-stage,Exporting submodules...)
-	$(Q)git submodule foreach --quiet --recursive \
-		'git archive --format=tar --prefix=$(PROJECT)-$(VERSION)/$$displaypath/ HEAD | \
-		tar -C $(RPM_STAGING) -xf -'
-	$(call msg-stage,Creating tarball...)
-	$(Q)tar -C $(RPM_STAGING) -czf $(RPM_TARBALL) $(PROJECT)-$(VERSION)
-	$(Q)rm -rf $(RPM_STAGING)
-	$(call msg-info,Created: $(RPM_TARBALL))
+rpm-sources: submodules
+	$(call msg-info,Preparing RPM source archives)
+	$(Q)$(RPM_SOURCE_SCRIPT) build --repo-root $(SRC_DIR) --out-dir $(RPM_SOURCE_OUTPUT_DIR) --project $(PROJECT) --version $(VERSION)
+	$(call msg-info,Prepared RPM sources under $(RPM_SOURCE_OUTPUT_DIR)/)
 
-rpm-srpm: rpm-tarball
+# Backward-compatible alias for callers that expect make rpm-tarball.
+rpm-tarball: rpm-sources
+
+rpm-srpm: rpm-sources
 	$(call msg-info,Building source RPM)
 	$(Q)mkdir -p $(RPM_BUILD_ROOT)/{BUILD,RPMS,SOURCES,SPECS,SRPMS} $(RPM_TMPDIR)
-	$(Q)cp $(RPM_TARBALL) $(RPM_BUILD_ROOT)/SOURCES/
+	$(Q)while IFS= read -r source_file; do \
+		cp "$$source_file" "$(RPM_BUILD_ROOT)/SOURCES/"; \
+	done < <($(RPM_SOURCE_SCRIPT) list --repo-root $(SRC_DIR) --out-dir $(RPM_SOURCE_OUTPUT_DIR) --project $(PROJECT) --version $(VERSION))
 	$(Q)cp $(RPM_SPEC) $(RPM_BUILD_ROOT)/SPECS/
 	$(Q)rpmbuild -bs $(RPM_DEFINES) $(RPM_BUILD_ROOT)/SPECS/loongshield.spec
 	$(call msg-info,SRPM built: $(RPM_BUILD_ROOT)/SRPMS/)
 
 rpm-clean:
 	$(call msg-info,Cleaning RPM build artifacts)
-	$(Q)rm -rf $(RPM_BUILD_ROOT) $(RPM_STAGING)
-	$(Q)rm -f $(RPM_TARBALL)
+	$(Q)rm -rf $(RPM_BUILD_ROOT)
+	$(Q)while IFS= read -r source_file; do \
+		rm -f "$$source_file"; \
+	done < <($(RPM_SOURCE_SCRIPT) list --repo-root $(SRC_DIR) --out-dir $(RPM_SOURCE_OUTPUT_DIR) --project $(PROJECT) --version $(VERSION))
 
 # Install binaries and configs directly (no rpmbuild required).
 # Mirrors the file layout in the RPM spec. Requires root / sudo.
@@ -470,7 +467,7 @@ env-check:
 	printf "$(CLR_GREEN)==>$(CLR_RESET) $(CLR_BOLD)%s$(CLR_RESET)\n" "Supported local build host: $$host_desc ($$arch)"
 
 # Build RPM in the CentOS development container
-rpm-in-docker: docker-dev rpm-tarball
+rpm-in-docker: docker-dev rpm-sources
 	$(call msg-info,Building RPM in Docker container)
 	$(call msg-stage,Preparing build environment...)
 	$(Q)mkdir -p $(BUILD_DIR)/rpmbuild-docker
@@ -486,7 +483,9 @@ rpm-in-docker: docker-dev rpm-tarball
 				echo "==> Setting up rpmbuild tree..."; \
 				mkdir -p ~/rpmbuild/tmp; \
 				rpmdev-setuptree; \
-				cp /workspace/dist/$(PROJECT)-$(VERSION).tar.gz ~/rpmbuild/SOURCES/; \
+				while IFS= read -r source_file; do \
+					cp "$$source_file" ~/rpmbuild/SOURCES/; \
+				done < <(/workspace/dist/scripts/rpm-sources.sh list --repo-root /workspace --out-dir /workspace/dist --project $(PROJECT) --version $(VERSION)); \
 				cp /workspace/dist/loongshield.spec ~/rpmbuild/SPECS/; \
 				echo "==> Building RPM..."; \
 				rpmbuild -bb \
@@ -549,7 +548,9 @@ clean:
 distclean: clean kmod-clean
 	$(call msg-info,Removing build directory)
 	$(Q)rm -rf $(BUILD_DIR)
-	$(Q)rm -f dist/$(PROJECT)-*.tar.gz
+	$(Q)while IFS= read -r source_file; do \
+		rm -f "$$source_file"; \
+	done < <($(RPM_SOURCE_SCRIPT) list --repo-root $(SRC_DIR) --out-dir $(RPM_SOURCE_OUTPUT_DIR) --project $(PROJECT) --version $(VERSION))
 
 # Clean everything including submodules (rarely needed)
 mrproper: distclean
@@ -608,8 +609,9 @@ help:
 	@echo ""
 	$(call msg-help-section,RPM Packaging:)
 	$(call msg-help-item,make rpm,Build RPM package locally)
+	$(call msg-help-item,make rpm-sources,Prepare Source0 plus vendor SourceN tarballs)
 	$(call msg-help-item,make rpm-srpm,Build source RPM)
-	$(call msg-help-item,make rpm-tarball,Create source tarball only)
+	$(call msg-help-item,make rpm-tarball,Alias for make rpm-sources)
 	$(call msg-help-item,make rpm-in-docker,Build RPM in the Docker development image)
 	$(call msg-help-item,make rpm-clean,Clean RPM build artifacts)
 	@echo ""

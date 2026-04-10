@@ -1,0 +1,20 @@
+# Keep this manifest in sync with the vendored SourceN entries in dist/loongshield.spec.
+# Format: archive_base submodule_path pinned_commit
+curl deps/curl/curl 5ce164e0e9290c96eb7d502173426c0a135ec008
+kmod deps/kmod/kmod 9522b7b06670792a3cc08001dd021e8ce775b61e
+libbpf deps/libbpf/libbpf 02724cfd0702c4102138e62c3ae7d2721c7b190e
+libcap deps/libcap/libcap 542d7d86ecd2129dd5fe7e5b31ba307304f5b319
+libuv deps/libuv/libuv 0c1fa696aa502eb749c2c4735005f41ba00a27b8
+lpeg deps/lpeg/lpeg 118811c7f6a4375e2b4532fa5f4cadb87cdf6cd6
+lua-cjson deps/lua-cjson/lua-cjson e8972ac754788d3ef10a57a36016d6c3e85ba20d
+lua-compat-5.3 deps/lua-compat-5.3/lua-compat-5.3 8f8e4c6adb43e107f5902e784ef207dc3c8ca06b
+lua-curlv3 deps/lua-curl/Lua-cURLv3 563b1821d15a2076698e114f56695b22674a09ce
+lua-auxiliar deps/lua-openssl/lua-auxiliar 32bf4073ebbd949ef76bbfdd0e973d735a70526d
+lua-openssl deps/lua-openssl/lua-openssl 36a2aa51518a518909df6d729a366beb0d260021
+luafilesystem deps/luafilesystem/luafilesystem 912e06714fc276c15b4d5d1b42bd2b11edb8deff
+luajit deps/luajit/luajit 41fb94defa8f830ce69a8122b03f6ac3216d392a
+luaposix deps/luaposix/luaposix f12f957224d12257c882f43fde5cc442bdf44002
+luasocket deps/luasocket/luasocket e3ca4a767a68d127df548d82669aba3689bd84f4
+luv deps/luv/luv ebc79ee5aa082f90e53f75f3f326dcea11e8478d
+lyaml deps/lyaml/lyaml 37a9e51e82848f718eafbe95d261377130dcdd3f
+openssl deps/openssl/openssl cb8e64131e7ce230a9268bdd7cc4664868ff0dc9

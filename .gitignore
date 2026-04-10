@@ -34,4 +34,4 @@ AGENTS.md
 
 # local build artifacts
 deps/luajit/luajit/
-dist/loongshield-*.tar.gz
+dist/*.tar.gz

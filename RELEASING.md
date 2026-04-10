@@ -44,6 +44,7 @@ Run additional validation when relevant:
 4. Update `dist/loongshield.spec`:
    - Set `Version:` to the new release
    - Add a matching `%changelog` entry
+   - If any top-level submodule pin changed, update the vendored commit list in `dist/rpm-vendor-sources.txt` and the matching `SourceN` block in `dist/loongshield.spec`
 5. Commit the release prep with a subject such as `release: cut vX.Y.Z`.
 
 ## Tag And Publish

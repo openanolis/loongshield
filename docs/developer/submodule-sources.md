@@ -13,6 +13,13 @@ explicit explanation.
   maintenance.
 - Re-check retained fork URLs whenever a dependency is updated for release.
 
+## RPM Source Packaging
+
+Public RPM builds ship the main project archive separately from each top-level
+vendored submodule archive. Keep `dist/rpm-vendor-sources.txt` and the vendored
+`SourceN` block in `dist/loongshield.spec` aligned with the current top-level
+submodule pins from `.gitmodules`.
+
 ## Retained Fork-Backed Submodules
 
 These entries still point at public forks on purpose.
