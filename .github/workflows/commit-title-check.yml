@@ -1,0 +1,53 @@
+name: Commit Title Check
+
+on:
+    push:
+        branches: [master, main]
+    pull_request:
+        branches: [master, main]
+
+concurrency:
+    group: commit-title-check-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+jobs:
+    commit-title-check:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        defaults:
+            run:
+                shell: bash
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Validate commit titles
+              run: |
+                  set -euo pipefail
+
+                  if [ "${{ github.event_name }}" = "pull_request" ]; then
+                      base_sha="${{ github.event.pull_request.base.sha }}"
+                      head_sha="${{ github.event.pull_request.head.sha }}"
+                      mapfile -t commits < <(git rev-list --reverse --no-merges "$base_sha..$head_sha")
+                  elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+                      mapfile -t commits < <(git show -s --format=%H "$GITHUB_SHA")
+                  else
+                      mapfile -t commits < <(git rev-list --reverse --no-merges "${{ github.event.before }}..$GITHUB_SHA")
+                  fi
+
+                  if [ ${#commits[@]} -eq 0 ]; then
+                      echo "No non-merge commits to validate."
+                      exit 0
+                  fi
+
+                  for sha in "${commits[@]}"; do
+                      title="$(git log -1 --format=%s "$sha")"
+                      echo "Checking $sha: $title"
+                      tools/ci/check-commit-title.sh "$title"
+                  done
