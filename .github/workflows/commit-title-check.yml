@@ -27,7 +27,7 @@ jobs:
               with:
                   fetch-depth: 0
 
-            - name: Validate commit titles
+            - name: Validate commit messages
               run: |
                   set -euo pipefail
 
@@ -48,6 +48,7 @@ jobs:
 
                   for sha in "${commits[@]}"; do
                       title="$(git log -1 --format=%s "$sha")"
+                      git log -1 --format=%B "$sha" > commit-message.txt
                       echo "Checking $sha: $title"
-                      tools/ci/check-commit-title.sh "$title"
+                      tools/ci/check-commit-title.sh --title "$title" --body-file commit-message.txt
                   done
