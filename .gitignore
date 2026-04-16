@@ -29,6 +29,7 @@ notebooks/
 
 # LLM tools
 .claude/
+.codex
 CLAUDE.md
 AGENTS.md
 

@@ -9,6 +9,7 @@ BUILD_DIR := $(abspath $(O))
 JOBS ?= $(shell nproc 2>/dev/null || echo 4)
 CMAKE_FLAGS ?=
 ENV_CHECK_DEP := $(if $(filter 1,$(ALLOW_UNSUPPORTED_HOST)),,env-check)
+FMT_SCRIPT := $(SRC_DIR)/tools/format/run.sh
 
 RPM_SPEC := $(SRC_DIR)/dist/loongshield.spec
 RPM_SOURCE_SCRIPT := $(SRC_DIR)/dist/scripts/rpm-sources.sh
@@ -69,6 +70,7 @@ SUBMODULE_SENTINELS := \
 .PHONY: all \
 	bootstrap build configure submodules \
 	test test-quick test-integration \
+	fmt fmt-check \
 	kmod install \
 	buildreqs env-check \
 	rpm-sources source-bundle rpm rpm-srpm srpm-in-docker release-assets \
@@ -105,6 +107,22 @@ test-quick:
 
 test-integration: build
 	@"$(BUILD_DIR)/src/daemon/loonjit" "$(SRC_DIR)/tests/run.lua" --type integration
+
+fmt:
+	@if [ -n "$(strip $(FILES))" ]; then \
+		set -- $(strip $(FILES)); \
+		"$(FMT_SCRIPT)" write "$$@"; \
+	else \
+		"$(FMT_SCRIPT)" write; \
+	fi
+
+fmt-check:
+	@if [ -n "$(strip $(FILES))" ]; then \
+		set -- $(strip $(FILES)); \
+		"$(FMT_SCRIPT)" check "$$@"; \
+	else \
+		"$(FMT_SCRIPT)" check; \
+	fi
 
 kmod:
 	@$(MAKE) -C "$(SRC_DIR)/src/kmod"
@@ -314,6 +332,8 @@ help:
 		'make test             Build and run the full test suite' \
 		'make test-quick       Re-run the full test suite without rebuilding' \
 		'make test-integration Build and run integration tests' \
+		'make fmt              Format changed Lua/C/YAML files (or FILES="...")' \
+		'make fmt-check        Check changed Lua/C/YAML files (or FILES="...")' \
 		'make kmod             Build the kernel module' \
 		'make install          Install binaries and profiles into DESTDIR/PREFIX' \
 		'make buildreqs        Install local RPM build requirements' \
