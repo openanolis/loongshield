@@ -1,0 +1,6 @@
+line_ending: lf
+formatter:
+  type: basic
+  indent: 4
+  indentless_arrays: false
+  retain_line_breaks_single: true
