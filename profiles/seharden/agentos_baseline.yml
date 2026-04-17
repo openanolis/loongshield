@@ -11,6 +11,9 @@ description: >
 
 levels:
   - id: baseline
+  - id: openclaw
+    inherits_from:
+      - baseline
 
 rules:
   # -----------------------------------------------------------------------
@@ -640,3 +643,143 @@ rules:
         params: { name: cups.service, state: disable }
       - action: services.set_active_state
         params: { name: cups.service, state: stop }
+
+  # -----------------------------------------------------------------------
+  # Category: kernel (openclaw)
+  # -----------------------------------------------------------------------
+
+  - id: kernel.unprivileged_bpf_disabled
+    desc: Disable unprivileged BPF to prevent kernel privilege escalation
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: bpf
+        func: sysctl.get_live_value
+        params: { key: kernel.unprivileged_bpf_disabled }
+    assertion:
+      actual: "%{probe.bpf}"
+      key: value
+      compare: is_greater_than_or_equal_to
+      expected: 1
+      message: "kernel.unprivileged_bpf_disabled must be >= 1 — unprivileged BPF can be abused for kernel exploits (CVE-2017-16995, CVE-2022-0500)."
+
+  - id: kernel.perf_event_paranoid
+    desc: Restrict perf_event access to prevent KASLR bypass via side-channel
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: perf
+        func: sysctl.get_live_value
+        params: { key: kernel.perf_event_paranoid }
+    assertion:
+      actual: "%{probe.perf}"
+      key: value
+      compare: is_greater_than_or_equal_to
+      expected: 2
+      message: "kernel.perf_event_paranoid must be >= 2 — lower values allow unprivileged perf access which can leak kernel addresses."
+
+  # -----------------------------------------------------------------------
+  # Category: ssh (openclaw)
+  # -----------------------------------------------------------------------
+
+  - id: ssh.permit_root_login
+    desc: SSH root login must be disabled to eliminate direct privilege attack surface
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: root_login
+        func: ssh.get_effective_value
+        params:
+          key: "permitrootlogin"
+          conditions:
+            user: "root"
+            from: "localhost"
+    assertion:
+      actual: "%{probe.root_login}"
+      key: value
+      compare: equals
+      expected: "no"
+      message: "SSH PermitRootLogin must be 'no' — direct root login enables brute-force attacks on highest-privilege account."
+
+  - id: ssh.max_auth_tries
+    desc: SSH MaxAuthTries must be 4 or less to limit brute-force attack surface
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: max_tries
+        func: ssh.get_effective_value
+        params:
+          key: "maxauthtries"
+          conditions:
+            user: "root"
+            from: "localhost"
+    assertion:
+      actual: "%{probe.max_tries}"
+      key: value
+      compare: is_less_than_or_equal_to
+      expected: 4
+      message: "SSH MaxAuthTries must be <= 4 — higher values increase brute-force susceptibility."
+
+  # -----------------------------------------------------------------------
+  # Category: fs (openclaw)
+  # -----------------------------------------------------------------------
+
+  - id: fs.tmp_nosuid
+    desc: /tmp must be mounted nosuid to prevent privilege escalation via temporary directory
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: tmp
+        func: mounts.get_mount_info
+        params: { path: /tmp }
+    assertion:
+      actual: "%{probe.tmp}"
+      key: options
+      compare: has_key
+      expected: nosuid
+      message: "/tmp is not mounted with nosuid — setuid binaries in /tmp can be used for privilege escalation."
+
+  - id: fs.tmp_nodev
+    desc: /tmp must be mounted nodev to prevent device file creation attacks
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: tmp
+        func: mounts.get_mount_info
+        params: { path: /tmp }
+    assertion:
+      actual: "%{probe.tmp}"
+      key: options
+      compare: has_key
+      expected: nodev
+      message: "/tmp is not mounted with nodev — device files in /tmp can be used for privilege escalation."
+
+  - id: fs.protected_symlinks
+    desc: Ensure protected symlinks is enabled to prevent TOCTOU race condition attacks
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: protected_symlinks
+        func: sysctl.get_live_value
+        params: { key: fs.protected_symlinks }
+    assertion:
+      actual: "%{probe.protected_symlinks}"
+      key: value
+      compare: equals
+      expected: "1"
+      message: "fs.protected_symlinks must be 1 — prevents race condition attacks via symlink following in sticky world-writable directories."
+
+  - id: fs.protected_hardlinks
+    desc: Ensure protected hardlinks is enabled to prevent unauthorized hardlink creation
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: protected_hardlinks
+        func: sysctl.get_live_value
+        params: { key: fs.protected_hardlinks }
+    assertion:
+      actual: "%{probe.protected_hardlinks}"
+      key: value
+      compare: equals
+      expected: "1"
+      message: "fs.protected_hardlinks must be 1 — prevents unprivileged users from creating hardlinks to files they do not own, mitigating privilege escalation attacks."
