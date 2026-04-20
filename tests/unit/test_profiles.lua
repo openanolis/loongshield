@@ -212,8 +212,6 @@ function test_agentos_baseline_openclaw_host_hardening_rules_are_scoped_and_wire
     local profile = lyaml.load(read_file("profiles/seharden/agentos_baseline.yml"))
     local bpf_rule = find_rule_by_id(profile, "kernel.unprivileged_bpf_disabled")
     local perf_rule = find_rule_by_id(profile, "kernel.perf_event_paranoid")
-    local root_login_rule = find_rule_by_id(profile, "ssh.permit_root_login")
-    local max_auth_rule = find_rule_by_id(profile, "ssh.max_auth_tries")
     local tmp_nosuid_rule = find_rule_by_id(profile, "fs.tmp_nosuid")
     local tmp_nodev_rule = find_rule_by_id(profile, "fs.tmp_nodev")
     local protected_symlinks_rule = find_rule_by_id(profile, "fs.protected_symlinks")
@@ -222,8 +220,6 @@ function test_agentos_baseline_openclaw_host_hardening_rules_are_scoped_and_wire
     for _, rule in ipairs({
         bpf_rule,
         perf_rule,
-        root_login_rule,
-        max_auth_rule,
         tmp_nosuid_rule,
         tmp_nodev_rule,
         protected_symlinks_rule,
@@ -242,20 +238,6 @@ function test_agentos_baseline_openclaw_host_hardening_rules_are_scoped_and_wire
         "Expected perf rule to use the perf_event_paranoid sysctl")
     assert(perf_rule.assertion.expected == 2,
         "Expected perf rule to require a sufficiently paranoid setting")
-
-    assert(find_probe(root_login_rule, "root_login").func == "ssh.get_effective_value",
-        "Expected root-login rule to use SSH effective-value parsing")
-    assert(find_probe(root_login_rule, "root_login").params.conditions.from == "localhost",
-        "Expected root-login rule to define localhost conditions explicitly")
-    assert(root_login_rule.assertion.expected == "no",
-        "Expected root-login rule to require PermitRootLogin=no")
-
-    assert(find_probe(max_auth_rule, "max_tries").func == "ssh.get_effective_value",
-        "Expected MaxAuthTries rule to use SSH effective-value parsing")
-    assert(find_probe(max_auth_rule, "max_tries").params.conditions.from == "localhost",
-        "Expected MaxAuthTries rule to define localhost conditions explicitly")
-    assert(max_auth_rule.assertion.expected == 4,
-        "Expected MaxAuthTries rule to cap attempts at 4")
 
     assert(find_probe(tmp_nosuid_rule, "tmp").params.path == "/tmp",
         "Expected /tmp nosuid rule to inspect the /tmp mount")
@@ -276,6 +258,11 @@ function test_agentos_baseline_openclaw_host_hardening_rules_are_scoped_and_wire
         "Expected hardlink-protection rule to inspect the fs.protected_hardlinks sysctl")
     assert(protected_hardlinks_rule.assertion.expected == "1",
         "Expected hardlink-protection rule to require value 1")
+
+    assert(find_rule_by_id(profile, "ssh.permit_root_login") == nil,
+        "Expected OpenClaw profile to leave SSH root-login policy to manual review")
+    assert(find_rule_by_id(profile, "ssh.max_auth_tries") == nil,
+        "Expected OpenClaw profile to leave SSH MaxAuthTries policy to manual review")
 end
 
 function test_agentos_baseline_openclaw_rules_only_check_default_path_permissions()
@@ -335,7 +322,7 @@ function test_agentos_baseline_openclaw_manual_review_items_are_level_scoped()
     local openclaw_items = assert(seharden_profile.get_manual_review_items_for_level(profile, "openclaw"))
 
     assert(#baseline_items == 0, "Expected baseline runs to avoid OpenClaw-only manual review prompts")
-    assert(#openclaw_items >= 6, "Expected openclaw level to disclose deployment-specific manual review items")
+    assert(#openclaw_items >= 7, "Expected openclaw level to disclose deployment-specific manual review items")
 
     local openclaw_profile = { manual_review_required = openclaw_items }
     assert(manual_review_contains(openclaw_profile, "trusted proxy"),
@@ -344,6 +331,8 @@ function test_agentos_baseline_openclaw_manual_review_items_are_level_scoped()
         "Expected manual review items to cover custom state directory layouts")
     assert(manual_review_contains(openclaw_profile, "multi-instance"),
         "Expected manual review items to cover multi-instance trust-boundary separation")
+    assert(manual_review_contains(openclaw_profile, "root login mode"),
+        "Expected manual review items to cover SSH root-login and authentication policy review")
     assert(manual_review_contains(openclaw_profile, "security audit --deep"),
         "Expected manual review items to defer application-semantic audit interpretation to OpenClaw")
     assert(manual_review_contains(openclaw_profile, "cron jobs"),

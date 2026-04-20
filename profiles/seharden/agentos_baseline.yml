@@ -35,6 +35,10 @@ manual_review_required:
     level: [openclaw]
     item: "Review multi-instance or multi-trust-boundary deployments to ensure each OpenClaw runtime uses isolated state, credentials, and workspace paths."
     reason: "Whether multiple runtimes may share a host is a topology decision; safe separation requires deployment context beyond static host facts."
+  - area: access
+    level: [openclaw]
+    item: "Review SSH exposure, root login mode, authentication methods, and source restrictions for operators managing OpenClaw hosts."
+    reason: "Whether root SSH should be allowed and which login methods are acceptable depends on bastion, MFA, source filtering, and operational controls that SEHarden cannot infer safely from static host facts."
   - area: audit
     level: [openclaw]
     item: "Review periodic OpenClaw application audit output, acknowledged exceptions, and escalation handling for findings from openclaw security audit --deep."
@@ -807,48 +811,6 @@ rules:
       compare: is_greater_than_or_equal_to
       expected: 2
       message: "kernel.perf_event_paranoid must be >= 2 — lower values allow unprivileged perf access which can leak kernel addresses."
-
-  # -----------------------------------------------------------------------
-  # Category: ssh (openclaw)
-  # -----------------------------------------------------------------------
-
-  - id: ssh.permit_root_login
-    desc: SSH root login must be disabled to eliminate direct privilege attack surface
-    level: [openclaw]
-    status: automated
-    probes:
-      - name: root_login
-        func: ssh.get_effective_value
-        params:
-          key: "permitrootlogin"
-          conditions:
-            user: "root"
-            from: "localhost"
-    assertion:
-      actual: "%{probe.root_login}"
-      key: value
-      compare: equals
-      expected: "no"
-      message: "SSH PermitRootLogin must be 'no' — direct root login enables brute-force attacks on highest-privilege account."
-
-  - id: ssh.max_auth_tries
-    desc: SSH MaxAuthTries must be 4 or less to limit brute-force attack surface
-    level: [openclaw]
-    status: automated
-    probes:
-      - name: max_tries
-        func: ssh.get_effective_value
-        params:
-          key: "maxauthtries"
-          conditions:
-            user: "root"
-            from: "localhost"
-    assertion:
-      actual: "%{probe.max_tries}"
-      key: value
-      compare: is_less_than_or_equal_to
-      expected: 4
-      message: "SSH MaxAuthTries must be <= 4 — higher values increase brute-force susceptibility."
 
   # -----------------------------------------------------------------------
   # Category: fs (openclaw)
