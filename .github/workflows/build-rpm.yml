@@ -311,8 +311,8 @@ jobs:
                   prerelease: ${{ steps.prerelease.outputs.prerelease == 'true' }}
                   body_path: ./release-notes.md
                   files: |
-                      ./release-artifacts/*.x86_64.rpm
-                      ./release-artifacts/*.aarch64.rpm
-                      ./release-artifacts/*.arm64.rpm
-                      ./release-artifacts/**/*.src.rpm
+                      ./release-artifacts/**/*.x86_64.rpm
+                      ./release-artifacts/**/*.aarch64.rpm
+                      ./release-artifacts/**/*.arm64.rpm
+                      ./release-artifacts/*.src.rpm
                       ./release-artifacts/*-rpm-source-bundle.tar.gz
