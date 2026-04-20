@@ -9,6 +9,7 @@ Profiles are YAML documents consumed by `loongshield seharden`. They define leve
 - `version`: profile version string.
 - `levels`: ordered level list. Levels may use `inherits_from`.
 - `default_level`: optional level ID used when the caller omits `--level`.
+- `manual_review_required`: optional list of operator review items that stay outside automated host checks.
 - `rules`: list of audit or reinforce rules.
 
 ## Rule Shape
@@ -22,6 +23,16 @@ Each rule typically includes:
 - `probes`: one or more probe calls with `name`, `func`, and `params`.
 - `assertion`: comparison tree using `all_of`, `any_of`, or `compare`.
 - `reinforce`: optional list of actions with `action` and `params`.
+
+## Manual Review Shape
+
+Profiles may declare `manual_review_required` entries when a control depends on
+deployment context or application semantics that SEHarden should not guess.
+
+- `area`: short operator-facing area label, for example `openclaw_gateway`.
+- `item`: concrete review prompt.
+- `reason`: why the item stays outside automated host validation.
+- `level`: optional list of level IDs that scope the item.
 
 ## Minimal Example
 
@@ -56,6 +67,7 @@ rules:
 - Template references such as `%{probe.aslr}` read from earlier probe output.
 - `--level` activates the selected level plus any inherited parent levels.
 - If `--level` is omitted and `default_level` is defined, seharden uses that level; otherwise it runs all levels.
+- When the active level matches `manual_review_required` entries, scan output includes a manual-review summary after automated results.
 
 ## Compatibility Notes
 

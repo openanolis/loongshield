@@ -48,6 +48,7 @@ Bundled profile examples in this repository live under `profiles/seharden/`.
 
 - Default output keeps the standard logger format and final summary.
 - `--verbose` switches to a plain-text, human-friendly rule report with focused probe evidence.
+- Scan output appends a manual-review summary when the selected profile/level declares `manual_review_required` items.
 - `--log-level debug` keeps the underlying developer-oriented execution trace when you need full probe and engine diagnostics.
 
 ## Exit Codes
