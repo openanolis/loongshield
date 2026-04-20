@@ -300,9 +300,10 @@ jobs:
 
                   bundle="./release-artifacts/loongshield-${version}-rpm-source-bundle.tar.gz"
                   test -f "$bundle"
-                  tar -tzf "$bundle" | grep -Eq '/SOURCES/loongshield-'
-                  tar -tzf "$bundle" | grep -Eq '/SPECS/loongshield\.spec$'
-                  tar -tzf "$bundle" | grep -Eq '/SHA256SUMS$'
+                  tar -tzf "$bundle" > bundle-contents.txt
+                  grep -Eq '/SOURCES/loongshield-' bundle-contents.txt
+                  grep -Eq '/SPECS/loongshield\.spec$' bundle-contents.txt
+                  grep -Eq '/SHA256SUMS$' bundle-contents.txt
 
             - name: Publish GitHub release
               uses: softprops/action-gh-release@v2
