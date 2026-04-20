@@ -8,6 +8,7 @@ Profiles are YAML documents consumed by `loongshield seharden`. They define leve
 - `title` or `policy`: human-readable name.
 - `version`: profile version string.
 - `levels`: ordered level list. Levels may use `inherits_from`.
+- `default_level`: optional level ID used when the caller omits `--level`.
 - `rules`: list of audit or reinforce rules.
 
 ## Rule Shape
@@ -54,6 +55,7 @@ rules:
 - Bare profile names resolve to `<rules_path>/<name>.yml`.
 - Template references such as `%{probe.aslr}` read from earlier probe output.
 - `--level` activates the selected level plus any inherited parent levels.
+- If `--level` is omitted and `default_level` is defined, seharden uses that level; otherwise it runs all levels.
 
 ## Compatibility Notes
 

@@ -33,7 +33,8 @@ Ruleset Search Path:
 Notes:
   The default profile '%s' targets Alibaba Cloud Linux 3 / OpenAnolis-style hosts.
   Use --config to select a different profile on other RPM-based systems.
-  If --level is omitted, seharden runs all rules in the selected profile.
+  If --level is omitted, seharden uses the profile default level when defined;
+  otherwise it runs all rules in the selected profile.
   --dry-run only affects --reinforce mode.
 
 Exit Codes:
@@ -190,7 +191,16 @@ function M.run(argv)
         return 1
     end
 
-    local rules_to_run = profile.get_rules_for_level(profile_data, target_level)
+    local effective_level = target_level
+    if type(profile.resolve_target_level) == "function" then
+        local resolved_level, level_err = profile.resolve_target_level(profile_data, target_level)
+        if resolved_level == nil and level_err ~= nil then
+            return 1
+        end
+        effective_level = resolved_level
+    end
+
+    local rules_to_run = profile.get_rules_for_level(profile_data, effective_level)
     if not rules_to_run then
         local available_levels = format_level_ids(profile_data)
         if target_level and available_levels then
@@ -200,21 +210,21 @@ function M.run(argv)
         return 1
     end
 
-    local manual_review_items = get_manual_review_items(profile_data, target_level)
+    local manual_review_items = get_manual_review_items(profile_data, effective_level)
     local manual_review_suffix = format_manual_review_suffix(mode, #manual_review_items)
 
     if opts.verbose then
         print(string.format("%s: profile='%s', level='%s', %d rule(s)%s",
             log.style("SEHarden " .. mode, "bold", "cyan"),
             profile_data.id or config_name,
-            target_level or "all",
+            effective_level or "all",
             #rules_to_run,
             manual_review_suffix))
     else
         log.info("Running SEHarden %s with profile '%s' at level '%s' (%d rule(s)%s).",
             mode,
             profile_data.id or config_name,
-            target_level or "all",
+            effective_level or "all",
             #rules_to_run,
             manual_review_suffix)
     end

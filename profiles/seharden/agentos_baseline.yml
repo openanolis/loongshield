@@ -2,18 +2,51 @@
 policy: "AgentOS Security Baseline"
 title: "AgentOS Security Baseline"
 id: agentos_baseline
-version: "0.0.2"
+version: "0.0.6"
 description: >
   Minimal security baseline for AI agent workloads.
   Covers kernel hardening, network isolation, filesystem protection,
   secret file permissions, and minimal service footprint.
   Threat model: prompt-injection privilege escalation, network abuse, resource abuse.
+  The optional openclaw level adds default-path checks for per-user state under
+  ~/.openclaw. Custom OPENCLAW_STATE_DIR layouts, reverse-proxy trust, and other
+  deployment-specific application semantics remain out of scope and are surfaced
+  as manual_review_required items.
+  The default run stays at the baseline level; use --level openclaw to opt into
+  OpenClaw-specific checks.
 
 levels:
   - id: baseline
   - id: openclaw
     inherits_from:
       - baseline
+default_level: baseline
+
+manual_review_required:
+  - area: openclaw_gateway
+    level: [openclaw]
+    item: "Review OpenClaw gateway exposure, trusted proxy settings, and control UI origins for any deployment that is not loopback-only."
+    reason: "Whether the gateway should bind beyond loopback and which proxy headers or origins are trusted depends on reverse-proxy topology and cannot be inferred safely from host-local state."
+  - area: openclaw_runtime
+    level: [openclaw]
+    item: "Review custom OPENCLAW_STATE_DIR locations and any non-default state, device, report, or workspace directories for permissions equivalent to the default ~/.openclaw baseline."
+    reason: "Custom state paths are deployment-specific; the automated rules only cover the default per-user layout and cannot discover every approved override safely."
+  - area: openclaw_runtime
+    level: [openclaw]
+    item: "Review multi-instance or multi-trust-boundary deployments to ensure each OpenClaw runtime uses isolated state, credentials, and workspace paths."
+    reason: "Whether multiple runtimes may share a host is a topology decision; safe separation requires deployment context beyond static host facts."
+  - area: audit
+    level: [openclaw]
+    item: "Review periodic OpenClaw application audit output, acknowledged exceptions, and escalation handling for findings from openclaw security audit --deep."
+    reason: "The application-level audit understands OpenClaw configuration semantics better than the host baseline, while accepted exceptions and escalation workflows require operator judgment."
+  - area: operations
+    level: [openclaw]
+    item: "Review scheduled system timers, user units, and OpenClaw cron jobs against the approved automation inventory."
+    reason: "Expected automation varies by deployment, so host-local presence alone cannot distinguish approved jobs from risky persistence."
+  - area: operations
+    level: [openclaw]
+    item: "Review privileged-action logging, memory or log retention, DLP scanning, and skill or MCP integrity checks for OpenClaw workspace artifacts."
+    reason: "Correlating privileged actions, secret leakage controls, and plugin integrity with approved workflows requires runtime logs and external evidence that SEHarden does not model as a static host rule."
 
 rules:
   # -----------------------------------------------------------------------
@@ -490,6 +523,103 @@ rules:
     reinforce:
       - action: permissions.set_attributes
         params: { path: /etc/group, uid: 0, gid: 0, mode: 420 }
+
+  # -----------------------------------------------------------------------
+  # Category: openclaw
+  # -----------------------------------------------------------------------
+
+  - id: openclaw.state_dir_private
+    desc: Default OpenClaw state directories must stay private to one local account
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: login_users
+        func: users.get_all
+        params: {}
+      - name: openclaw_state_dirs
+        func: meta.map
+        params:
+          source_probe: "login_users"
+          apply_func: "permissions.get_attributes"
+          params_template:
+            path: "%{item.home}/.openclaw"
+    assertion:
+      actual: "%{probe.openclaw_state_dirs}"
+      compare: for_all
+      message: "Found ~/.openclaw directories that are not owned by the matched account or are more permissive than 0700; other local users can read or tamper with agent state."
+      expected:
+        any_of:
+          - key: exists
+            compare: is_false
+          - all_of:
+              - key: uid
+                compare: equals
+                expected: "%{item.user_uid}"
+              - key: mode
+                compare: mode_is_no_more_permissive
+                expected: 0700
+
+  - id: openclaw.config_private
+    desc: Default OpenClaw config files must not be readable by other local users
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: login_users
+        func: users.get_all
+        params: {}
+      - name: openclaw_configs
+        func: meta.map
+        params:
+          source_probe: "login_users"
+          apply_func: "permissions.get_attributes"
+          params_template:
+            path: "%{item.home}/.openclaw/openclaw.json"
+    assertion:
+      actual: "%{probe.openclaw_configs}"
+      compare: for_all
+      message: "Found ~/.openclaw/openclaw.json files that are not owned by the matched account or are more permissive than 0600; they can expose runtime settings or secrets."
+      expected:
+        any_of:
+          - key: exists
+            compare: is_false
+          - all_of:
+              - key: uid
+                compare: equals
+                expected: "%{item.user_uid}"
+              - key: mode
+                compare: mode_is_no_more_permissive
+                expected: 0600
+
+  - id: openclaw.credentials_dir_private
+    desc: Default OpenClaw credential state directories must not be shared across local users
+    level: [openclaw]
+    status: automated
+    probes:
+      - name: login_users
+        func: users.get_all
+        params: {}
+      - name: openclaw_credentials_dirs
+        func: meta.map
+        params:
+          source_probe: "login_users"
+          apply_func: "permissions.get_attributes"
+          params_template:
+            path: "%{item.home}/.openclaw/credentials"
+    assertion:
+      actual: "%{probe.openclaw_credentials_dirs}"
+      compare: for_all
+      message: "Found ~/.openclaw/credentials directories that are not owned by the matched account or are more permissive than 0700; local users should not be able to read pairing or auth material."
+      expected:
+        any_of:
+          - key: exists
+            compare: is_false
+          - all_of:
+              - key: uid
+                compare: equals
+                expected: "%{item.user_uid}"
+              - key: mode
+                compare: mode_is_no_more_permissive
+                expected: 0700
 
   # -----------------------------------------------------------------------
   # Category: services

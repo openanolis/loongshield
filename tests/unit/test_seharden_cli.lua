@@ -251,6 +251,56 @@ function test_scan_surfaces_manual_review_items_from_profile()
     end)
 end
 
+function test_profile_default_level_applies_when_level_is_omitted()
+    local seen = {}
+
+    with_stubbed_cli({
+        profile = {
+            load = function()
+                return {
+                    id = "agentos_baseline",
+                    default_level = "baseline",
+                    levels = {
+                        { id = "baseline" },
+                        { id = "openclaw", inherits_from = { "baseline" } }
+                    }
+                }
+            end,
+            resolve_target_level = function(profile_data, requested_level)
+                seen.requested_level = requested_level
+                return profile_data.default_level
+            end,
+            get_rules_for_level = function(_, level)
+                seen.rule_level = level
+                return {
+                    { id = "rule.1", desc = "demo rule" }
+                }
+            end,
+            get_manual_review_items_for_level = function(_, level)
+                seen.manual_level = level
+                return {}
+            end,
+        },
+        engine = {
+            run = function(_, _, _)
+                return 0
+            end,
+        }
+    }, function(cli)
+        local lines, ret = capture_print_without_color(function()
+            return cli.run({ "--config", "agentos_baseline", "--verbose" })
+        end)
+        local output = table.concat(lines, "\n")
+
+        assert(ret == 0, "Expected scan with profile default level to succeed")
+        assert(seen.requested_level == nil, "Expected omitted --level to remain nil before defaulting")
+        assert(seen.rule_level == "baseline", "Expected profile default level to scope rule selection")
+        assert(seen.manual_level == "baseline", "Expected profile default level to scope manual review selection")
+        assert(output:find("SEHarden scan: profile='agentos_baseline', level='baseline', 1 rule%(s%)", 1) ~= nil,
+            "Expected verbose scan header to show the resolved default level")
+    end)
+end
+
 function test_verbose_reaches_engine_without_forcing_debug_log_level()
     local log = require("runtime.log")
     local saved_level = log.level

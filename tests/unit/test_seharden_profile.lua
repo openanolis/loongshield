@@ -253,6 +253,32 @@ function test_get_rules_for_level_includes_inherited_levels()
     assert(#rules == 2, "Expected inherited baseline rules to remain active")
 end
 
+function test_resolve_target_level_uses_profile_default_level_when_request_is_omitted()
+    local resolved = assert(profile.resolve_target_level({
+        levels = {
+            { id = "baseline" },
+            { id = "openclaw", inherits_from = { "baseline" } }
+        },
+        default_level = "baseline",
+        rules = {}
+    }, nil))
+
+    assert(resolved == "baseline", "Expected omitted level to resolve to the profile default")
+end
+
+function test_resolve_target_level_preserves_explicit_level_selection()
+    local resolved = assert(profile.resolve_target_level({
+        levels = {
+            { id = "baseline" },
+            { id = "openclaw", inherits_from = { "baseline" } }
+        },
+        default_level = "baseline",
+        rules = {}
+    }, "openclaw"))
+
+    assert(resolved == "openclaw", "Expected explicit --level to override the profile default")
+end
+
 function test_get_manual_review_items_for_level_rejects_invalid_schema()
     local items, err = profile.get_manual_review_items_for_level({
         levels = {

@@ -13,7 +13,7 @@ loongshield seharden [--scan|--reinforce] [options]
 ## Inputs
 
 - `--config <name|path>`: profile name or explicit YAML path. If a bare name is used, Loongshield resolves it under `/etc/loongshield/seharden`.
-- `--level <level>`: run only the selected level and its inherited parents.
+- `--level <level>`: run only the selected level and its inherited parents. If omitted, seharden uses the profile default level when defined; otherwise it runs all levels.
 - `LOONGSHIELD_SEHARDEN_RULES_PATH`: overrides the default profile search directory.
 - `LOG_LEVEL`: optional default log level unless `--log-level` is passed.
 

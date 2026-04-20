@@ -101,6 +101,10 @@ local function contains_text(value, needle)
     return type(value) == "string" and value:find(needle, 1, true) ~= nil
 end
 
+local function octal(value)
+    return assert(tonumber(value, 8))
+end
+
 local function manual_review_contains(profile, needle)
     for _, entry in ipairs(profile.manual_review_required or {}) do
         if contains_text(entry.item, needle) or contains_text(entry.reason, needle) then
@@ -185,8 +189,172 @@ function test_agentos_baseline_network_rules_cover_all_and_default_interfaces()
         "Expected net.log_martians reinforce steps to persist the default-interface value")
 end
 
+function test_agentos_baseline_openclaw_level_inherits_baseline()
+    local profile = lyaml.load(read_file("profiles/seharden/agentos_baseline.yml"))
+    local openclaw_level
+
+    assert(profile.default_level == "baseline",
+        "Expected agentos_baseline to keep baseline as the default selected level")
+
+    for _, level in ipairs(profile.levels or {}) do
+        if level.id == "openclaw" then
+            openclaw_level = level
+            break
+        end
+    end
+
+    assert(openclaw_level ~= nil, "Expected agentos_baseline to define an openclaw level")
+    assert(type(openclaw_level.inherits_from) == "table" and openclaw_level.inherits_from[1] == "baseline",
+        "Expected openclaw to inherit baseline protections")
+end
+
+function test_agentos_baseline_openclaw_host_hardening_rules_are_scoped_and_wired()
+    local profile = lyaml.load(read_file("profiles/seharden/agentos_baseline.yml"))
+    local bpf_rule = find_rule_by_id(profile, "kernel.unprivileged_bpf_disabled")
+    local perf_rule = find_rule_by_id(profile, "kernel.perf_event_paranoid")
+    local root_login_rule = find_rule_by_id(profile, "ssh.permit_root_login")
+    local max_auth_rule = find_rule_by_id(profile, "ssh.max_auth_tries")
+    local tmp_nosuid_rule = find_rule_by_id(profile, "fs.tmp_nosuid")
+    local tmp_nodev_rule = find_rule_by_id(profile, "fs.tmp_nodev")
+    local protected_symlinks_rule = find_rule_by_id(profile, "fs.protected_symlinks")
+    local protected_hardlinks_rule = find_rule_by_id(profile, "fs.protected_hardlinks")
+
+    for _, rule in ipairs({
+        bpf_rule,
+        perf_rule,
+        root_login_rule,
+        max_auth_rule,
+        tmp_nosuid_rule,
+        tmp_nodev_rule,
+        protected_symlinks_rule,
+        protected_hardlinks_rule,
+    }) do
+        assert(rule ~= nil, "Expected agentos_baseline to include the remote OpenClaw host-hardening rules")
+        assert(rule.level[1] == "openclaw", "Expected OpenClaw host-hardening rules to stay scoped to openclaw")
+    end
+
+    assert(find_probe(bpf_rule, "bpf").params.key == "kernel.unprivileged_bpf_disabled",
+        "Expected BPF rule to use the unprivileged BPF sysctl")
+    assert(bpf_rule.assertion.expected == 1,
+        "Expected BPF rule to require the sysctl to be disabled")
+
+    assert(find_probe(perf_rule, "perf").params.key == "kernel.perf_event_paranoid",
+        "Expected perf rule to use the perf_event_paranoid sysctl")
+    assert(perf_rule.assertion.expected == 2,
+        "Expected perf rule to require a sufficiently paranoid setting")
+
+    assert(find_probe(root_login_rule, "root_login").func == "ssh.get_effective_value",
+        "Expected root-login rule to use SSH effective-value parsing")
+    assert(find_probe(root_login_rule, "root_login").params.conditions.from == "localhost",
+        "Expected root-login rule to define localhost conditions explicitly")
+    assert(root_login_rule.assertion.expected == "no",
+        "Expected root-login rule to require PermitRootLogin=no")
+
+    assert(find_probe(max_auth_rule, "max_tries").func == "ssh.get_effective_value",
+        "Expected MaxAuthTries rule to use SSH effective-value parsing")
+    assert(find_probe(max_auth_rule, "max_tries").params.conditions.from == "localhost",
+        "Expected MaxAuthTries rule to define localhost conditions explicitly")
+    assert(max_auth_rule.assertion.expected == 4,
+        "Expected MaxAuthTries rule to cap attempts at 4")
+
+    assert(find_probe(tmp_nosuid_rule, "tmp").params.path == "/tmp",
+        "Expected /tmp nosuid rule to inspect the /tmp mount")
+    assert(tmp_nosuid_rule.assertion.key == "options" and tmp_nosuid_rule.assertion.expected == "nosuid",
+        "Expected /tmp nosuid rule to require the nosuid mount option")
+
+    assert(find_probe(tmp_nodev_rule, "tmp").params.path == "/tmp",
+        "Expected /tmp nodev rule to inspect the /tmp mount")
+    assert(tmp_nodev_rule.assertion.key == "options" and tmp_nodev_rule.assertion.expected == "nodev",
+        "Expected /tmp nodev rule to require the nodev mount option")
+
+    assert(find_probe(protected_symlinks_rule, "protected_symlinks").params.key == "fs.protected_symlinks",
+        "Expected symlink-protection rule to inspect the fs.protected_symlinks sysctl")
+    assert(protected_symlinks_rule.assertion.expected == "1",
+        "Expected symlink-protection rule to require value 1")
+
+    assert(find_probe(protected_hardlinks_rule, "protected_hardlinks").params.key == "fs.protected_hardlinks",
+        "Expected hardlink-protection rule to inspect the fs.protected_hardlinks sysctl")
+    assert(protected_hardlinks_rule.assertion.expected == "1",
+        "Expected hardlink-protection rule to require value 1")
+end
+
+function test_agentos_baseline_openclaw_rules_only_check_default_path_permissions()
+    local profile = lyaml.load(read_file("profiles/seharden/agentos_baseline.yml"))
+    local state_rule = find_rule_by_id(profile, "openclaw.state_dir_private")
+    local config_rule = find_rule_by_id(profile, "openclaw.config_private")
+    local credentials_rule = find_rule_by_id(profile, "openclaw.credentials_dir_private")
+
+    for _, rule in ipairs({ state_rule, config_rule, credentials_rule }) do
+        assert(rule ~= nil, "Expected agentos_baseline to define OpenClaw default-path rules")
+        assert(rule.level[1] == "openclaw", "Expected OpenClaw rules to stay scoped to the openclaw level")
+        assert(find_probe(rule, "login_users").func == "users.get_all",
+            "Expected OpenClaw rules to enumerate login-shell accounts")
+    end
+
+    assert(find_probe(state_rule, "openclaw_state_dirs").func == "meta.map",
+        "Expected state-dir rule to reuse meta.map")
+    assert(find_probe(state_rule, "openclaw_state_dirs").params.params_template.path == "%{item.home}/.openclaw",
+        "Expected state-dir rule to target the default ~/.openclaw path")
+    assert(state_rule.assertion.compare == "for_all",
+        "Expected state-dir rule to validate each discovered account path independently")
+    assert(state_rule.assertion.expected.any_of[1].key == "exists"
+        and state_rule.assertion.expected.any_of[1].compare == "is_false",
+        "Expected missing default state directories to remain non-failing")
+    assert(state_rule.assertion.expected.any_of[2].all_of[1].key == "uid"
+        and state_rule.assertion.expected.any_of[2].all_of[1].expected == "%{item.user_uid}",
+        "Expected ~/.openclaw to remain owned by the matched account uid")
+    assert(state_rule.assertion.expected.any_of[2].all_of[2].expected == octal("700"),
+        "Expected ~/.openclaw to be limited to 0700 or stricter")
+
+    assert(find_probe(config_rule, "openclaw_configs").func == "meta.map",
+        "Expected config rule to reuse meta.map")
+    assert(find_probe(config_rule, "openclaw_configs").params.params_template.path ==
+        "%{item.home}/.openclaw/openclaw.json",
+        "Expected config rule to target the default openclaw.json path")
+    assert(config_rule.assertion.expected.any_of[2].all_of[1].key == "uid"
+        and config_rule.assertion.expected.any_of[2].all_of[1].expected == "%{item.user_uid}",
+        "Expected openclaw.json to remain owned by the matched account uid")
+    assert(config_rule.assertion.expected.any_of[2].all_of[2].expected == octal("600"),
+        "Expected openclaw.json to be limited to 0600 or stricter")
+
+    assert(find_probe(credentials_rule, "openclaw_credentials_dirs").func == "meta.map",
+        "Expected credentials rule to reuse meta.map")
+    assert(find_probe(credentials_rule, "openclaw_credentials_dirs").params.params_template.path ==
+        "%{item.home}/.openclaw/credentials",
+        "Expected credentials rule to target the default credentials directory")
+    assert(credentials_rule.assertion.expected.any_of[2].all_of[1].key == "uid"
+        and credentials_rule.assertion.expected.any_of[2].all_of[1].expected == "%{item.user_uid}",
+        "Expected credentials directories to remain owned by the matched account uid")
+    assert(credentials_rule.assertion.expected.any_of[2].all_of[2].expected == octal("700"),
+        "Expected credentials directories to be limited to 0700 or stricter")
+end
+
+function test_agentos_baseline_openclaw_manual_review_items_are_level_scoped()
+    local profile = seharden_profile.load("profiles/seharden/agentos_baseline.yml")
+    local baseline_items = assert(seharden_profile.get_manual_review_items_for_level(profile, "baseline"))
+    local openclaw_items = assert(seharden_profile.get_manual_review_items_for_level(profile, "openclaw"))
+
+    assert(#baseline_items == 0, "Expected baseline runs to avoid OpenClaw-only manual review prompts")
+    assert(#openclaw_items >= 6, "Expected openclaw level to disclose deployment-specific manual review items")
+
+    local openclaw_profile = { manual_review_required = openclaw_items }
+    assert(manual_review_contains(openclaw_profile, "trusted proxy"),
+        "Expected manual review items to cover trusted proxy and non-loopback gateway exposure")
+    assert(manual_review_contains(openclaw_profile, "OPENCLAW_STATE_DIR"),
+        "Expected manual review items to cover custom state directory layouts")
+    assert(manual_review_contains(openclaw_profile, "multi-instance"),
+        "Expected manual review items to cover multi-instance trust-boundary separation")
+    assert(manual_review_contains(openclaw_profile, "security audit --deep"),
+        "Expected manual review items to defer application-semantic audit interpretation to OpenClaw")
+    assert(manual_review_contains(openclaw_profile, "cron jobs"),
+        "Expected manual review items to cover scheduled automation inventory review")
+    assert(manual_review_contains(openclaw_profile, "skill or MCP integrity"),
+        "Expected manual review items to cover workspace DLP and skill integrity practices")
+end
+
 function test_profiles_define_localhost_conditions_for_ssh_effective_value()
     local profiles = {
+        "profiles/seharden/agentos_baseline.yml",
         "profiles/seharden/cis_alinux_3.yml",
         "profiles/seharden/dengbao_3.yml",
     }

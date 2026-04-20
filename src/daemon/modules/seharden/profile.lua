@@ -99,6 +99,17 @@ function M.validate(profile_data)
         end
     end
 
+    if profile_data.default_level ~= nil then
+        if not is_non_empty_string(profile_data.default_level) then
+            return nil, "Profile field 'default_level' must be a non-empty string."
+        end
+        if not level_ids[profile_data.default_level] then
+            return nil, string.format(
+                "Profile field 'default_level' references unknown level '%s'.",
+                profile_data.default_level)
+        end
+    end
+
     if profile_data.manual_review_required ~= nil then
         if not is_list(profile_data.manual_review_required) then
             return nil, "Profile field 'manual_review_required' must be a list."
@@ -204,6 +215,20 @@ function M.load(config_name_or_path)
     end
 
     return profile_data
+end
+
+function M.resolve_target_level(profile_data, requested_level_id)
+    local valid, schema_err = M.validate(profile_data)
+    if not valid then
+        log.error("Invalid profile schema: %s", schema_err)
+        return nil, schema_err
+    end
+
+    if requested_level_id ~= nil then
+        return requested_level_id
+    end
+
+    return profile_data.default_level
 end
 
 local function build_active_levels(profile_data, target_level_id)
