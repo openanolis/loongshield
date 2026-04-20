@@ -16,6 +16,20 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - None yet.
 
+## [1.2.0] - 2026-04-20
+
+### Added
+- Optional `openclaw` level in `agentos_baseline` for OpenClaw host-runtime hardening, including kernel, `/tmp`, and default per-user state-path controls.
+- Profile-level `default_level` and `manual_review_required` support so bundled profiles can keep deployment-specific checks outside automated host assertions.
+
+### Changed
+- `agentos_baseline` now defaults to the `baseline` level unless callers explicitly request `--level openclaw`, keeping non-OpenClaw hosts on the existing default scan path.
+- `seharden --verbose` and profile reference docs now describe profile default levels and manual-review summaries in scan output.
+
+### Fixed
+- OpenClaw default-path permission rules now verify the matched account owns `~/.openclaw`, `openclaw.json`, and `credentials`, not just that mode bits are restrictive.
+- OpenClaw SSH posture guidance is now surfaced as manual review instead of hard-coded automated failures, keeping deployment-specific access policy decisions outside the host baseline.
+
 ## [1.1.3] - 2026-04-08
 
 ### Added
