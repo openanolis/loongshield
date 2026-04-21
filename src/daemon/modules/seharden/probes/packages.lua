@@ -1,5 +1,5 @@
 local log = require('runtime.log')
-local text = require('seharden.text')
+local package_inventory = require('seharden.package_inventory')
 local M = {}
 
 local _default_dependencies = {
@@ -17,33 +17,7 @@ M._test_set_dependencies()
 
 local function get_all_packages()
     log.debug("Loading installed package list...")
-    local handle = _dependencies.io_popen("rpm -qa --qf '%{NAME}\\n'")
-    if not handle then
-        log.error("Failed to execute 'rpm -qa' command.")
-        return nil, "Failed to execute 'rpm -qa' command."
-    end
-
-    local packages = {}
-    for line in handle:lines() do
-        packages[line] = true
-    end
-
-    local ok, status, code = handle:close()
-    if not ok or code ~= 0 then
-        log.error("The 'rpm -qa' command failed with exit code: %s", tostring(code))
-        return nil, string.format("The 'rpm -qa' command failed with exit code: %s", tostring(code))
-    end
-
-    return packages
-end
-
-local function match_pattern(pattern, name)
-    local ok, res = pcall(string.match, name, text.glob_to_pattern(pattern))
-    if not ok then
-        log.warn("Pattern match failed for '%s': %s", pattern, tostring(res))
-        return false
-    end
-    return res ~= nil
+    return package_inventory.read_installed_index(_dependencies, "packages.get_installed")
 end
 
 function M.get_installed(params)
@@ -76,10 +50,24 @@ function M.get_installed(params)
             end
             return { count = 0, details = {} }
         end
-        for pkg_name, _ in pairs(all_pkgs) do
-            if match_pattern(pattern, pkg_name) then
-                table.insert(found_packages, { name = pkg_name })
-            end
+        local installed_names = {}
+        for pkg_name in pairs(all_pkgs) do
+            installed_names[#installed_names + 1] = pkg_name
+        end
+        table.sort(installed_names)
+
+        local matches, match_err = package_inventory.find_matching_names(
+            pattern,
+            installed_names,
+            "packages.get_installed"
+        )
+        if not matches then
+            log.warn("Pattern match failed for '%s': %s", pattern, tostring(match_err))
+            return nil, match_err
+        end
+
+        for _, pkg_name in ipairs(matches) do
+            table.insert(found_packages, { name = pkg_name })
         end
         return { count = #found_packages, details = found_packages }
     end

@@ -1,5 +1,5 @@
 local log = require('runtime.log')
-local text = require('seharden.text')
+local package_inventory = require('seharden.package_inventory')
 local M = {}
 
 local _default_dependencies = {
@@ -45,38 +45,11 @@ local function run(cmd)
 end
 
 local function get_all_packages()
-    local handle = _dependencies.io_popen("rpm -qa --qf '%{NAME}\\n'", "r")
-    if not handle then
-        return nil, "packages.remove_matching: failed to execute 'rpm -qa'"
-    end
-
-    local packages = {}
-    for line in handle:lines() do
-        if line ~= "" then
-            packages[#packages + 1] = line
-        end
-    end
-
-    local ok, _, code = handle:close()
-    if ok ~= true or (code ~= nil and code ~= 0) then
-        return nil, string.format("packages.remove_matching: rpm -qa failed with exit %s", tostring(code))
-    end
-
-    table.sort(packages)
-    return packages
-end
-
-local function compile_glob_pattern(glob)
-    local matcher = text.glob_to_pattern(glob)
-    local ok = pcall(string.match, "", matcher)
-    if not ok then
-        return nil, string.format("packages.remove_matching: invalid package pattern '%s'", tostring(glob))
-    end
-    return matcher
+    return package_inventory.read_installed_names(_dependencies, "packages.remove_matching")
 end
 
 local function find_matching_packages(pattern)
-    local matcher, matcher_err = compile_glob_pattern(pattern)
+    local matcher, matcher_err = package_inventory.compile_glob(pattern, "packages.remove_matching")
     if not matcher then
         return nil, matcher_err
     end
@@ -86,17 +59,17 @@ local function find_matching_packages(pattern)
         return nil, err
     end
 
+    local matched_names = package_inventory.match_names(matcher, installed)
+
     local matches = {}
-    for _, pkg in ipairs(installed) do
-        if pkg:match(matcher) then
-            local safe_name = sanitize_package_name(pkg)
-            if not safe_name then
-                return nil, string.format(
-                    "packages.remove_matching: installed package name '%s' is not safe to pass to dnf",
-                    tostring(pkg))
-            end
-            matches[#matches + 1] = safe_name
+    for _, pkg in ipairs(matched_names) do
+        local safe_name = sanitize_package_name(pkg)
+        if not safe_name then
+            return nil, string.format(
+                "packages.remove_matching: installed package name '%s' is not safe to pass to dnf",
+                tostring(pkg))
         end
+        matches[#matches + 1] = safe_name
     end
 
     return matches
