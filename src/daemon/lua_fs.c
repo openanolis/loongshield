@@ -107,11 +107,42 @@ static int L_readfile(lua_State *L) {
     return 1;
 }
 
+static int L_chmod(lua_State *L) {
+    const char *path = luaL_checkstring(L, 1);
+    mode_t mode = (mode_t)luaL_checkinteger(L, 2);
+
+    if (chmod(path, mode) == -1) {
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(errno));
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int L_chown(lua_State *L) {
+    const char *path = luaL_checkstring(L, 1);
+    uid_t uid = (uid_t)luaL_checkinteger(L, 2);
+    gid_t gid = (gid_t)luaL_checkinteger(L, 3);
+
+    if (chown(path, uid, gid) == -1) {
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(errno));
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static const luaL_Reg fs_lib[] = {
     { "stat",       L_stat      },
     { "get_uid",    L_get_uid   },
     { "get_gid",    L_get_gid   },
     { "readfile",   L_readfile  },
+    { "chmod",      L_chmod     },
+    { "chown",      L_chown     },
     { NULL, NULL }
 };
 
