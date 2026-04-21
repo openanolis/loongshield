@@ -1,4 +1,4 @@
-local common = require('seharden.pam_common')
+local common = require('seharden.pam.common')
 local faillock = require('seharden.pam.faillock')
 local password_history = require('seharden.pam.password_history')
 local pwquality = require('seharden.pam.pwquality')

@@ -1,5 +1,5 @@
 local path_list = require('seharden.shared.path_list')
-local umask_policy = require('seharden.umask_policy')
+local umask_policy = require('seharden.shared.umask_policy')
 local M = {}
 
 local _default_dependencies = {

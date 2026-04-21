@@ -1,4 +1,4 @@
-local umask_policy = require('seharden.umask_policy')
+local umask_policy = require('seharden.shared.umask_policy')
 
 function test_parse_mask_rejects_invalid_values()
     assert(umask_policy.parse_mask("027") == tonumber("027", 8),

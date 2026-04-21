@@ -1,4 +1,4 @@
-local common = require('seharden.pam_common')
+local common = require('seharden.pam.common')
 
 local M = {}
 

@@ -1,4 +1,4 @@
-local user_defaults = require('seharden.user_defaults')
+local user_defaults = require('seharden.shared.user_defaults')
 
 local function make_reader(lines)
     local index = 0

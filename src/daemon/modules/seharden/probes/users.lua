@@ -1,6 +1,6 @@
 local lfs = require('lfs')
-local account_files = require('seharden.account_files')
-local user_defaults = require('seharden.user_defaults')
+local account_files = require('seharden.shared.account_files')
+local user_defaults = require('seharden.shared.user_defaults')
 
 local M = {}
 
