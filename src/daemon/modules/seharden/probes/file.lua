@@ -1,7 +1,7 @@
-local lfs = require('lfs')
 local log = require('runtime.log')
 local key_value_file = require('seharden.key_value_file')
-local text = require('seharden.text')
+local lfs = require('lfs')
+local path_list = require('seharden.path_list')
 local M = {}
 
 local _default_dependencies = {
@@ -18,117 +18,16 @@ function M._test_set_dependencies(deps)
     for key, default in pairs(_default_dependencies) do
         _dependencies[key] = deps[key] or default
     end
+    path_list._test_set_dependencies({
+        lfs_attributes = _dependencies.lfs_attributes,
+        lfs_dir = _dependencies.lfs_dir,
+    })
 end
 
 M._test_set_dependencies()
 
-local function join_path(base, part)
-    if base == "." then
-        return part
-    elseif base == "/" then
-        return "/" .. part
-    end
-    return base .. "/" .. part
-end
-
-local function has_wildcard(s)
-    return s:find("[%*%?%[]") ~= nil
-end
-
-local function path_mode(path)
-    local attr = _dependencies.lfs_attributes(path)
-    return attr and attr.mode or nil
-end
-
-local function expand_glob_path(path_glob)
-    local is_abs = path_glob:sub(1, 1) == "/"
-    local parts = {}
-    for part in path_glob:gmatch("[^/]+") do
-        table.insert(parts, part)
-    end
-
-    local bases = { is_abs and "/" or "." }
-    for _, part in ipairs(parts) do
-        if part == "." then
-            goto continue
-        end
-        if part == ".." then
-            local new_bases = {}
-            local seen = {}
-            for _, base in ipairs(bases) do
-                local parent
-                if base == "/" then
-                    parent = "/"
-                else
-                    parent = base:match("^(.*)/[^/]+$") or "."
-                end
-                if not seen[parent] then
-                    table.insert(new_bases, parent)
-                    seen[parent] = true
-                end
-            end
-            bases = new_bases
-            goto continue
-        end
-
-        if has_wildcard(part) then
-            local pat = text.glob_to_pattern(part)
-            local new_bases = {}
-            local seen = {}
-            for _, base in ipairs(bases) do
-                if path_mode(base) == "directory" then
-                    for name in _dependencies.lfs_dir(base) do
-                        if name ~= "." and name ~= ".." and name:match(pat) then
-                            local full = join_path(base, name)
-                            if not seen[full] then
-                                table.insert(new_bases, full)
-                                seen[full] = true
-                            end
-                        end
-                    end
-                end
-            end
-            bases = new_bases
-        else
-            local new_bases = {}
-            local seen = {}
-            for _, base in ipairs(bases) do
-                local full = join_path(base, part)
-                if not seen[full] then
-                    table.insert(new_bases, full)
-                    seen[full] = true
-                end
-            end
-            bases = new_bases
-        end
-
-        ::continue::
-    end
-
-    return bases
-end
-
 local function expand_paths(paths_table)
-    local expanded = {}
-    local unique_paths = {}
-    for _, path_glob in ipairs(paths_table) do
-        if type(path_glob) == "string" and path_glob ~= "" then
-            if not has_wildcard(path_glob) then
-                if path_mode(path_glob) == "file" and not unique_paths[path_glob] then
-                    table.insert(expanded, path_glob)
-                    unique_paths[path_glob] = true
-                end
-            else
-                for _, full in ipairs(expand_glob_path(path_glob)) do
-                    if path_mode(full) == "file" and not unique_paths[full] then
-                        table.insert(expanded, full)
-                        unique_paths[full] = true
-                    end
-                end
-            end
-        end
-    end
-    return expanded
+    return path_list.expand_files(paths_table)
 end
 
 function M.find_pattern(params)

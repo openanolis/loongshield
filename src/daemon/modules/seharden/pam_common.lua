@@ -1,22 +1,13 @@
-local file_probe = require('seharden.probes.file')
 local key_value_file = require('seharden.key_value_file')
 local pam_parser = require('seharden.parsers.pam')
+local path_list = require('seharden.path_list')
 
 local M = {}
 
 local default_dependencies = {
     io_open = io.open,
     expand_paths = function(paths)
-        local result, err = file_probe.list_paths({ paths = paths })
-        if not result then
-            return nil, err
-        end
-
-        local expanded = {}
-        for _, item in ipairs(result.details or {}) do
-            expanded[#expanded + 1] = item.path
-        end
-        return expanded
+        return path_list.expand_files(paths)
     end,
 }
 
