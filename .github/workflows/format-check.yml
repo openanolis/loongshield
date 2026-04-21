@@ -25,62 +25,69 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v4
               with:
-                  fetch-depth: 0
+                fetch-depth: 0
 
             - name: Set up Node.js
               uses: actions/setup-node@v4
               with:
-                  node-version: "20"
+                node-version: "20"
 
             - name: Set up Go
               uses: actions/setup-go@v5
               with:
-                  go-version: "1.23"
+                go-version: "1.23"
 
             - name: Install formatting tools
               run: |
-                  set -euo pipefail
+                set -euo pipefail
 
-                  sudo apt-get update
-                  sudo apt-get install -y clang-format
+                sudo apt-get update
+                sudo apt-get install -y clang-format
 
-                  npm install -g @johnnymorganz/stylua-bin@2.3.1
-                  go install github.com/google/yamlfmt/cmd/yamlfmt@v0.21.0
-                  echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+                npm install -g @johnnymorganz/stylua-bin@2.3.1
+                go install github.com/google/yamlfmt/cmd/yamlfmt@v0.21.0
+                echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
             - name: Collect changed files
               id: changed-files
               run: |
-                  set -euo pipefail
+                set -euo pipefail
 
-                  head_sha="${GITHUB_SHA}"
-                  if [ "${{ github.event_name }}" = "pull_request" ]; then
-                      base_sha="${{ github.event.pull_request.base.sha }}"
-                      head_sha="${{ github.event.pull_request.head.sha }}"
-                      git diff --name-only --diff-filter=ACMR "$base_sha" "$head_sha" > changed-files.txt
-                  elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-                      git show --pretty='' --name-only --diff-filter=ACMR "$head_sha" > changed-files.txt
-                  else
-                      git diff --name-only --diff-filter=ACMR "${{ github.event.before }}" "$head_sha" > changed-files.txt
-                  fi
+                head_sha="${GITHUB_SHA}"
+                default_branch="${{ github.event.repository.default_branch }}"
+                if [ "${{ github.event_name }}" = "pull_request" ]; then
+                    base_sha="${{ github.event.pull_request.base.sha }}"
+                    head_sha="${{ github.event.pull_request.head.sha }}"
+                    git diff --name-only --diff-filter=ACMR "$base_sha" "$head_sha" > changed-files.txt
+                else
+                    before_sha="${{ github.event.before }}"
+                    if [ "$before_sha" != "0000000000000000000000000000000000000000" ] && \
+                        git merge-base --is-ancestor "$before_sha" "$head_sha"; then
+                        git diff --name-only --diff-filter=ACMR "$before_sha" "$head_sha" > changed-files.txt
+                    else
+                        git fetch --no-tags --prune origin "$default_branch"
+                        base_sha="$(git merge-base "origin/$default_branch" "$head_sha")"
+                        git diff --name-only --diff-filter=ACMR "$base_sha" "$head_sha" > changed-files.txt
+                    fi
+                fi
 
-                  if [ -s changed-files.txt ]; then
-                      {
-                          echo "files<<EOF"
-                          cat changed-files.txt
-                          echo "EOF"
-                      } >> "$GITHUB_OUTPUT"
-                  fi
+                if [ -s changed-files.txt ]; then
+                    {
+                        echo "files<<EOF"
+                        cat changed-files.txt
+                        echo "EOF"
+                    } >> "$GITHUB_OUTPUT"
+                fi
 
             - name: Check formatting
               env:
-                  CHANGED_FILES: ${{ steps.changed-files.outputs.files }}
+                CHANGED_FILES: ${{ steps.changed-files.outputs.files }}
               run: |
-                  set -euo pipefail
+                set -euo pipefail
 
-                  if [ -z "$CHANGED_FILES" ]; then
-                      echo "No changed files detected."
-                      exit 0
-                  fi
+                if [ -z "$CHANGED_FILES" ]; then
+                    echo "No changed files detected."
+                    exit 0
+                fi
 
-                  FILES="$CHANGED_FILES" make fmt-check
+                FILES="$CHANGED_FILES" make fmt-check
