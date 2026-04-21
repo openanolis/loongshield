@@ -1,184 +1,19 @@
-local file_probe = require('seharden.probes.file')
-local key_value_file = require('seharden.key_value_file')
-local pam_parser = require('seharden.parsers.pam')
+local common = require('seharden.pam_common')
 local M = {}
 
-local _default_dependencies = {
-    io_open = io.open,
-    expand_paths = function(paths)
-        local result, err = file_probe.list_paths({ paths = paths })
-        if not result then
-            return nil, err
-        end
-
-        local expanded = {}
-        for _, item in ipairs(result.details or {}) do
-            expanded[#expanded + 1] = item.path
-        end
-        return expanded
-    end,
-}
-
-local _dependencies = {}
-
 function M._test_set_dependencies(deps)
-    deps = deps or {}
-    for key, default in pairs(_default_dependencies) do
-        _dependencies[key] = deps[key] or default
-    end
+    common._test_set_dependencies(deps)
 end
 
 M._test_set_dependencies()
 
-local function resolve_pam_paths(params, probe_name)
-    local pam_paths = params and params.pam_paths
-    if type(pam_paths) ~= "table" or #pam_paths == 0 then
-        return nil, string.format("Probe '%s' requires a non-empty 'pam_paths' list.", probe_name)
-    end
-    return pam_paths
-end
-
-local function add_detail(details, path, reason, extra)
-    local detail = {
-        path = path,
-        reason = reason,
-    }
-
-    for key, value in pairs(extra or {}) do
-        detail[key] = value
-    end
-
-    details[#details + 1] = detail
-end
-
-local function parse_key_value_lines(handle)
-    return key_value_file.parse_handle(handle)
-end
-
-local function load_optional_key_value_file(path)
-    local file = _dependencies.io_open(path, "r")
-    if not file then
-        return nil, false
-    end
-
-    local values = parse_key_value_lines(file)
-    file:close()
-    return values, true
-end
-
-local function expand_ordered_paths(path_specs)
-    local expanded = {}
-    local seen = {}
-
-    for _, path_spec in ipairs(path_specs or {}) do
-        local matches, err = _dependencies.expand_paths({ path_spec })
-        if not matches then
-            return nil, err
-        end
-
-        table.sort(matches)
-        for _, path in ipairs(matches) do
-            if not seen[path] then
-                expanded[#expanded + 1] = path
-                seen[path] = true
-            end
-        end
-    end
-
-    return expanded
-end
-
-local function load_optional_key_value_files(path_specs)
-    local paths, err = expand_ordered_paths(path_specs)
-    if not paths then
-        return nil, false, err
-    end
-
-    local values = {}
-    local found = false
-
-    for _, path in ipairs(paths) do
-        local parsed, file_found = load_optional_key_value_file(path)
-        if not file_found then
-            return nil, false, string.format("Could not open config file '%s' for reading.", path)
-        end
-        found = true
-
-        for key, value in pairs(parsed) do
-            values[key] = value
-        end
-    end
-
-    return values, found
-end
-
-local function parse_option(args, option_name)
-    for _, arg in ipairs(args) do
-        local value = arg:match("^" .. option_name .. "=(.+)$")
-        if value then
-            return value
-        end
-    end
-    return nil
-end
-
-local function has_arg(args, option_name)
-    for _, arg in ipairs(args) do
-        if arg == option_name then
-            return true
-        end
-    end
-    return false
-end
-
-local function parse_non_negative_integer(value)
-    local number = tonumber(value)
-    if not number or number < 0 then
-        return nil
-    end
-    return number
-end
-
-local function parse_positive_integer(value)
-    local number = tonumber(value)
-    if not number or number < 1 then
-        return nil
-    end
-    return number
-end
-
-local function parse_integer(value)
-    local number = tonumber(value)
-    if number == nil then
-        return nil
-    end
-    return number
-end
-
-local function load_pam_entries(path)
-    local file = _dependencies.io_open(path, "r")
-    if not file then
-        return nil
-    end
-
-    local entries = {}
-    for line in file:lines() do
-        local entry = pam_parser.parse_line(line)
-        if entry then
-            entries[#entries + 1] = entry
-        end
-    end
-    file:close()
-    return entries
-end
-
 local function load_pwquality_config(entry, default_config)
-    local config_path = parse_option(entry.args, "conf")
+    local config_path = common.parse_option(entry.args, "conf")
     if not config_path then
         return default_config or {}
     end
 
-    local config, found = load_optional_key_value_file(config_path)
+    local config, found = common.load_optional_key_value_file(config_path)
     if not found then
         return nil, "config_missing"
     end
@@ -187,7 +22,7 @@ local function load_pwquality_config(entry, default_config)
 end
 
 local function read_entry_integer(entry, config, option_name, parser)
-    local value = parser(parse_option(entry.args, option_name))
+    local value = parser(common.parse_option(entry.args, option_name))
     if value ~= nil then
         return value
     end
@@ -196,7 +31,7 @@ local function read_entry_integer(entry, config, option_name, parser)
 end
 
 local function get_remember_value(entry, default_config)
-    local remember = tonumber(parse_option(entry.args, "remember"))
+    local remember = tonumber(common.parse_option(entry.args, "remember"))
     if remember then
         return remember
     end
@@ -205,9 +40,9 @@ local function get_remember_value(entry, default_config)
         return nil
     end
 
-    local config_path = parse_option(entry.args, "conf")
+    local config_path = common.parse_option(entry.args, "conf")
     if config_path then
-        local config, found = load_optional_key_value_file(config_path)
+        local config, found = common.load_optional_key_value_file(config_path)
         if not found then
             return nil
         end
@@ -222,7 +57,7 @@ local function is_password_history_module(module_name)
 end
 
 function M.check_password_history(params)
-    local pam_paths, path_err = resolve_pam_paths(params, "pam.check_password_history")
+    local pam_paths, path_err = common.resolve_pam_paths(params, "pam.check_password_history")
     if not pam_paths then
         return nil, path_err
     end
@@ -237,7 +72,7 @@ function M.check_password_history(params)
         default_config_paths = { params.config_path or "/etc/security/pwhistory.conf" }
     end
 
-    local default_config, _, err = load_optional_key_value_files(default_config_paths)
+    local default_config, _, err = common.load_optional_key_value_files(default_config_paths)
     if err then
         return nil, err
     end
@@ -245,7 +80,7 @@ function M.check_password_history(params)
     local details = {}
 
     for _, path in ipairs(pam_paths) do
-        local entries = load_pam_entries(path)
+        local entries = common.load_pam_entries(path)
         if not entries then
             return nil, string.format("Could not open PAM file '%s' for reading.", path)
         end
@@ -264,7 +99,7 @@ function M.check_password_history(params)
         end
 
         if not path_ok then
-            add_detail(details, path,
+            common.add_detail(details, path,
                 saw_history_module and "remember_too_small_or_missing" or "module_missing")
         end
     end
@@ -278,7 +113,7 @@ end
 local function count_pwquality_required_classes(entry, config)
     local required_classes = 0
     for _, option_name in ipairs({ "dcredit", "ucredit", "lcredit", "ocredit" }) do
-        local configured_value = read_entry_integer(entry, config, option_name, parse_integer)
+        local configured_value = read_entry_integer(entry, config, option_name, common.parse_integer)
 
         if configured_value and configured_value < 0 then
             required_classes = required_classes + 1
@@ -294,12 +129,12 @@ local function get_pwquality_policy(entry, default_config, params)
         return nil, err
     end
 
-    local minlen = read_entry_integer(entry, config, "minlen", parse_positive_integer)
+    local minlen = read_entry_integer(entry, config, "minlen", common.parse_positive_integer)
     if minlen == nil then
         minlen = tonumber(params.default_minlen) or 8
     end
 
-    local required_classes = read_entry_integer(entry, config, "minclass", parse_positive_integer)
+    local required_classes = read_entry_integer(entry, config, "minclass", common.parse_positive_integer)
     if required_classes == nil then
         required_classes = count_pwquality_required_classes(entry, config)
     end
@@ -311,7 +146,7 @@ local function get_pwquality_policy(entry, default_config, params)
 end
 
 function M.inspect_pwquality(params)
-    local pam_paths, path_err = resolve_pam_paths(params, "pam.inspect_pwquality")
+    local pam_paths, path_err = common.resolve_pam_paths(params, "pam.inspect_pwquality")
     if not pam_paths then
         return nil, path_err
     end
@@ -325,7 +160,7 @@ function M.inspect_pwquality(params)
         return nil, "Probe 'pam.inspect_pwquality' requires a positive 'min_minclass' parameter."
     end
 
-    local default_config, _, err = load_optional_key_value_files(params.config_paths or {})
+    local default_config, _, err = common.load_optional_key_value_files(params.config_paths or {})
     if err then
         return nil, err
     end
@@ -336,11 +171,11 @@ function M.inspect_pwquality(params)
     local weak_complexity_count = 0
 
     for _, path in ipairs(pam_paths) do
-        local entries = load_pam_entries(path)
+        local entries = common.load_pam_entries(path)
         if not entries then
             missing_module_count = missing_module_count + 1
             weak_minlen_count = weak_minlen_count + 1
-            add_detail(details, path, "pam_file_unreadable")
+            common.add_detail(details, path, "pam_file_unreadable")
         else
             local enabled = false
             local minlen_ok = false
@@ -380,7 +215,7 @@ function M.inspect_pwquality(params)
             if not enabled then
                 missing_module_count = missing_module_count + 1
                 weak_minlen_count = weak_minlen_count + 1
-                add_detail(details, path, "module_missing")
+                common.add_detail(details, path, "module_missing")
             else
                 if not minlen_ok then
                     weak_minlen_count = weak_minlen_count + 1
@@ -390,7 +225,7 @@ function M.inspect_pwquality(params)
                 end
 
                 if not minlen_ok or not complexity_ok then
-                    add_detail(details, path, failure_reason, {
+                    common.add_detail(details, path, failure_reason, {
                         effective_required_classes = effective_required_classes,
                         effective_minlen = effective_minlen
                     })
@@ -409,9 +244,9 @@ function M.inspect_pwquality(params)
 end
 
 local function get_faillock_config(entry, default_config)
-    local config_path = parse_option(entry.args, "conf")
+    local config_path = common.parse_option(entry.args, "conf")
     if config_path then
-        local config, found = load_optional_key_value_file(config_path)
+        local config, found = common.load_optional_key_value_file(config_path)
         if not found then
             return nil, "config_missing"
         end
@@ -422,7 +257,7 @@ local function get_faillock_config(entry, default_config)
 end
 
 local function get_faillock_deny(entry, params, default_config)
-    local configured = parse_positive_integer(parse_option(entry.args, "deny"))
+    local configured = common.parse_positive_integer(common.parse_option(entry.args, "deny"))
     if configured then
         return configured
     end
@@ -432,7 +267,7 @@ local function get_faillock_deny(entry, params, default_config)
         return nil, err
     end
 
-    configured = parse_positive_integer(config.deny)
+    configured = common.parse_positive_integer(config.deny)
     if configured then
         return configured
     end
@@ -441,12 +276,12 @@ local function get_faillock_deny(entry, params, default_config)
 end
 
 local function get_faillock_unlock_time(entry, params, default_config)
-    local configured = parse_option(entry.args, "unlock_time")
+    local configured = common.parse_option(entry.args, "unlock_time")
     if configured ~= nil then
         if configured == "never" then
             return 0
         end
-        configured = parse_non_negative_integer(configured)
+        configured = common.parse_non_negative_integer(configured)
         if configured then
             return configured
         end
@@ -462,7 +297,7 @@ local function get_faillock_unlock_time(entry, params, default_config)
     if configured == "never" then
         return 0
     end
-    configured = parse_non_negative_integer(configured)
+    configured = common.parse_non_negative_integer(configured)
     if configured then
         return configured
     end
@@ -484,14 +319,14 @@ local function is_faillock_unlock_time_compliant(unlock_time, params)
 end
 
 function M.inspect_faillock(params)
-    local pam_paths, path_err = resolve_pam_paths(params, "pam.inspect_faillock")
+    local pam_paths, path_err = common.resolve_pam_paths(params, "pam.inspect_faillock")
     if not pam_paths then
         return nil, path_err
     end
 
     local default_config = {}
     if params.config_path then
-        local config, found = load_optional_key_value_file(params.config_path)
+        local config, found = common.load_optional_key_value_file(params.config_path)
         if found then
             default_config = config
         end
@@ -500,9 +335,9 @@ function M.inspect_faillock(params)
     local details = {}
 
     for _, path in ipairs(pam_paths) do
-        local entries = load_pam_entries(path)
+        local entries = common.load_pam_entries(path)
         if not entries then
-            add_detail(details, path, "pam_file_unreadable")
+            common.add_detail(details, path, "pam_file_unreadable")
         else
             local faillock_entries = {}
             local has_preauth = false
@@ -512,20 +347,20 @@ function M.inspect_faillock(params)
             for _, entry in ipairs(entries) do
                 if entry.module == "pam_faillock.so" then
                     faillock_entries[#faillock_entries + 1] = entry
-                    if entry.kind == "auth" and has_arg(entry.args, "preauth") then
+                    if entry.kind == "auth" and common.has_arg(entry.args, "preauth") then
                         has_preauth = true
-                    elseif entry.kind == "auth" and has_arg(entry.args, "authfail") then
+                    elseif entry.kind == "auth" and common.has_arg(entry.args, "authfail") then
                         has_authfail = true
-                    elseif entry.kind == "auth" and has_arg(entry.args, "authsucc") then
+                    elseif entry.kind == "auth" and common.has_arg(entry.args, "authsucc") then
                         has_authsucc = true
                     end
                 end
             end
 
             if #faillock_entries == 0 then
-                add_detail(details, path, "module_missing")
+                common.add_detail(details, path, "module_missing")
             elseif not has_authfail or not (has_authsucc or has_preauth) then
-                add_detail(details, path, "stack_incomplete")
+                common.add_detail(details, path, "stack_incomplete")
             else
                 local path_reason = nil
                 for _, entry in ipairs(faillock_entries) do
@@ -558,7 +393,7 @@ function M.inspect_faillock(params)
                 end
 
                 if path_reason then
-                    add_detail(details, path, path_reason)
+                    common.add_detail(details, path, path_reason)
                 end
             end
         end
@@ -583,15 +418,15 @@ local function is_restrictive_wheel_control(control)
 end
 
 local function get_wheel_entry_reason(entry)
-    if has_arg(entry.args, "deny") then
+    if common.has_arg(entry.args, "deny") then
         return "deny_enabled"
     end
 
-    if has_arg(entry.args, "trust") then
+    if common.has_arg(entry.args, "trust") then
         return "trust_enabled"
     end
 
-    if not has_arg(entry.args, "use_uid") then
+    if not common.has_arg(entry.args, "use_uid") then
         return "use_uid_missing"
     end
 
@@ -603,7 +438,7 @@ local function get_wheel_entry_reason(entry)
 end
 
 function M.inspect_wheel(params)
-    local pam_paths, path_err = resolve_pam_paths(params, "pam.inspect_wheel")
+    local pam_paths, path_err = common.resolve_pam_paths(params, "pam.inspect_wheel")
     if not pam_paths then
         return nil, path_err
     end
@@ -611,9 +446,9 @@ function M.inspect_wheel(params)
     local details = {}
 
     for _, path in ipairs(pam_paths) do
-        local entries = load_pam_entries(path)
+        local entries = common.load_pam_entries(path)
         if not entries then
-            add_detail(details, path, "pam_file_unreadable")
+            common.add_detail(details, path, "pam_file_unreadable")
         else
             local found_module = false
             local compliant = false
@@ -643,7 +478,7 @@ function M.inspect_wheel(params)
                     reason = weak_reason
                 end
 
-                add_detail(details, path, reason)
+                common.add_detail(details, path, reason)
             end
         end
     end
