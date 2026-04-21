@@ -1,5 +1,6 @@
 local lfs = require('lfs')
 local log = require('runtime.log')
+local key_value_file = require('seharden.key_value_file')
 local text = require('seharden.text')
 local M = {}
 
@@ -128,24 +129,6 @@ local function expand_paths(paths_table)
         end
     end
     return expanded
-end
-
-local function strip_inline_comment(line)
-    local in_quote = false
-
-    for index = 1, #line do
-        local char = line:sub(index, index)
-        if char == '"' then
-            in_quote = not in_quote
-        elseif char == "#" and not in_quote then
-            local previous = index > 1 and line:sub(index - 1, index - 1) or nil
-            if previous == nil or previous:match("%s") then
-                return line:sub(1, index - 1)
-            end
-        end
-    end
-
-    return line
 end
 
 function M.find_pattern(params)
@@ -279,7 +262,6 @@ function M.parse_key_values(params)
     end
 
     local normalize_values = params.normalize_values
-    local config_values = {}
     local file, err = _dependencies.io_open(params.path, "r")
 
     if not file then
@@ -287,25 +269,9 @@ function M.parse_key_values(params)
         return nil, string.format("Could not open file '%s': %s", params.path, tostring(err))
     end
 
-    for line in file:lines() do
-        local active = strip_inline_comment(line)
-        if not active:match("^%s*#") and active:match("%S") then
-            -- Support both "key value" and "key=value" (with optional spaces).
-            local key, value = active:match("^%s*([^=%s]+)%s*=%s*(.-)%s*$")
-            if not key then
-                key, value = active:match("^%s*([%S]+)%s+(.-)%s*$")
-            end
-
-            if key and value then
-                value = value:gsub('^"', ''):gsub('"$', '')
-                if normalize_values == "lower" then
-                    value = value:lower()
-                end
-                config_values[key] = value
-            end
-        end
-    end
-
+    local config_values = key_value_file.parse_handle(file, {
+        normalize_values = normalize_values,
+    })
     file:close()
     return config_values
 end

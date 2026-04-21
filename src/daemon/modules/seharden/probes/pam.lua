@@ -1,6 +1,6 @@
 local file_probe = require('seharden.probes.file')
+local key_value_file = require('seharden.key_value_file')
 local pam_parser = require('seharden.parsers.pam')
-local text = require('seharden.text')
 local M = {}
 
 local _default_dependencies = {
@@ -30,8 +30,6 @@ end
 
 M._test_set_dependencies()
 
-local trim = text.trim
-
 local function resolve_pam_paths(params, probe_name)
     local pam_paths = params and params.pam_paths
     if type(pam_paths) ~= "table" or #pam_paths == 0 then
@@ -53,43 +51,8 @@ local function add_detail(details, path, reason, extra)
     details[#details + 1] = detail
 end
 
-local function strip_inline_comment(line)
-    local in_quote = false
-
-    for index = 1, #line do
-        local char = line:sub(index, index)
-        if char == '"' then
-            in_quote = not in_quote
-        elseif char == "#" and not in_quote then
-            local previous = index > 1 and line:sub(index - 1, index - 1) or nil
-            if previous == nil or previous:match("%s") then
-                return line:sub(1, index - 1)
-            end
-        end
-    end
-
-    return line
-end
-
 local function parse_key_value_lines(handle)
-    local values = {}
-
-    for line in handle:lines() do
-        local trimmed = trim(strip_inline_comment(line))
-        if trimmed ~= "" and not trimmed:match("^#") then
-            local key, value = trimmed:match("^([^=%s]+)%s*=%s*(.-)%s*$")
-            if not key then
-                key, value = trimmed:match("^([%S]+)%s+(.-)%s*$")
-            end
-
-            if key and value then
-                value = value:gsub('^"', ''):gsub('"$', '')
-                values[key] = value
-            end
-        end
-    end
-
-    return values
+    return key_value_file.parse_handle(handle)
 end
 
 local function load_optional_key_value_file(path)
