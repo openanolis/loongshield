@@ -1,4 +1,5 @@
 local log = require('runtime.log')
+local template = require('seharden.template')
 local utils = require('seharden.util')
 local loader = require('seharden.loader')
 local comparators = require('seharden.comparators')
@@ -10,53 +11,6 @@ local M = {}
 --------------------------------------------------------------------------------
 -- Core Helper Functions
 --------------------------------------------------------------------------------
-
-local function lookup_context_value(key, contexts)
-    local value = contexts
-    for part in key:gmatch("([^.]+)") do
-        if type(value) == "table" and value[part] ~= nil then
-            value = value[part]
-        else
-            return nil
-        end
-    end
-    return value
-end
-
-local function resolve_value(template, contexts)
-    if type(template) ~= "string" then
-        if type(template) == "table" then
-            local new_table = {}
-            for k, v in pairs(template) do
-                -- Recursively resolve both keys and values for full coverage
-                new_table[resolve_value(k, contexts)] = resolve_value(v, contexts)
-            end
-            return new_table
-        end
-        return template
-    end
-
-    local full_key = template:match("^%%{([^}]+)}$")
-    if full_key then
-        local value = lookup_context_value(full_key, contexts)
-        if value == nil then
-            return template
-        end
-        return value
-    end
-
-    return template:gsub("%%{([^}]+)}", function(key)
-        local value = lookup_context_value(key, contexts)
-
-        if value == nil then
-            return "%{" .. key .. "}"
-        elseif type(value) == 'table' then
-            return "%{" .. key .. "}"
-        else
-            return tostring(value)
-        end
-    end)
-end
 
 local function _get_actual_value(node, contexts)
     if node.actual == nil and node.key and contexts.item then
@@ -80,7 +34,7 @@ local function _get_actual_value(node, contexts)
         end
     end
 
-    return resolve_value(node.actual, contexts)
+    return template.resolve_value(node.actual, contexts)
 end
 
 --------------------------------------------------------------------------------
@@ -134,7 +88,7 @@ evaluate_node = function(node, contexts, indent)
                 return evaluate_node(node.expected, item_contexts, indent .. "    ")
             end
         else
-            expected = resolve_value(node.expected, contexts)
+            expected = template.resolve_value(node.expected, contexts)
         end
 
         log.debug("%s -> ACTUAL value: %s", indent, utils.serialize_for_log(actual))
@@ -171,7 +125,7 @@ local function run_audit(rule, opts)
                 return "ERROR", string.format("Probe '%s' not found", task.func)
             end
 
-            local resolved_params = resolve_value(task.params, { probe = probed_data })
+            local resolved_params = template.resolve_value(task.params, { probe = probed_data })
             local ok, res, err = pcall(probe_func, resolved_params, probed_data)
 
             if not ok then
@@ -205,7 +159,7 @@ local function run_enforce(rule, probed_data, dry_run)
     end
 
     for _, task in ipairs(rule.reinforce) do
-        local resolved_params = resolve_value(task.params, { probe = probed_data })
+        local resolved_params = template.resolve_value(task.params, { probe = probed_data })
         local enforcer_func, path = loader.get_enforcer(task.action)
 
         if dry_run then

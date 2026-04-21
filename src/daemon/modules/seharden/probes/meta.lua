@@ -1,37 +1,7 @@
 local loader = require('seharden.loader')
 local log = require('runtime.log')
+local template = require('seharden.template')
 local M = {}
-
-local function resolve_item_template(template, item)
-    if type(template) == "table" then
-        local resolved = {}
-        for k, v in pairs(template) do
-            resolved[resolve_item_template(k, item)] = resolve_item_template(v, item)
-        end
-        return resolved
-    end
-
-    if type(template) ~= 'string' then
-        return template
-    end
-
-    local full_key = template:match("^%%{item%.([^}]+)}$")
-    if full_key then
-        local value = item[full_key]
-        if value == nil then
-            return template
-        end
-        return value
-    end
-
-    return template:gsub("%%{item%.([^}]+)}", function(key)
-        local value = item[key]
-        if value == nil or type(value) == "table" then
-            return "%{item." .. key .. "}"
-        end
-        return tostring(value)
-    end)
-end
 
 ---
 -- A meta-probe that applies a given probe function to each item of a source list.
@@ -58,7 +28,7 @@ function M.map(params, probed_data)
 
     local results = {}
     for _, item in ipairs(source_list) do
-        local dynamic_params = resolve_item_template(params.params_template, item)
+        local dynamic_params = template.resolve_value(params.params_template, { item = item })
         local ok, res, err = pcall(probe_func, dynamic_params, probed_data)
         if not ok then
             return nil, string.format("Probe '%s' failed in map loop: %s",
