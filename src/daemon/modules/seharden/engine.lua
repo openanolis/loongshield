@@ -1,93 +1,9 @@
 local log = require('runtime.log')
-local evaluator = require('seharden.evaluator')
-local template = require('seharden.template')
-local utils = require('seharden.util')
-local loader = require('seharden.loader')
 local output = require('seharden.output')
+local rule_executor = require('seharden.rule_executor')
 local rule_schema = require('seharden.rule_schema')
 
 local M = {}
-
---------------------------------------------------------------------------------
--- The Main Audit Logic
---------------------------------------------------------------------------------
-
-local function run_audit(rule, opts)
-    local probed_data = {}
-
-    if rule.probes then
-        log.debug("--- Probing Data for Rule ID: %s ---", rule.id)
-        local probes_to_run = rule_schema.normalize_probe_tasks(rule.probes)
-
-        for _, task in ipairs(probes_to_run) do
-            local probe_func = loader.get_probe(task.func)
-            if not probe_func then
-                return "ERROR", string.format("Probe '%s' not found", task.func)
-            end
-
-            local resolved_params = template.resolve_value(task.params, { probe = probed_data })
-            local ok, res, err = pcall(probe_func, resolved_params, probed_data)
-
-            if not ok then
-                return "ERROR", string.format("Probe '%s' failed: %s", task.func, tostring(res))
-            end
-            if res == nil and err ~= nil then
-                return "ERROR", string.format("Probe '%s' failed: %s", task.func, tostring(err))
-            end
-            probed_data[task.name] = res
-        end
-    end
-
-    log.debug("--- Evaluating Rule ID: %s ---", rule.id)
-    local initial_contexts = { probe = probed_data }
-    local passed, reason = evaluator.evaluate(rule.assertion, initial_contexts)
-
-    if passed then
-        log.debug("[%s] PASS: %s", rule.id, rule.desc)
-        return "PASS", string.format("[%s] %s", rule.id, rule.desc), probed_data
-    else
-        if not (opts and opts.verbose) then
-            log.warn("[%s] FAIL: %s - Reason: %s", rule.id, rule.desc, reason)
-        end
-        return "FAIL", string.format("[%s] %s: %s", rule.id, rule.desc, reason), probed_data, reason
-    end
-end
-
-local function run_enforce(rule, probed_data, dry_run)
-    if not rule.reinforce then
-        return "MANUAL", "No reinforce steps defined for this rule."
-    end
-
-    for _, task in ipairs(rule.reinforce) do
-        local resolved_params = template.resolve_value(task.params, { probe = probed_data })
-        local enforcer_func, path = loader.get_enforcer(task.action)
-
-        if dry_run then
-            if not enforcer_func then
-                log.warn("[DRY-RUN] WARNING: Enforcer '%s' not found — action would fail at runtime",
-                    task.action)
-            else
-                log.info("[DRY-RUN] Would apply: %s with params: %s",
-                    task.action, utils.serialize_for_log(resolved_params))
-            end
-        else
-            if not enforcer_func then
-                return "ERROR", string.format("Enforcer '%s' not found", task.action)
-            end
-            local pcall_ok, result, err = pcall(enforcer_func, resolved_params)
-            if not pcall_ok then
-                -- enforcer raised an exception (result holds the error message)
-                return "ERROR", string.format("Enforcer '%s' raised: %s", tostring(path), tostring(result))
-            end
-            if result == nil then
-                -- enforcer returned nil, err (normal failure path)
-                return "ERROR", string.format("Enforcer '%s' failed: %s", tostring(path), tostring(err))
-            end
-        end
-    end
-
-    return dry_run and "SKIP" or "DONE"
-end
 
 --------------------------------------------------------------------------------
 -- The Engine's Public API
@@ -123,14 +39,13 @@ function M.run(mode, rules, opts)
 
     for _, rule in ipairs(rules) do
         local valid, schema_err = rule_schema.validate_rule(rule)
-        local probe_tasks = valid and rule_schema.normalize_probe_tasks(rule.probes) or {}
         local rule_id = type(rule) == "table" and rule.id or "<unknown>"
 
         if not valid then
             log.error("[%s] Engine Error: Invalid rule schema: %s", tostring(rule_id), schema_err)
             hard_failures = hard_failures + 1
         else
-            local status, message, probed_data, reason = run_audit(rule, opts)
+            local status, message, probed_data, reason, probe_tasks = rule_executor.audit(rule, opts)
 
             if status == "ERROR" then
                 log.error("[%s] Engine Error: %s", rule.id, message)
@@ -146,7 +61,7 @@ function M.run(mode, rules, opts)
                     output.emit_verbose_rule_details(
                         rule, status, probed_data, reason, probe_tasks)
                 end
-                local enforce_status, enforce_err = run_enforce(rule, probed_data, dry_run)
+                local enforce_status, enforce_err = rule_executor.enforce(rule, probed_data, dry_run)
 
                 if enforce_status == "MANUAL" then
                     log.info("[%s] MANUAL: %s", rule.id, enforce_err)
@@ -159,7 +74,7 @@ function M.run(mode, rules, opts)
                         rule.id, #(rule.reinforce or {}))
                     dry_run_pending = dry_run_pending + 1
                 elseif enforce_status == "DONE" then
-                    local verify_status, verify_msg = run_audit(rule)
+                    local verify_status, verify_msg = rule_executor.audit(rule)
                     if verify_status == "PASS" then
                         log.info("[%s] FIXED: %s", rule.id, rule.desc)
                         fixed = fixed + 1
