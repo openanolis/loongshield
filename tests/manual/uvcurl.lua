@@ -1,6 +1,9 @@
 #!/usr/bin/env luajit
 
-package.path = "../src/daemon/modules/?.lua"
+package.path = table.concat({
+    "../../src/daemon/modules/?.lua",
+    "../../src/daemon/modules/?/init.lua",
+}, ";") .. ";" .. package.path
 
 local uv = require("luv")
 local cjson = require("cjson.safe")

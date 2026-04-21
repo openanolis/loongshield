@@ -9,7 +9,12 @@ local dbus = require('dbus')
 
 local unpack = unpack or table.unpack
 
-package.path = "../src/daemon/modules/?.lua;../src/daemon/modules/seharden/?.lua"
+package.path = table.concat({
+    "../../src/daemon/modules/?.lua",
+    "../../src/daemon/modules/?/init.lua",
+    "../../src/daemon/modules/seharden/?.lua",
+    "../../src/daemon/modules/seharden/?/init.lua",
+}, ";") .. ";" .. package.path
 
 local function listen(verbose)
     local con, err = dbus.bus_get()

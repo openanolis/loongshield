@@ -74,11 +74,11 @@ cat /sys/kernel/security/sysmon/version
 ```
 
 If you already built the userspace runtime, the helper script in
-`tests/kmod.lua` can be used for simple inspection:
+`tests/manual/kmod.lua` can be used for simple inspection:
 
 ```sh
-build/src/daemon/loonjit tests/kmod.lua lsmod
-build/src/daemon/loonjit tests/kmod.lua modprobe
+build/src/daemon/loonjit tests/manual/kmod.lua lsmod
+build/src/daemon/loonjit tests/manual/kmod.lua modprobe
 ```
 
 ## Notes
