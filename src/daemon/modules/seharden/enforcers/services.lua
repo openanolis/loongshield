@@ -1,13 +1,7 @@
 local lfs = require('lfs')
 local log = require('runtime.log')
+local systemctl = require('seharden.systemctl')
 local M = {}
-
-local SYSTEMCTL_CANDIDATES = {
-    "/usr/bin/systemctl",
-    "/bin/systemctl",
-    "/usr/sbin/systemctl",
-    "/sbin/systemctl",
-}
 
 local _default_dependencies = {
     io_popen = io.popen,
@@ -24,39 +18,8 @@ end
 
 M._test_set_dependencies()
 
-local function sanitize_unit_name(name)
-    if type(name) ~= "string" then return nil end
-    if not name:match("^[%w@%._:-]+$") then return nil end
-    return name
-end
-
-local function resolve_systemctl_path()
-    for _, path in ipairs(SYSTEMCTL_CANDIDATES) do
-        local attr = _dependencies.lfs_attributes(path)
-        if attr and attr.mode == "file" then
-            return path
-        end
-    end
-
-    return "systemctl"
-end
-
 local function run_systemctl(args)
-    local cmd = resolve_systemctl_path() .. " " .. args .. " 2>&1"
-    local handle = _dependencies.io_popen(cmd, "r")
-    if not handle then
-        return nil, "failed to run: " .. cmd
-    end
-    local out = handle:read("*a")
-    local ok, _, code = handle:close()
-    if ok ~= true or (code ~= nil and code ~= 0) then
-        local trimmed = (out or ""):match("^%s*(.-)%s*$")
-        if trimmed == "" then
-            trimmed = string.format("systemctl failed (exit %s): %s", tostring(code), cmd)
-        end
-        return nil, trimmed
-    end
-    return true, out
+    return systemctl.capture_checked(args, _dependencies, { stderr_redirect = "2>&1" })
 end
 
 -- Enable or disable a service unit file. state: "enable" | "disable" | "mask"
@@ -65,7 +28,7 @@ function M.set_filestate(params)
         return nil, "services.set_filestate: requires 'name' and 'state' parameters"
     end
 
-    local unit = sanitize_unit_name(params.name)
+    local unit = systemctl.sanitize_unit_name(params.name)
     if not unit then
         return nil, string.format("services.set_filestate: invalid unit name '%s'", tostring(params.name))
     end
@@ -88,7 +51,7 @@ function M.set_active_state(params)
         return nil, "services.set_active_state: requires 'name' and 'state' parameters"
     end
 
-    local unit = sanitize_unit_name(params.name)
+    local unit = systemctl.sanitize_unit_name(params.name)
     if not unit then
         return nil, string.format("services.set_active_state: invalid unit name '%s'", tostring(params.name))
     end

@@ -1,13 +1,7 @@
 local lfs = require('lfs')
 local log = require('runtime.log')
+local systemctl = require('seharden.systemctl')
 local M = {}
-
-local SYSTEMCTL_CANDIDATES = {
-    "/usr/bin/systemctl",
-    "/bin/systemctl",
-    "/usr/sbin/systemctl",
-    "/sbin/systemctl",
-}
 
 local _default_dependencies = {
     bus_default_system = function()
@@ -29,48 +23,12 @@ end
 
 M._test_set_dependencies()
 
-local function sanitize_unit_name(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-    if not name:match("^[%w@%._:-]+$") then
-        return nil
-    end
-    return name
-end
-
 local function normalize_unit_name(unit_name)
-    local safe_name = sanitize_unit_name(unit_name)
-    if not safe_name then
-        return nil
-    end
-    if safe_name:match("%.[%w%-]+$") then
-        return safe_name
-    end
-    return safe_name .. ".service"
-end
-
-local function resolve_systemctl_path()
-    for _, path in ipairs(SYSTEMCTL_CANDIDATES) do
-        local attr = _dependencies.lfs_attributes(path)
-        if attr and attr.mode == "file" then
-            return path
-        end
-    end
-
-    return "systemctl"
+    return systemctl.normalize_unit_name(unit_name)
 end
 
 local function run_systemctl_command(args)
-    local cmd = string.format("%s %s 2>/dev/null", resolve_systemctl_path(), args)
-    local handle = _dependencies.io_popen(cmd, "r")
-    if not handle then
-        return nil, nil, nil, cmd
-    end
-
-    local out = handle:read("*a") or ""
-    local ok, _, code = handle:close()
-    return out, ok, code, cmd
+    return systemctl.capture(args, _dependencies)
 end
 
 local function get_systemctl_enabled_state(unit_name)
@@ -121,13 +79,7 @@ local function get_systemctl_properties(unit_name)
         return nil
     end
 
-    local properties = {}
-    for line in (out .. "\n"):gmatch("([^\n]*)\n") do
-        local key, value = line:match("^([%w]+)=(.*)$")
-        if key then
-            properties[key] = value
-        end
-    end
+    local properties = systemctl.parse_show_properties(out)
 
     if properties.LoadState == "not-found" and
         (properties.UnitFileState == nil or properties.UnitFileState == "") then
@@ -200,14 +152,12 @@ local function get_active_state(unit_name, fallback_props)
         log.warn("Invalid unit name for systemctl: %s", tostring(unit_name))
         return "unknown"
     end
-    local cmd = string.format("%s is-active %s 2>/dev/null", resolve_systemctl_path(), normalized_name)
-    local handle = _dependencies.io_popen(cmd, "r")
-    if not handle then
+    local out = run_systemctl_command(string.format("is-active %s", normalized_name))
+    if not out then
         log.debug("Failed to run systemctl command for active state.")
         return "unknown"
     end
-    local state = handle:read("*a"):match("^%s*(.-)%s*$")
-    handle:close()
+    local state = out:match("^%s*(.-)%s*$")
     if state == "" then
         return "unknown"
     end
