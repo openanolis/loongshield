@@ -1,7 +1,7 @@
 local log = require('runtime.log')
-local key_value_file = require('seharden.key_value_file')
+local key_value_file = require('seharden.shared.key_value_file')
 local lfs = require('lfs')
-local path_list = require('seharden.path_list')
+local path_list = require('seharden.shared.path_list')
 local M = {}
 
 local _default_dependencies = {

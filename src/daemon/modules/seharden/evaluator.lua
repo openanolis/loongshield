@@ -1,6 +1,6 @@
 local log = require('runtime.log')
-local template = require('seharden.template')
-local utils = require('seharden.util')
+local template = require('seharden.shared.template')
+local utils = require('seharden.shared.util')
 local comparators = require('seharden.comparators')
 local output = require('seharden.output')
 

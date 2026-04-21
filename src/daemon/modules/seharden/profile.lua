@@ -1,6 +1,6 @@
 local log = require('runtime.log')
 local rule_schema = require('seharden.rule_schema')
-local utils = require('seharden.util')
+local utils = require('seharden.shared.util')
 local lyaml = require('lyaml')
 local M = {}
 local _validated_marker = {}

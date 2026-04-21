@@ -1,10 +1,10 @@
 local function with_stubbed_profile(stubs, fn)
     local saved_profile = package.loaded["seharden.profile"]
-    local saved_util = package.loaded["seharden.util"]
+    local saved_util = package.loaded["seharden.shared.util"]
     local saved_lyaml = package.loaded["lyaml"]
 
     package.loaded["seharden.profile"] = nil
-    package.loaded["seharden.util"] = stubs.util
+    package.loaded["seharden.shared.util"] = stubs.util
     package.loaded["lyaml"] = stubs.lyaml
 
     local ok, err = pcall(function()
@@ -13,7 +13,7 @@ local function with_stubbed_profile(stubs, fn)
     end)
 
     package.loaded["seharden.profile"] = saved_profile
-    package.loaded["seharden.util"] = saved_util
+    package.loaded["seharden.shared.util"] = saved_util
     package.loaded["lyaml"] = saved_lyaml
 
     if not ok then

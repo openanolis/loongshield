@@ -1,6 +1,6 @@
 local lfs = require('lfs')
 local sudoers = require('seharden.parsers.sudoers')
-local text = require('seharden.text')
+local text = require('seharden.shared.text')
 local M = {}
 
 local _default_dependencies = {

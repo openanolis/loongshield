@@ -1,4 +1,4 @@
-local text = require('seharden.text')
+local text = require('seharden.shared.text')
 
 local M = {}
 

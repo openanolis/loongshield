@@ -1,7 +1,7 @@
 local lfs = require('lfs')
 local fsutil = require('seharden.enforcers.fsutil')
 local pam_parser = require('seharden.parsers.pam')
-local text = require('seharden.text')
+local text = require('seharden.shared.text')
 local M = {}
 
 local _default_dependencies = {

@@ -1,5 +1,5 @@
 local log = require('runtime.log')
-local package_inventory = require('seharden.package_inventory')
+local package_inventory = require('seharden.shared.package_inventory')
 local M = {}
 
 local _default_dependencies = {

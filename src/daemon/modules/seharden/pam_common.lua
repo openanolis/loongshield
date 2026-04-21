@@ -1,6 +1,6 @@
-local key_value_file = require('seharden.key_value_file')
+local key_value_file = require('seharden.shared.key_value_file')
 local pam_parser = require('seharden.parsers.pam')
-local path_list = require('seharden.path_list')
+local path_list = require('seharden.shared.path_list')
 
 local M = {}
 

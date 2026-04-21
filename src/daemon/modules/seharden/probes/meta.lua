@@ -1,6 +1,6 @@
 local loader = require('seharden.loader')
 local log = require('runtime.log')
-local template = require('seharden.template')
+local template = require('seharden.shared.template')
 local M = {}
 
 ---

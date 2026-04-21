@@ -1,5 +1,5 @@
 local log = require('runtime.log')
-local utils = require('seharden.util')
+local utils = require('seharden.shared.util')
 
 local M = {}
 

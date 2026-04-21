@@ -1,4 +1,4 @@
-local path_list = require('seharden.path_list')
+local path_list = require('seharden.shared.path_list')
 
 local function with_dependencies(deps, fn)
     path_list._test_set_dependencies(deps)

@@ -1,4 +1,4 @@
-local text = require('seharden.text')
+local text = require('seharden.shared.text')
 local M = {}
 
 local DEFAULT_MAX_DEPTH = 128

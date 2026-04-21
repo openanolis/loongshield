@@ -1,6 +1,6 @@
 local lfs = require('lfs')
 local log = require('runtime.log')
-local systemctl = require('seharden.systemctl')
+local systemctl = require('seharden.shared.systemctl')
 local M = {}
 
 local _default_dependencies = {

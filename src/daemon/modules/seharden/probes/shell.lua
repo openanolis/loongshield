@@ -1,4 +1,4 @@
-local path_list = require('seharden.path_list')
+local path_list = require('seharden.shared.path_list')
 local umask_policy = require('seharden.umask_policy')
 local M = {}
 
