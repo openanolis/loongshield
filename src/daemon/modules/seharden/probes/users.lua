@@ -1,4 +1,5 @@
 local lfs = require('lfs')
+local account_files = require('seharden.account_files')
 local log = require('runtime.log')
 
 local M = {}
@@ -14,14 +15,6 @@ local _default_dependencies = {
 }
 
 local _dependencies = {}
-local NON_LOGIN_SHELLS = {
-    ["/bin/false"] = true,
-    ["/bin/nologin"] = true,
-    ["/usr/bin/false"] = true,
-    ["/usr/sbin/nologin"] = true,
-    ["/sbin/nologin"] = true,
-    ["/usr/bin/nologin"] = true,
-}
 
 function M._test_set_dependencies(deps)
     deps = deps or {}
@@ -31,48 +24,6 @@ function M._test_set_dependencies(deps)
 end
 
 M._test_set_dependencies()
-
-local function split_colon_fields(line)
-    local parts = {}
-    for part in (line .. ":"):gmatch("(.-):") do
-        table.insert(parts, part)
-    end
-    return parts
-end
-
-local function is_login_shell_user(user, shell)
-    return user ~= "nfsnobody" and not NON_LOGIN_SHELLS[shell]
-end
-
-local function build_shadow_entry(parts)
-    return {
-        user = parts[1],
-        pass_min_days = tonumber(parts[4]),
-        pass_max_days = tonumber(parts[5]),
-        pass_warn_age = tonumber(parts[6]),
-        inactive = tonumber(parts[7])
-    }
-end
-
-local function _parse_colon_separated_file(path, num_fields)
-    local entries = {}
-    local file = _dependencies.io_open(path, "r")
-    if not file then
-        log.warn("Could not open %s for reading.", path)
-        return nil, string.format("Could not open %s for reading.", path)
-    end
-
-    for line in file:lines() do
-        if not line:match("^#") then
-            local parts = split_colon_fields(line)
-            if #parts >= num_fields then
-                table.insert(entries, parts)
-            end
-        end
-    end
-    file:close()
-    return entries
-end
 
 local function _get_uid_min_fallback()
     local file = _dependencies.io_open(_dependencies.login_defs_path, "r")
@@ -130,19 +81,14 @@ local function _parse_useradd_defaults_file()
 end
 
 local function _get_real_users()
-    local user_entries, err = _parse_colon_separated_file(_dependencies.passwd_path, 7)
+    local user_entries, err = account_files.read_passwd(_dependencies.io_open, _dependencies.passwd_path)
     if not user_entries then return nil, err end
 
     local real_users = {}
     for _, parts in ipairs(user_entries) do
-        local user, uid, gid, home, shell = parts[1], parts[3], parts[4], parts[6], parts[7]
-        if is_login_shell_user(user, shell) then
-            table.insert(real_users, {
-                user = user,
-                user_uid = tonumber(uid),
-                user_gid = tonumber(gid),
-                home = home
-            })
+        local user = account_files.build_real_user(parts)
+        if user then
+            table.insert(real_users, user)
         end
     end
     return real_users
@@ -179,39 +125,32 @@ function M.find_files(params)
 end
 
 function M.get_shadow_entries()
-    local shadow_parts, err = _parse_colon_separated_file(_dependencies.shadow_path, 8)
+    local shadow_parts, err = account_files.read_shadow(_dependencies.io_open, _dependencies.shadow_path)
     if not shadow_parts then return nil, err end
 
     local shadow_entries = {}
     for _, parts in ipairs(shadow_parts) do
         -- Filter out locked accounts (password field starts with ! or *)
         if not parts[2]:match("^[!*]") then
-            table.insert(shadow_entries, build_shadow_entry(parts))
+            table.insert(shadow_entries, account_files.build_shadow_entry(parts))
         end
     end
     return shadow_entries
 end
 
 function M.get_login_shadow_entries()
-    local shadow_parts, err = _parse_colon_separated_file(_dependencies.shadow_path, 8)
+    local shadow_parts, err = account_files.read_shadow(_dependencies.io_open, _dependencies.shadow_path)
     if not shadow_parts then return nil, err end
 
-    local passwd_parts, passwd_err = _parse_colon_separated_file(_dependencies.passwd_path, 7)
+    local passwd_parts, passwd_err = account_files.read_passwd(_dependencies.io_open, _dependencies.passwd_path)
     if not passwd_parts then return nil, passwd_err end
 
-    local login_shell_users = {}
-    for _, parts in ipairs(passwd_parts) do
-        local user = parts[1]
-        local shell = parts[7]
-        if is_login_shell_user(user, shell) then
-            login_shell_users[user] = true
-        end
-    end
+    local login_shell_users = account_files.index_login_shell_users(passwd_parts)
 
     local shadow_entries = {}
     for _, parts in ipairs(shadow_parts) do
         if login_shell_users[parts[1]] and not parts[2]:match("^[!*]") then
-            table.insert(shadow_entries, build_shadow_entry(parts))
+            table.insert(shadow_entries, account_files.build_shadow_entry(parts))
         end
     end
 
@@ -288,7 +227,7 @@ function M.find_interactive_system_accounts(params)
         return nil, "Probe 'users.find_interactive_system_accounts' requires a positive 'uid_min' parameter."
     end
 
-    local user_entries, err = _parse_colon_separated_file(_dependencies.passwd_path, 7)
+    local user_entries, err = account_files.read_passwd(_dependencies.io_open, _dependencies.passwd_path)
 
     if not user_entries then
         return nil, err
@@ -300,7 +239,7 @@ function M.find_interactive_system_accounts(params)
         local uid = tonumber(parts[3])
         local shell = parts[7]
 
-        if uid and uid > 0 and uid < uid_min and is_login_shell_user(user, shell) then
+        if uid and uid > 0 and uid < uid_min and account_files.is_login_shell_user(user, shell) then
             details[#details + 1] = {
                 user = user,
                 uid = uid,
