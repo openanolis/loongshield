@@ -13,6 +13,7 @@ levels:
   - id: l2_workstation
     inherits_from:
       - l1_workstation
+default_level: l1_server
 reference_type: cis
 product: alinux3
 

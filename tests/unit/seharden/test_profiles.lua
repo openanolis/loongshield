@@ -129,6 +129,15 @@ function test_cis_profile_does_not_use_is_falsy_for_unit_file_state()
         table.concat(offenders, ", "))
 end
 
+function test_cis_profile_declares_l1_server_as_default_level()
+    local profile = seharden_profile.load("profiles/seharden/cis_alinux_3.yml")
+
+    assert(profile.default_level == "l1_server",
+        "Expected cis_alinux_3 to default omitted --level selections to l1_server")
+    assert(seharden_profile.resolve_target_level(profile, nil) == "l1_server",
+        "Expected cis_alinux_3 default level resolution to return l1_server")
+end
+
 function test_agentos_baseline_service_disable_rules_require_not_running_state()
     local profile = lyaml.load(read_file("profiles/seharden/agentos_baseline.yml"))
     local avahi_rule = find_rule_by_id(profile, "services.avahi_disabled")
@@ -369,6 +378,15 @@ function test_dengbao_profile_loads_and_declares_automated_scope()
         "Expected dengbao profile title to describe automated scope explicitly")
     assert(contains_text(profile.description, "manual_review_required"),
         "Expected dengbao profile description to direct readers to manual review coverage notes")
+end
+
+function test_dengbao_profile_declares_l1_server_as_default_level()
+    local profile = seharden_profile.load("profiles/seharden/dengbao_3.yml")
+
+    assert(profile.default_level == "l1_server",
+        "Expected dengbao_3 to default omitted --level selections to l1_server")
+    assert(seharden_profile.resolve_target_level(profile, nil) == "l1_server",
+        "Expected dengbao_3 default level resolution to return l1_server")
 end
 
 function test_dengbao_profile_avoids_site_specific_account_names()

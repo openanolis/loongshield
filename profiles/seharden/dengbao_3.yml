@@ -19,6 +19,7 @@ levels:
   - id: l2_workstation
     inherits_from:
       - l1_workstation
+default_level: l1_server
 reference_type: dengbao_level_3
 product: alinux3
 manual_review_required:
