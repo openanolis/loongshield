@@ -32,10 +32,12 @@ static int pmain(lua_State *L)
 
     /* create rootfs and execute '/init.lua' */
     err = ramfs_vfsinit(L, "/init", argc, argv, envp);
-    if (err < 0)
+    if (err < 0) {
         __log_error("err = %d, top = %d\n", err, lua_gettop(L));
-
-    lua_pushboolean(L, (err >= 0));
+        lua_pushinteger(L, EXIT_FAILURE);
+    } else if (!lua_isnumber(L, -1)) {
+        lua_pushinteger(L, lua_toboolean(L, -1) ? EXIT_SUCCESS : EXIT_FAILURE);
+    }
     return 1;
 }
 
@@ -51,6 +53,7 @@ static int panic(lua_State *L)
 int main(int argc, char *argv[], char *envp[])
 {
     lua_State *L;
+    int rc = EXIT_FAILURE;
     int status;
 
     __log_init(LOG_MAXIMUM, NULL);
@@ -74,19 +77,17 @@ int main(int argc, char *argv[], char *envp[])
         const char *msg = lua_tostring(L, -1);
         fprintf(stderr, "%s\n", msg);
         lua_pop(L, 1);
-        status = -EFAULT;
-    } else if (!lua_toboolean(L, -1)) {
-        status = -EPERM;
+    } else if (lua_isnumber(L, -1)) {
+        rc = (int)lua_tointeger(L, -1);
+    } else if (lua_toboolean(L, -1)) {
+        rc = EXIT_SUCCESS;
     } else {
-        status = 0;
+        rc = EXIT_FAILURE;
     }
 
     lua_close(L);
 
     __log_uninit();
 
-    if (status != 0)
-        return EXIT_FAILURE;
-
-    return EXIT_SUCCESS;
+    return rc;
 }
