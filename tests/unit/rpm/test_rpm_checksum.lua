@@ -75,6 +75,50 @@ function test_get_rpm_files_handles_not_installed_packages()
     assert(err == "Package not installed: demo", "Expected not-installed error message")
 end
 
+function test_get_rpm_files_falls_back_when_binding_returns_no_iterator()
+    rpmdb._test_set_dependencies({
+        lfs_attributes = function()
+            return "directory"
+        end
+    })
+
+    checksum._test_set_dependencies({
+        io_popen = function()
+            return make_popen_handle(
+                "/usr/bin/demo\t10\tabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789\t0\n",
+                true,
+                0
+            )
+        end,
+        lrpm = {
+            getpath = function()
+                return "/mock/rpmdb"
+            end,
+            pushmacro = function()
+                return true
+            end,
+            tscreate = function()
+                return {
+                    rootdir = function()
+                        return true
+                    end,
+                    packages = function()
+                        return nil
+                    end,
+                }
+            end,
+        }
+    })
+
+    local files, err = checksum.get_rpm_files("demo")
+
+    checksum._test_set_dependencies()
+    rpmdb._test_set_dependencies()
+
+    assert(err == nil, "Expected rpm CLI fallback to recover from missing binding iterator")
+    assert(files["/usr/bin/demo"] ~= nil, "Expected rpm CLI fallback to return package files")
+end
+
 function test_get_rpm_files_uses_lrpm_binding_when_available()
     rpmdb._test_set_dependencies({
         lfs_attributes = function()

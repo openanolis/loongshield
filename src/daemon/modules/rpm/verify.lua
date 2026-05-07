@@ -5,6 +5,12 @@ local sbom = require('rpm.sbom')
 
 local M = {}
 
+local function has_verification_failures(results)
+    return results.mismatches > 0
+        or results.missing_in_sbom > 0
+        or results.missing_on_disk > 0
+end
+
 -- Get package information (NVRA) from RPM database
 local function get_package_info(package_name)
     log.debug("Getting package information for: %s", package_name)
@@ -14,14 +20,17 @@ local function get_package_info(package_name)
 
     local package_info = nil
 
-    for pkg in ts:packages(package_name) do
-        package_info = {
-            name = pkg:name(),
-            version = pkg:version(),
-            release = pkg:release(),
-            arch = pkg:arch()
-        }
-        break
+    local packages = ts:packages(package_name)
+    if packages then
+        for pkg in packages do
+            package_info = {
+                name = pkg:name(),
+                version = pkg:version(),
+                release = pkg:release(),
+                arch = pkg:arch()
+            }
+            break
+        end
     end
 
     if not package_info then
@@ -148,7 +157,7 @@ local function print_summary(package_info, results)
 
     print(string.format("  Mismatches: %d", results.mismatches))
 
-    if results.mismatches == 0 and results.errors == 0 then
+    if not has_verification_failures(results) and results.errors == 0 then
         print("  Status: PASSED")
     else
         print("  Status: FAILED")
@@ -192,7 +201,7 @@ function M.verify_package(package_name, config)
     print_summary(package_info, results)
 
     -- Determine exit code
-    if results.mismatches > 0 then
+    if has_verification_failures(results) then
         return 2 -- Verification failed
     elseif results.errors > 0 then
         return 1 -- Errors occurred

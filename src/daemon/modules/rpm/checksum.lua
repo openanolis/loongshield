@@ -80,10 +80,13 @@ end
 local function get_rpm_files_from_binding(package_name, rpm)
     local ts = rpmdb.create_ts(rpm)
 
-    for pkg in ts:packages(package_name) do
-        local files, file_count = parse_binding_files(pkg)
-        log.debug("Found %d files in package", file_count)
-        return files
+    local packages = ts:packages(package_name)
+    if packages then
+        for pkg in packages do
+            local files, file_count = parse_binding_files(pkg)
+            log.debug("Found %d files in package", file_count)
+            return files
+        end
     end
 
     return nil, string.format("Package not installed: %s", package_name)
@@ -107,10 +110,10 @@ function M.get_rpm_files(package_name)
     if rpm then
         local ok, files, err = pcall(get_rpm_files_from_binding, package_name, rpm)
         if ok then
-            if files or err == string.format("Package not installed: %s", package_name) then
-                return files, err
+            if files then
+                return files
             end
-            log.warn("lrpm file query failed, falling back to rpm CLI: %s", tostring(err))
+            log.warn("lrpm file query returned no files, falling back to rpm CLI: %s", tostring(err))
         else
             log.warn("lrpm file query failed, falling back to rpm CLI: %s", tostring(files))
         end
