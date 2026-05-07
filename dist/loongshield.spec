@@ -121,11 +121,13 @@ make %{?_smp_mflags}
 rm -rf %{buildroot}
 install -d -m 0755 %{buildroot}%{_sbindir}
 install -d -m 0755 %{buildroot}%{_sysconfdir}/loongshield/seharden
+install -d -m 0755 %{buildroot}%{_sysconfdir}/loongshield/lua-lsm/policies.d
 install -d -m 0755 %{buildroot}%{_licensedir}/%{name}
 install -d -m 0755 %{buildroot}%{_licensedir}/%{name}/third-party
 install -m 0755 build/src/daemon/loongshield %{buildroot}%{_sbindir}/
 install -m 0755 build/src/daemon/loonjit %{buildroot}%{_sbindir}/
 install -m 0644 profiles/seharden/*.yml %{buildroot}%{_sysconfdir}/loongshield/seharden/
+install -m 0644 profiles/lua-lsm/* %{buildroot}%{_sysconfdir}/loongshield/lua-lsm/policies.d/
 install -m 0644 LICENSE %{buildroot}%{_licensedir}/%{name}/
 install -m 0644 THIRD_PARTY_LICENSES.md %{buildroot}%{_licensedir}/%{name}/
 install -m 0644 LICENSES/QUEUE-BSD-3-Clause.txt %{buildroot}%{_licensedir}/%{name}/third-party/
@@ -154,7 +156,10 @@ install -m 0644 deps/luasocket/luasocket/LICENSE %{buildroot}%{_licensedir}/%{na
 %{_sbindir}/loonjit
 %dir %{_sysconfdir}/loongshield
 %dir %{_sysconfdir}/loongshield/seharden
+%dir %{_sysconfdir}/loongshield/lua-lsm
+%dir %{_sysconfdir}/loongshield/lua-lsm/policies.d
 %config(noreplace) %{_sysconfdir}/loongshield/seharden/*.yml
+%config(noreplace) %{_sysconfdir}/loongshield/lua-lsm/policies.d/*
 %license %{_licensedir}/%{name}/LICENSE
 %license %{_licensedir}/%{name}/THIRD_PARTY_LICENSES.md
 %license %{_licensedir}/%{name}/third-party/*

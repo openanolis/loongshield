@@ -1,0 +1,6 @@
+version: "1"
+policies:
+  - name: deny_tmp_marker
+    file: deny_tmp_marker.lua
+    enabled: false
+    order: 10

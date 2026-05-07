@@ -8,7 +8,8 @@ assert(type(envp) == 'table')
 
 local commands = {
     seharden = require('seharden'),
-    rpm = require('rpm')
+    rpm = require('rpm'),
+    ["lua-lsm"] = require('lua_lsm')
 }
 
 local function print_version()
@@ -36,6 +37,7 @@ local function print_usage()
     print("  version       Show loongshield version information")
     print("  seharden      OS Security benchmarks & hardening")
     print("  rpm           RPM package SBOM verification")
+    print("  lua-lsm       Lua-LSM policy management")
     print("")
     print("For help on a specific subcommand: loongshield <subcommand> --help")
 end

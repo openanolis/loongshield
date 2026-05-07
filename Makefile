@@ -148,10 +148,12 @@ kmod:
 install: build
 	@install -d -m 0755 "$(DESTDIR)$(PREFIX)/sbin"
 	@install -d -m 0755 "$(DESTDIR)$(SYSCONFDIR)/loongshield/seharden"
+	@install -d -m 0755 "$(DESTDIR)$(SYSCONFDIR)/loongshield/lua-lsm/policies.d"
 	@install -d -m 0755 "$(DESTDIR)$(LICENSEDIR)/$(PROJECT)"
 	@install -m 0755 "$(BUILD_DIR)/src/daemon/loongshield" "$(DESTDIR)$(PREFIX)/sbin/loongshield"
 	@install -m 0755 "$(BUILD_DIR)/src/daemon/loonjit" "$(DESTDIR)$(PREFIX)/sbin/loonjit"
 	@install -m 0644 "$(SRC_DIR)"/profiles/seharden/*.yml "$(DESTDIR)$(SYSCONFDIR)/loongshield/seharden/"
+	@install -m 0644 "$(SRC_DIR)"/profiles/lua-lsm/* "$(DESTDIR)$(SYSCONFDIR)/loongshield/lua-lsm/policies.d/"
 	@install -m 0644 "$(SRC_DIR)/LICENSE" "$(DESTDIR)$(LICENSEDIR)/$(PROJECT)/LICENSE"
 
 PREFIX ?= /usr
