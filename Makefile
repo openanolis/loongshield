@@ -10,6 +10,20 @@ JOBS ?= $(shell nproc 2>/dev/null || echo 4)
 CMAKE_FLAGS ?=
 ENV_CHECK_DEP := $(if $(filter 1,$(ALLOW_UNSUPPORTED_HOST)),,env-check)
 FMT_SCRIPT := $(SRC_DIR)/tools/format/run.sh
+LUAJIT_SRC_DIR := $(SRC_DIR)/deps/luajit/luajit/src
+LUAJIT_VISIBLE_GENERATED := \
+	$(LUAJIT_SRC_DIR)/lj_bcdef.h.tmp \
+	$(LUAJIT_SRC_DIR)/lj_ffdef.h.tmp \
+	$(LUAJIT_SRC_DIR)/lj_folddef.h.tmp \
+	$(LUAJIT_SRC_DIR)/lj_libdef.h.tmp \
+	$(LUAJIT_SRC_DIR)/lj_recdef.h.tmp \
+	$(LUAJIT_SRC_DIR)/lj_vmdef.h \
+	$(LUAJIT_SRC_DIR)/lj_vmdef.h.tmp
+TEST_ENV := \
+	LOONGSHIELD_BIN="$(BUILD_DIR)/src/daemon/loongshield" \
+	LOONGSHIELD_E2E_BIN="$(BUILD_DIR)/src/daemon/loongshield" \
+	LOONGSHIELD_SRC_DIR="$(SRC_DIR)"
+TEST_RUNNER := "$(BUILD_DIR)/src/daemon/loonjit" "$(SRC_DIR)/tests/run.lua"
 
 RPM_SPEC := $(SRC_DIR)/dist/loongshield.spec
 RPM_SOURCE_SCRIPT := $(SRC_DIR)/dist/scripts/rpm-sources.sh
@@ -69,7 +83,7 @@ SUBMODULE_SENTINELS := \
 
 .PHONY: all \
 	bootstrap build configure submodules \
-	test test-quick test-integration \
+	test test-quick test-integration test-e2e \
 	fmt fmt-check \
 	kmod install \
 	buildreqs env-check \
@@ -98,15 +112,19 @@ configure: $(ENV_CHECK_DEP) submodules
 
 build: configure
 	@cmake --build "$(BUILD_DIR)" --parallel "$(JOBS)"
+	@rm -f $(LUAJIT_VISIBLE_GENERATED)
 
 test: build
-	@"$(BUILD_DIR)/src/daemon/loonjit" "$(SRC_DIR)/tests/run.lua" --type all
+	@$(TEST_ENV) $(TEST_RUNNER) --type all
 
 test-quick:
-	@"$(BUILD_DIR)/src/daemon/loonjit" "$(SRC_DIR)/tests/run.lua" --type all
+	@$(TEST_ENV) $(TEST_RUNNER) --type unit,integration
 
 test-integration: build
-	@"$(BUILD_DIR)/src/daemon/loonjit" "$(SRC_DIR)/tests/run.lua" --type integration
+	@$(TEST_ENV) $(TEST_RUNNER) --type integration
+
+test-e2e: build
+	@$(TEST_ENV) $(TEST_RUNNER) --type e2e
 
 fmt:
 	@if [ -n "$(strip $(FILES))" ]; then \
@@ -319,6 +337,7 @@ clean:
 		cmake --build "$(BUILD_DIR)" --target clean >/dev/null 2>&1 || true; \
 	fi
 	@rm -f "$(SRC_DIR)/src/daemon/bin_ramfs_luac.h" "$(SRC_DIR)/src/daemon/bin_initrd_tar.h"
+	@rm -f $(LUAJIT_VISIBLE_GENERATED)
 
 distclean: clean
 	@rm -rf "$(BUILD_DIR)"
@@ -330,8 +349,9 @@ help:
 		'make                  Build the project' \
 		'make bootstrap        Install build deps and build locally' \
 		'make test             Build and run the full test suite' \
-		'make test-quick       Re-run the full test suite without rebuilding' \
+		'make test-quick       Re-run unit/integration tests without rebuilding' \
 		'make test-integration Build and run integration tests' \
+		'make test-e2e         Build and run end-to-end CLI tests' \
 		'make fmt              Format changed Lua/C/YAML files (or FILES="...")' \
 		'make fmt-check        Check changed Lua/C/YAML files (or FILES="...")' \
 		'make kmod             Build the kernel module' \

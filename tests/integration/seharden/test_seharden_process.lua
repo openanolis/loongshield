@@ -3,6 +3,7 @@ local T = {}
 T.TEST_ROOT = "/tmp/loongshield_seharden_process_test"
 T.PROFILE = T.TEST_ROOT .. "/profile.yml"
 T.CONFIG = T.TEST_ROOT .. "/sshd_config"
+T.BIN = os.getenv("LOONGSHIELD_BIN") or os.getenv("LOONGSHIELD_E2E_BIN") or "build/src/daemon/loongshield"
 
 local function shell_escape(arg)
     return "'" .. tostring(arg):gsub("'", "'\\''") .. "'"
@@ -47,7 +48,7 @@ function T.teardown()
 end
 
 local function run_scan()
-    local cmd = "build/src/daemon/loongshield seharden --config "
+    local cmd = shell_escape(T.BIN) .. " seharden --config "
         .. shell_escape(T.PROFILE) .. " >/dev/null 2>&1"
     return os.execute(cmd)
 end
