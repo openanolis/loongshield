@@ -5,13 +5,16 @@ local M = {}
 
 local _default_dependencies = {
     fs_stat = fs.stat,
+    fs_get_gid = fs.get_gid,
 }
 
 local _dependencies = {}
 
 function M._test_set_dependencies(deps)
     deps = deps or {}
-    _dependencies.fs_stat = deps.fs_stat or _default_dependencies.fs_stat
+    for key, default in pairs(_default_dependencies) do
+        _dependencies[key] = deps[key] or default
+    end
 end
 
 M._test_set_dependencies()
@@ -31,6 +34,18 @@ function M.get_attributes(params)
         uid = attr:uid(),
         gid = attr:gid(),
         mode = attr:mode()
+    }
+end
+
+function M.get_group_id(params)
+    if not params or not params.name then
+        return nil, "Probe 'permissions.get_group_id' requires a 'name' parameter."
+    end
+
+    local gid = _dependencies.fs_get_gid(params.name)
+    return {
+        exists = gid ~= nil,
+        gid = gid,
     }
 end
 

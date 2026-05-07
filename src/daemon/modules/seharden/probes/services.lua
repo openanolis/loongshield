@@ -164,6 +164,39 @@ local function get_active_state(unit_name, fallback_props)
     return state
 end
 
+local function unit_file_state_is_enabled(state)
+    return state == "enabled" or state == "enabled-runtime"
+end
+
+local function unit_file_state_is_known_not_enabled(state)
+    local not_enabled_states = {
+        alias = true,
+        disabled = true,
+        generated = true,
+        indirect = true,
+        linked = true,
+        ["linked-runtime"] = true,
+        masked = true,
+        ["masked-runtime"] = true,
+        static = true,
+        transient = true,
+    }
+
+    return not_enabled_states[state] == true
+end
+
+local function active_state_is_not_active(state)
+    return state ~= nil and state ~= "" and state ~= "active"
+end
+
+local function unit_not_in_use(properties)
+    if properties.UnitFileState == "not-found" then
+        return true
+    end
+    return unit_file_state_is_known_not_enabled(properties.UnitFileState) and
+        active_state_is_not_active(properties.ActiveState)
+end
+
 function M.get_unit_properties(params)
     if not params or not params.name then
         return nil, "Probe 'services.get_unit_properties' requires a 'name' parameter."
@@ -184,6 +217,43 @@ function M.get_unit_properties(params)
     return {
         UnitFileState = unit_file_state,
         ActiveState = get_active_state(unit_name, fallback_loaded and fallback_props or nil)
+    }
+end
+
+function M.get_not_in_use_state(params)
+    if not params or not (params.name or params.names) then
+        return nil, "Probe 'services.get_not_in_use_state' requires a 'name' or 'names' parameter."
+    end
+
+    local names = params.names or { params.name }
+    if type(names) ~= "table" then
+        return nil, "Probe 'services.get_not_in_use_state' parameter 'names' must be a list."
+    end
+
+    local details = {}
+    local not_in_use = true
+
+    for _, unit_name in ipairs(names) do
+        local properties, err = M.get_unit_properties({ name = unit_name })
+        if not properties then
+            return nil, err
+        end
+        local unit_ok = unit_not_in_use(properties)
+        details[#details + 1] = {
+            name = unit_name,
+            UnitFileState = properties.UnitFileState,
+            ActiveState = properties.ActiveState,
+            not_in_use = unit_ok,
+        }
+        if not unit_ok then
+            not_in_use = false
+        end
+    end
+
+    return {
+        not_in_use = not_in_use,
+        count = #details,
+        details = details,
     }
 end
 

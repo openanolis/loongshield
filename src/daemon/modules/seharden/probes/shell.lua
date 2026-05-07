@@ -41,6 +41,10 @@ local function line_unsets_tmout(line)
     return false
 end
 
+local function strip_shell_comment(line)
+    return trim((tostring(line or ""):gsub("%s+#.*$", "")))
+end
+
 local function iter_file_lines(paths)
     local expanded, err = expand_paths(paths)
     if not expanded then
@@ -98,7 +102,7 @@ function M.find_tmout_assignments(params)
         local line_number = 0
         for line in file_info.handle:lines() do
             line_number = line_number + 1
-            local active = trim((line:gsub("%s+#.*$", "")))
+            local active = strip_shell_comment(line)
             if active ~= "" and not active:match("^#") then
                 if line_unsets_tmout(active) then
                     conflicts[#conflicts + 1] = {
@@ -134,6 +138,115 @@ function M.find_tmout_assignments(params)
     }
 end
 
+local function line_sets_tmout_readonly(active)
+    return active:match("^%s*typeset%s+%-xr%s+TMOUT=%d+%s*$") ~= nil
+        or active:match("%f[%a]readonly%s+[^;|&]*%f[%w]TMOUT%f[%W]") ~= nil
+end
+
+local function line_sets_tmout_export(active)
+    return active:match("^%s*typeset%s+%-xr%s+TMOUT=%d+%s*$") ~= nil
+        or active:match("%f[%a]export%s+[^;|&]*%f[%w]TMOUT%f[%W]") ~= nil
+end
+
+local function tmout_values_from_line(active)
+    local values = {}
+    for value in active:gmatch("%f[%w]TMOUT=(%d+)") do
+        values[#values + 1] = tonumber(value)
+    end
+    return values
+end
+
+function M.inspect_tmout(params)
+    params = params or {}
+
+    local max_value = tonumber(params.max_value) or 900
+    if max_value < 1 then
+        return nil, "Probe 'shell.inspect_tmout' requires a positive 'max_value' parameter."
+    end
+
+    local files, err = iter_file_lines(params.paths)
+    if not files then
+        return nil, err
+    end
+
+    local details = {}
+    local compliant_files = {}
+    local saw_tmout = false
+
+    for _, file_info in ipairs(files) do
+        local file_saw_tmout = false
+        local file_has_good_value = false
+        local file_has_readonly = false
+        local file_has_export = false
+        local line_number = 0
+
+        for line in file_info.handle:lines() do
+            line_number = line_number + 1
+            local active = strip_shell_comment(line)
+            if active ~= "" and not active:match("^#") and active:match("%f[%w]TMOUT%f[%W]") then
+                saw_tmout = true
+                file_saw_tmout = true
+
+                if line_unsets_tmout(active) then
+                    details[#details + 1] = {
+                        path = file_info.path,
+                        line = line_number,
+                        reason = "tmout_unset",
+                    }
+                end
+
+                if line_sets_tmout_readonly(active) then
+                    file_has_readonly = true
+                end
+                if line_sets_tmout_export(active) then
+                    file_has_export = true
+                end
+
+                for _, value in ipairs(tmout_values_from_line(active)) do
+                    if value > 0 and value <= max_value then
+                        file_has_good_value = true
+                    else
+                        details[#details + 1] = {
+                            path = file_info.path,
+                            line = line_number,
+                            value = value,
+                            reason = "tmout_value_invalid",
+                        }
+                    end
+                end
+            end
+        end
+        file_info.handle:close()
+
+        if file_saw_tmout then
+            if not file_has_good_value then
+                details[#details + 1] = { path = file_info.path, reason = "tmout_value_missing" }
+            end
+            if not file_has_readonly then
+                details[#details + 1] = { path = file_info.path, reason = "tmout_readonly_missing" }
+            end
+            if not file_has_export then
+                details[#details + 1] = { path = file_info.path, reason = "tmout_export_missing" }
+            end
+            if file_has_good_value and file_has_readonly and file_has_export then
+                compliant_files[#compliant_files + 1] = file_info.path
+            end
+        end
+    end
+
+    if not saw_tmout then
+        details[#details + 1] = { reason = "tmout_not_configured" }
+    end
+
+    return {
+        configured = saw_tmout and #compliant_files > 0 and #details == 0,
+        count = #details,
+        compliant_file_count = #compliant_files,
+        compliant_files = compliant_files,
+        details = details,
+    }
+end
+
 function M.find_umask_commands(params)
     if not params then
         return nil, "Probe 'shell.find_umask_commands' requires parameters."
@@ -156,7 +269,7 @@ function M.find_umask_commands(params)
         local line_number = 0
         for line in file_info.handle:lines() do
             line_number = line_number + 1
-            local active = trim((line:gsub("%s+#.*$", "")))
+            local active = strip_shell_comment(line)
             if active ~= "" and not active:match("^#") then
                 for value in active:gmatch("%f[%a]umask%s+([^%s;|&]+)") do
                     if value:sub(1, 1) ~= "-" then
