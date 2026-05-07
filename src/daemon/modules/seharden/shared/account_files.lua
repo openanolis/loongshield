@@ -47,6 +47,10 @@ function M.read_shadow(io_open, path)
     return read_entries(io_open, path, 8)
 end
 
+function M.read_group(io_open, path)
+    return read_entries(io_open, path, 4)
+end
+
 function M.is_login_shell_user(user, shell)
     return user ~= "nfsnobody" and not NON_LOGIN_SHELLS[shell]
 end
