@@ -217,3 +217,48 @@ function test_parse_key_values_handles_unreadable_file()
     assert(result == nil, "Expected unreadable key-value file to fail")
     assert(err:find(T.TEST_FILE, 1, true), "Expected error to mention the unreadable file path")
 end
+
+function test_parse_key_values_can_treat_missing_file_as_empty()
+    os.remove(T.TEST_FILE)
+
+    local result, err = file_probe.parse_key_values({
+        path = T.TEST_FILE,
+        allow_missing = true
+    })
+
+    assert(err == nil, "Expected missing file to be allowed")
+    assert(type(result) == "table", "Expected missing file to produce an empty settings table")
+    assert(next(result) == nil, "Expected missing key-value file to be empty")
+end
+
+function test_parse_systemd_key_values_merges_dropins_when_base_file_is_missing()
+    local root = "/tmp/loongshield_systemd_key_value_probe_test"
+    local dropin_dir = root .. "/journald.conf.d"
+    local first_dropin = dropin_dir .. "/10-default.conf"
+    local second_dropin = dropin_dir .. "/20-hardening.conf"
+
+    os.execute("rm -rf " .. root)
+    assert(lfs.mkdir(root), "Expected test root directory to be created")
+    assert(lfs.mkdir(dropin_dir), "Expected drop-in directory to be created")
+
+    local first = assert(io.open(first_dropin, "w"))
+    first:write("[Other]\nStorage=bad\n[Journal]\nStorage=volatile\n")
+    first:close()
+
+    local second = assert(io.open(second_dropin, "w"))
+    second:write("[Journal]\nStorage=persistent\nCompress=yes\n[Other]\nCompress=no\n")
+    second:close()
+
+    local result, err = file_probe.parse_systemd_key_values({
+        path = root .. "/journald.conf",
+        allow_missing = true,
+        section = "Journal",
+        dropin_dirs = { dropin_dir }
+    })
+
+    os.execute("rm -rf " .. root)
+
+    assert(err == nil, "Expected missing base file with drop-ins to parse")
+    assert(result.Storage == "persistent", "Expected later drop-in to override earlier setting")
+    assert(result.Compress == "yes", "Expected settings from drop-ins to be included")
+end

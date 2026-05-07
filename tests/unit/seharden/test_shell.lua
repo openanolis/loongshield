@@ -56,6 +56,51 @@ function test_find_tmout_assignments_accepts_stricter_values_and_reports_conflic
     end)
 end
 
+function test_inspect_tmout_requires_value_readonly_and_export()
+    with_dependencies({
+        expand_paths = function(paths)
+            return { "/etc/profile.d/tmout.sh" }
+        end,
+        io_open = function(path)
+            assert(path == "/etc/profile.d/tmout.sh", "Expected configured TMOUT file")
+            return make_reader({
+                "typeset -xr TMOUT=900",
+            })
+        end,
+    }, function()
+        local result = shell_probe.inspect_tmout({
+            paths = { "/etc/profile.d/*.sh" },
+            max_value = 900,
+        })
+
+        assert(result.configured == true, "Expected typeset -xr TMOUT=900 to satisfy CIS")
+        assert(result.count == 0, "Expected no TMOUT violations")
+    end)
+end
+
+function test_inspect_tmout_reports_missing_export_and_bad_values()
+    with_dependencies({
+        expand_paths = function(paths)
+            return { "/etc/profile" }
+        end,
+        io_open = function(path)
+            assert(path == "/etc/profile", "Expected configured TMOUT file")
+            return make_reader({
+                "TMOUT=1200",
+                "readonly TMOUT",
+            })
+        end,
+    }, function()
+        local result = shell_probe.inspect_tmout({
+            paths = { "/etc/profile" },
+            max_value = 900,
+        })
+
+        assert(result.configured == false, "Expected invalid TMOUT configuration to fail")
+        assert(result.count >= 2, "Expected invalid value and missing export to be reported")
+    end)
+end
+
 function test_check_umask_value_accepts_more_restrictive_masks()
     assert(shell_probe.check_umask_value({ value = "027", baseline = "027" }).compliant == true,
         "Expected baseline umask to be compliant")

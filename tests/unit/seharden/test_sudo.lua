@@ -181,9 +181,120 @@ function test_find_nopasswd_entries_reports_authenticate_disabled_defaults()
             paths = { "/etc/sudoers" }
         })
 
+        assert(result.found == true, "Expected no-password sudo violations to set found")
         assert(result.count == 1, "Expected !authenticate Defaults entries to be treated as no-password sudo violations")
         assert(result.details[1].reason == "authenticate_disabled",
             "Expected !authenticate violations to preserve their reason")
+    end)
+end
+
+function test_find_logfile_entries_parses_global_defaults_assignments()
+    with_dependencies({
+        get_short_hostname = function()
+            return "host"
+        end,
+        lfs_attributes = function(path)
+            if path == "/etc/sudoers" or path == "/etc/sudoers.host" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            error("Did not expect includedir enumeration")
+        end,
+        io_open = function(path, mode)
+            assert(mode == "r", "Expected sudo probe to open files read-only")
+            if path == "/etc/sudoers" then
+                return make_reader({
+                    "@include /etc/sudoers.%h",
+                    "Defaults:user logfile=/tmp/scoped-sudo.log",
+                    "Defaults logfile = \"\"",
+                })
+            end
+            if path == "/etc/sudoers.host" then
+                return make_reader({
+                    "Defaults env_reset, logfile = \"/var/log/sudo.log\", use_pty",
+                })
+            end
+            error("Unexpected path: " .. path)
+        end
+    }, function()
+        local result = sudo_probe.find_logfile_entries({
+            paths = { "/etc/sudoers" }
+        })
+
+        assert(result.found == true, "Expected a global sudo logfile Defaults assignment to be found")
+        assert(result.count == 1, "Expected scoped and empty logfile Defaults assignments to be ignored")
+        assert(result.value == "/var/log/sudo.log", "Expected the first effective logfile value at top level")
+        assert(result.details[1].value == "/var/log/sudo.log", "Expected quoted logfile value to be normalized")
+        assert(result.details[1].path == "/etc/sudoers.host", "Expected included file path to be preserved")
+    end)
+end
+
+function test_find_global_reauth_disabled_ignores_scoped_defaults()
+    with_dependencies({
+        lfs_attributes = function(path)
+            if path == "/etc/sudoers" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            error("Did not expect includedir enumeration")
+        end,
+        io_open = function(path, mode)
+            assert(path == "/etc/sudoers", "Expected sudo probe to read the configured sudoers file")
+            assert(mode == "r", "Expected sudo probe to open files read-only")
+            return make_reader({
+                "Defaults:deploy !authenticate",
+                "Defaults authenticate, !authenticate",
+                "Defaults !authenticate, authenticate",
+            })
+        end
+    }, function()
+        local result = sudo_probe.find_global_reauth_disabled({
+            paths = { "/etc/sudoers" }
+        })
+
+        assert(result.found == true, "Expected global !authenticate Defaults entries to be reported")
+        assert(result.count == 1, "Expected scoped disablement and final authenticate overrides to be ignored")
+        assert(result.details[1].text == "Defaults authenticate, !authenticate",
+            "Expected the final authenticate flag on a Defaults line to control the result")
+    end)
+end
+
+function test_find_invalid_timestamp_timeout_parses_numeric_defaults()
+    with_dependencies({
+        lfs_attributes = function(path)
+            if path == "/etc/sudoers" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            error("Did not expect includedir enumeration")
+        end,
+        io_open = function(path, mode)
+            assert(path == "/etc/sudoers", "Expected sudo probe to read the configured sudoers file")
+            assert(mode == "r", "Expected sudo probe to open files read-only")
+            return make_reader({
+                "Defaults timestamp_timeout = 15",
+                "Defaults timestamp_timeout=15.5",
+                "Defaults:user timestamp_timeout = -1",
+                "Defaults timestamp_timeout = never",
+            })
+        end
+    }, function()
+        local result = sudo_probe.find_invalid_timestamp_timeout({
+            paths = { "/etc/sudoers" },
+            max_minutes = 15,
+        })
+
+        assert(result.found == true, "Expected invalid sudo timestamp_timeout Defaults to be reported")
+        assert(result.count == 3, "Expected fractional excess, disabled, and non-numeric values to be invalid")
+        assert(result.details[1].reason == "exceeds_max", "Expected values above the maximum to be distinguished")
+        assert(result.details[2].reason == "disabled", "Expected negative timestamp_timeout values to be disabled")
+        assert(result.details[3].reason == "non_numeric", "Expected non-numeric timestamp_timeout values to be invalid")
     end)
 end
 

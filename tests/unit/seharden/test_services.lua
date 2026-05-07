@@ -218,3 +218,95 @@ function test_get_unit_properties_missing_param()
     assert(result == nil, "Expected nil result for missing param")
     assert(err:match("requires a 'name' parameter"), "Expected missing param error")
 end
+
+function test_get_not_in_use_state_passes_absent_units()
+    setup({ unit_not_found = true, active_state = "active" })
+
+    local result = services_probe.get_not_in_use_state({ name = "missing.service" })
+
+    assert(result.not_in_use == true, "Expected absent services to be treated as not in use")
+    assert(result.details[1].UnitFileState == "not-found", "Expected unit evidence to be retained")
+end
+
+function test_get_not_in_use_state_passes_disabled_and_inactive_units()
+    setup({ unit_state = "disabled", active_state = "inactive" })
+
+    local result = services_probe.get_not_in_use_state({ name = "dnsmasq.service" })
+
+    assert(result.not_in_use == true, "Expected disabled and inactive units to be not in use")
+    assert(result.details[1].ActiveState == "inactive", "Expected active-state evidence to be retained")
+end
+
+function test_get_not_in_use_state_passes_static_or_indirect_inactive_units()
+    for _, unit_state in ipairs({ "static", "indirect", "generated", "linked" }) do
+        setup({ unit_state = unit_state, active_state = "inactive" })
+
+        local result = services_probe.get_not_in_use_state({ name = "journal-remote.service" })
+
+        assert(result.not_in_use == true,
+            "Expected inactive " .. unit_state .. " units to satisfy not-in-use semantics")
+        assert(result.details[1].UnitFileState == unit_state, "Expected unit-file state evidence to be retained")
+    end
+end
+
+function test_get_not_in_use_state_fails_unknown_unit_file_state()
+    setup({ unit_state = "unknown", active_state = "inactive" })
+
+    local result = services_probe.get_not_in_use_state({ name = "journal-remote.service" })
+
+    assert(result.not_in_use == false, "Expected unknown unit-file state not to satisfy not-in-use evidence")
+end
+
+function test_get_not_in_use_state_fails_disabled_but_active_units()
+    setup({ unit_state = "disabled", active_state = "active" })
+
+    local result = services_probe.get_not_in_use_state({ name = "dnsmasq.service" })
+
+    assert(result.not_in_use == false, "Expected disabled but active units to fail")
+    assert(result.details[1].not_in_use == false, "Expected per-unit failure evidence")
+end
+
+function test_get_not_in_use_state_requires_all_named_units_to_pass()
+    local states = {
+        ["cockpit.socket"] = { unit_state = "disabled", active_state = "inactive" },
+        ["cockpit.service"] = { unit_state = "enabled", active_state = "inactive" },
+    }
+
+    services_probe._test_set_dependencies({
+        bus_default_system = function()
+            return {
+                unit_filestate = function(_, unit)
+                    return {
+                        read = function()
+                            return states[unit].unit_state
+                        end
+                    }
+                end
+            }
+        end,
+        io_popen = function(cmd)
+            local unit = cmd:match("([%w%-.]+) 2>/dev/null$")
+            return {
+                read = function()
+                    return (states[unit].active_state or "unknown") .. "\n"
+                end,
+                close = function()
+                    return true
+                end
+            }
+        end,
+        lfs_attributes = function(path)
+            if path == "/usr/bin/systemctl" then
+                return { mode = "file" }
+            end
+            return nil
+        end
+    })
+
+    local result = services_probe.get_not_in_use_state({
+        names = { "cockpit.socket", "cockpit.service" }
+    })
+
+    assert(result.not_in_use == false, "Expected multi-unit checks to fail if any unit is in use")
+    assert(result.count == 2, "Expected evidence for each unit")
+end

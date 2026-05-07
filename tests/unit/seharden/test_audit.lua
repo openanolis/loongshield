@@ -426,3 +426,333 @@ function test_find_syscall_rule_allows_single_required_arch_to_use_unqualified_r
         assert(result.count == 0, "Expected unqualified rules to satisfy a single required arch")
     end)
 end
+
+function test_inspect_rule_coverage_requires_watch_in_persistent_and_loaded_sources()
+    with_dependencies({
+        audit_rules_path = "/tmp/audit.rules",
+        audit_rules_d_path = "/tmp/rules.d",
+        lfs_attributes = function(path)
+            if path == "/tmp/rules.d" then
+                return { mode = "directory" }
+            end
+            if path == "/tmp/rules.d/scope.rules" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            local entries = { ".", "..", "scope.rules" }
+            local index = 0
+            return function()
+                index = index + 1
+                return entries[index]
+            end
+        end,
+        io_open = function(path)
+            if path == "/etc/login.defs" then
+                return make_reader({ "UID_MIN 1000" })
+            end
+            if path == "/tmp/rules.d/scope.rules" then
+                return make_reader({ "-w /etc/sudoers -p wa -k scope" })
+            end
+            error("Unexpected path: " .. tostring(path))
+        end,
+        io_popen = function()
+            return make_reader({ "-w /etc/sudoers -p wa -k scope" })
+        end,
+    }, function()
+        local result = audit_probe.inspect_rule_coverage({
+            requirements = {
+                { name = "sudoers", type = "watch", path = "/etc/sudoers", permissions = "wa", key = "scope" },
+            },
+        })
+
+        assert(result.available == true, "Expected both persistent and loaded audit evidence to be available")
+        assert(result.violation_count == 0, "Expected watch rule to be present in both sources")
+        assert(result.all_configured == true, "Expected complete source coverage to pass")
+    end)
+end
+
+function test_inspect_rule_coverage_reports_missing_loaded_source()
+    with_dependencies({
+        audit_rules_d_path = "/tmp/rules.d",
+        lfs_attributes = function(path)
+            if path == "/tmp/rules.d" then
+                return { mode = "directory" }
+            end
+            if path == "/tmp/rules.d/scope.rules" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            local entries = { ".", "..", "scope.rules" }
+            local index = 0
+            return function()
+                index = index + 1
+                return entries[index]
+            end
+        end,
+        io_open = function(path)
+            if path == "/etc/login.defs" then
+                return make_reader({ "UID_MIN 1000" })
+            end
+            if path == "/tmp/rules.d/scope.rules" then
+                return make_reader({ "-w /etc/sudoers -p wa -k scope" })
+            end
+            error("Unexpected path: " .. tostring(path))
+        end,
+        io_popen = function()
+            return nil
+        end,
+    }, function()
+        local result = audit_probe.inspect_rule_coverage({
+            requirements = {
+                { name = "sudoers", type = "watch", path = "/etc/sudoers", permissions = "wa", key = "scope" },
+            },
+        })
+
+        assert(result.available == false, "Expected unavailable loaded rules to be explicit")
+        assert(result.all_configured == false, "Expected missing loaded evidence to fail")
+        assert(result.violation_count == 1, "Expected requirement to fail when a source is unavailable")
+    end)
+end
+
+function test_inspect_rule_coverage_supports_comparisons_and_auid_unset_without_auid_min()
+    local rule = "-a always,exit -F arch=b64 -S execve -C uid!=euid -F auid!=-1 -k user_emulation"
+
+    with_dependencies({
+        audit_rules_d_path = "/tmp/rules.d",
+        lfs_attributes = function(path)
+            if path == "/tmp/rules.d" then
+                return { mode = "directory" }
+            end
+            if path == "/tmp/rules.d/user.rules" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            local entries = { ".", "..", "user.rules" }
+            local index = 0
+            return function()
+                index = index + 1
+                return entries[index]
+            end
+        end,
+        io_open = function(path)
+            if path == "/etc/login.defs" then
+                return make_reader({ "UID_MIN 1000" })
+            end
+            if path == "/tmp/rules.d/user.rules" then
+                return make_reader({ rule })
+            end
+            error("Unexpected path: " .. tostring(path))
+        end,
+        io_popen = function()
+            return make_reader({ rule })
+        end,
+    }, function()
+        local result = audit_probe.inspect_rule_coverage({
+            required_arches = { "b64" },
+            requirements = {
+                {
+                    name = "user_emulation",
+                    type = "syscall",
+                    syscalls = { "execve" },
+                    comparisons_any = { "euid!=uid" },
+                    auid_min = false,
+                    key = "user_emulation",
+                },
+            },
+        })
+
+        assert(result.all_configured == true,
+            "Expected uid/euid comparison and auid!=unset to satisfy user emulation coverage")
+    end)
+end
+
+function test_inspect_rule_coverage_requires_each_exit_filter()
+    with_dependencies({
+        audit_rules_d_path = "/tmp/rules.d",
+        lfs_attributes = function(path)
+            if path == "/tmp/rules.d" then
+                return { mode = "directory" }
+            end
+            if path == "/tmp/rules.d/access.rules" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            local entries = { ".", "..", "access.rules" }
+            local index = 0
+            return function()
+                index = index + 1
+                return entries[index]
+            end
+        end,
+        io_open = function(path)
+            if path == "/etc/login.defs" then
+                return make_reader({ "UID_MIN 1000" })
+            end
+            if path == "/tmp/rules.d/access.rules" then
+                return make_reader({
+                    "-a always,exit -F arch=b64 -S open,openat -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access",
+                    "-a always,exit -F arch=b64 -S open,openat -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access",
+                })
+            end
+            error("Unexpected path: " .. tostring(path))
+        end,
+        io_popen = function()
+            return make_reader({
+                "-a always,exit -F arch=b64 -S open,openat -F exit=-EACCES -F auid>=1000 -F auid!=-1 -F key=access",
+                "-a always,exit -F arch=b64 -S open,openat -F exit=-EPERM -F auid>=1000 -F auid!=-1 -F key=access",
+            })
+        end,
+    }, function()
+        local result = audit_probe.inspect_rule_coverage({
+            required_arches = { "b64" },
+            requirements = {
+                {
+                    name = "access",
+                    type = "syscall",
+                    syscalls = { "open", "openat" },
+                    exits = { "EACCES", "EPERM" },
+                    key = "access",
+                },
+            },
+        })
+
+        assert(result.all_configured == true, "Expected both unsuccessful access exit filters to pass")
+    end)
+end
+
+function test_inspect_rule_coverage_path_exec_requires_auid_filters()
+    with_dependencies({
+        audit_rules_d_path = "/tmp/rules.d",
+        lfs_attributes = function(path)
+            if path == "/tmp/rules.d" then
+                return { mode = "directory" }
+            end
+            if path == "/tmp/rules.d/path.rules" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            local entries = { ".", "..", "path.rules" }
+            local index = 0
+            return function()
+                index = index + 1
+                return entries[index]
+            end
+        end,
+        io_open = function(path)
+            if path == "/etc/login.defs" then
+                return make_reader({ "UID_MIN 1000" })
+            end
+            if path == "/tmp/rules.d/path.rules" then
+                return make_reader({ "-a always,exit -F path=/usr/bin/chcon -F perm=x -F auid!=unset -k perm_chng" })
+            end
+            error("Unexpected path: " .. tostring(path))
+        end,
+        io_popen = function()
+            return make_reader({ "-a always,exit -S all -F path=/usr/bin/chcon -F perm=x -F auid!=-1 -F key=perm_chng" })
+        end,
+    }, function()
+        local result = audit_probe.inspect_rule_coverage({
+            requirements = {
+                { name = "chcon", type = "path_exec", path = "/usr/bin/chcon", key = "perm_chng" },
+            },
+        })
+
+        assert(result.all_configured == false, "Expected missing auid>=UID_MIN to fail path exec coverage")
+        assert(result.violation_count == 1, "Expected the path exec requirement to be noncompliant")
+    end)
+end
+
+function test_inspect_rule_coverage_checks_final_directive_value()
+    with_dependencies({
+        audit_rules_d_path = "/tmp/rules.d",
+        lfs_attributes = function(path)
+            if path == "/tmp/rules.d" then
+                return { mode = "directory" }
+            end
+            if path == "/tmp/rules.d/final.rules" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            local entries = { ".", "..", "final.rules" }
+            local index = 0
+            return function()
+                index = index + 1
+                return entries[index]
+            end
+        end,
+        io_open = function(path)
+            if path == "/etc/login.defs" then
+                return make_reader({ "UID_MIN 1000" })
+            end
+            if path == "/tmp/rules.d/final.rules" then
+                return make_reader({ "-e 2", "-e 1" })
+            end
+            error("Unexpected path: " .. tostring(path))
+        end,
+    }, function()
+        local result = audit_probe.inspect_rule_coverage({
+            sources = { "persistent" },
+            requirements = {
+                { name = "immutable", type = "directive", directive = "-e", value = "2" },
+            },
+        })
+
+        assert(result.all_configured == false, "Expected a later non-immutable directive to fail")
+    end)
+end
+
+function test_inspect_privileged_command_coverage_builds_path_exec_requirements()
+    local rule = "-a always,exit -F path=/usr/bin/passwd -F perm=x -F auid>=1000 -F auid!=unset -k privileged"
+
+    with_dependencies({
+        audit_rules_d_path = "/tmp/rules.d",
+        lfs_attributes = function(path)
+            if path == "/tmp/rules.d" then
+                return { mode = "directory" }
+            end
+            if path == "/tmp/rules.d/privileged.rules" then
+                return { mode = "file" }
+            end
+            return nil
+        end,
+        lfs_dir = function()
+            local entries = { ".", "..", "privileged.rules" }
+            local index = 0
+            return function()
+                index = index + 1
+                return entries[index]
+            end
+        end,
+        io_open = function(path)
+            if path == "/etc/login.defs" then
+                return make_reader({ "UID_MIN 1000" })
+            end
+            if path == "/tmp/rules.d/privileged.rules" then
+                return make_reader({ rule })
+            end
+            error("Unexpected path: " .. tostring(path))
+        end,
+        io_popen = function()
+            return make_reader({ rule })
+        end,
+    }, function()
+        local result = audit_probe.inspect_privileged_command_coverage({
+            paths = { "/usr/bin/passwd" },
+        })
+
+        assert(result.checked_requirement_count == 1, "Expected one privileged command requirement")
+        assert(result.all_configured == true, "Expected matching persistent and loaded privileged command rules")
+    end)
+end

@@ -407,6 +407,353 @@ function test_inspect_faillock_accepts_never_unlock_as_stricter_policy()
     end)
 end
 
+function test_inspect_module_accepts_cis_faillock_stack_in_both_files()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/pam.d/system-auth" or path == "/etc/pam.d/password-auth" then
+                return make_reader({
+                    "auth required pam_faillock.so preauth silent",
+                    "auth required pam_faillock.so authfail",
+                    "account required pam_faillock.so",
+                })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_module({
+            module = "faillock",
+            pam_paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" },
+        })
+
+        assert(result.count == 0, "Expected complete faillock stacks in both PAM files to pass")
+    end)
+end
+
+function test_inspect_module_reports_missing_required_pam_stack_entry()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/pam.d/system-auth" then
+                return make_reader({
+                    "password requisite pam_pwquality.so local_users_only",
+                })
+            end
+            if path == "/etc/pam.d/password-auth" then
+                return make_reader({
+                    "password requisite pam_unix.so sha512 shadow",
+                })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_module({
+            module = "pwquality",
+            pam_paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" },
+        })
+
+        assert(result.count == 1, "Expected missing pwquality in one PAM file to be reported")
+        assert(result.details[1].reason == "requirement_missing",
+            "Expected missing stack requirement to preserve a useful reason")
+    end)
+end
+
+function test_inspect_faillock_setting_accepts_configured_deny_and_rejects_weak_module_override()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/security/faillock.conf" then
+                return make_reader({ "deny = 5" })
+            end
+            if path == "/etc/pam.d/system-auth" then
+                return make_reader({ "auth required pam_faillock.so authfail deny=6" })
+            end
+            if path == "/etc/pam.d/password-auth" then
+                return make_reader({ "auth required pam_faillock.so authfail" })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_faillock_setting({
+            option = "deny",
+            config_path = "/etc/security/faillock.conf",
+            pam_paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" },
+            max_deny = 5,
+        })
+
+        assert(result.config_compliant == true, "Expected configured deny=5 to satisfy CIS")
+        assert(result.compliant == false, "Expected weak PAM deny override to fail the setting")
+        assert(result.module_argument_violation_count == 1, "Expected one weak module override")
+    end)
+end
+
+function test_inspect_faillock_setting_accepts_root_lockout_with_minimum_root_unlock_time()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/security/faillock.conf" then
+                return make_reader({ "root_unlock_time = 60" })
+            end
+            if path == "/etc/pam.d/system-auth" or path == "/etc/pam.d/password-auth" then
+                return make_reader({ "auth required pam_faillock.so authfail" })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_faillock_setting({
+            option = "root_lockout",
+            config_path = "/etc/security/faillock.conf",
+            pam_paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" },
+            min_root_unlock_time = 60,
+        })
+
+        assert(result.compliant == true, "Expected root_unlock_time >= 60 to satisfy root lockout")
+        assert(result.count == 0, "Expected no root lockout violations")
+    end)
+end
+
+function test_inspect_pwquality_setting_observes_config_precedence_and_module_overrides()
+    with_dependencies({
+        expand_paths = function(paths)
+            if paths[1] == "/etc/security/pwquality.conf.d/*.conf" then
+                return { "/etc/security/pwquality.conf.d/50-length.conf" }
+            end
+            if paths[1] == "/etc/security/pwquality.conf" then
+                return { "/etc/security/pwquality.conf" }
+            end
+            return {}
+        end,
+        io_open = function(path)
+            if path == "/etc/security/pwquality.conf.d/50-length.conf" then
+                return make_reader({ "minlen = 10" })
+            end
+            if path == "/etc/security/pwquality.conf" then
+                return make_reader({ "minlen = 14" })
+            end
+            if path == "/etc/pam.d/system-auth" then
+                return make_reader({ "password requisite pam_pwquality.so minlen=12" })
+            end
+            if path == "/etc/pam.d/password-auth" then
+                return make_reader({ "password requisite pam_pwquality.so" })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_pwquality_setting({
+            option = "minlen",
+            config_paths = {
+                "/etc/security/pwquality.conf.d/*.conf",
+                "/etc/security/pwquality.conf",
+            },
+            pam_paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" },
+            min_value = 14,
+        })
+
+        assert(result.config_value == "14", "Expected main pwquality.conf to override .conf.d settings")
+        assert(result.config_compliant == true, "Expected effective config minlen to pass")
+        assert(result.compliant == false, "Expected weak module minlen override to fail")
+    end)
+end
+
+function test_inspect_pwquality_setting_accepts_absent_dictcheck_default()
+    with_dependencies({
+        expand_paths = function()
+            return {}
+        end,
+        io_open = function(path)
+            if path == "/etc/pam.d/system-auth" or path == "/etc/pam.d/password-auth" then
+                return make_reader({ "password requisite pam_pwquality.so" })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_pwquality_setting({
+            option = "dictcheck",
+            pam_paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" },
+            default_value = 1,
+            disallowed_values = { "0" },
+        })
+
+        assert(result.compliant == true, "Expected default dictcheck=1 to pass when not disabled")
+    end)
+end
+
+function test_inspect_pwquality_setting_rejects_disabled_root_enforcement_flag()
+    with_dependencies({
+        expand_paths = function(paths)
+            if paths[1] == "/etc/security/pwquality.conf" then
+                return { "/etc/security/pwquality.conf" }
+            end
+            return {}
+        end,
+        io_open = function(path)
+            if path == "/etc/security/pwquality.conf" then
+                return make_reader({ "enforce_for_root = 0" })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_pwquality_setting({
+            option = "enforce_for_root",
+            config_paths = { "/etc/security/pwquality.conf" },
+            require_flag = true,
+        })
+
+        assert(result.compliant == false, "Expected enforce_for_root=0 not to satisfy root enforcement")
+    end)
+end
+
+function test_inspect_pwhistory_setting_requires_configured_remember_and_rejects_weak_argument()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/security/pwhistory.conf" then
+                return make_reader({ "remember = 24" })
+            end
+            if path == "/etc/pam.d/system-auth" then
+                return make_reader({ "password required pam_pwhistory.so remember=20 use_authtok" })
+            end
+            if path == "/etc/pam.d/password-auth" then
+                return make_reader({ "password required pam_pwhistory.so use_authtok" })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_pwhistory_setting({
+            option = "remember",
+            config_path = "/etc/security/pwhistory.conf",
+            pam_paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" },
+            min_remember = 24,
+        })
+
+        assert(result.config_compliant == true, "Expected pwhistory.conf remember=24 to pass")
+        assert(result.compliant == false, "Expected weak module remember override to fail")
+    end)
+end
+
+function test_inspect_pwhistory_setting_accepts_bare_root_enforcement_flag_only()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/security/pwhistory.conf" then
+                return make_reader({ "enforce_for_root" })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_pwhistory_setting({
+            option = "enforce_for_root",
+            config_path = "/etc/security/pwhistory.conf",
+        })
+
+        assert(result.compliant == true, "Expected bare enforce_for_root flag to pass")
+    end)
+
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/security/pwhistory.conf" then
+                return make_reader({ "enforce_for_root = 0" })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_pwhistory_setting({
+            option = "enforce_for_root",
+            config_path = "/etc/security/pwhistory.conf",
+        })
+
+        assert(result.compliant == false, "Expected disabled enforce_for_root value to fail")
+    end)
+end
+
+function test_inspect_pwhistory_setting_requires_use_authtok_in_both_password_stacks()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/pam.d/system-auth" then
+                return make_reader({ "password required pam_pwhistory.so use_authtok" })
+            end
+            if path == "/etc/pam.d/password-auth" then
+                return make_reader({ "password required pam_pwhistory.so" })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_pwhistory_setting({
+            option = "use_authtok",
+            pam_paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" },
+        })
+
+        assert(result.count == 1, "Expected missing pwhistory use_authtok in one file to fail")
+        assert(result.details[1].reason == "use_authtok_missing",
+            "Expected missing use_authtok reason")
+    end)
+end
+
+function test_inspect_unix_accepts_enabled_stacks_and_strong_password_arguments()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/pam.d/system-auth" or path == "/etc/pam.d/password-auth" then
+                return make_reader({
+                    "auth sufficient pam_unix.so",
+                    "account required pam_unix.so",
+                    "password sufficient pam_unix.so sha512 shadow use_authtok",
+                    "session required pam_unix.so",
+                })
+            end
+            return nil
+        end,
+    }, function()
+        local paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" }
+        assert(pam_probe.inspect_unix({ check = "enabled", pam_paths = paths }).count == 0,
+            "Expected all pam_unix stack kinds to be present")
+        assert(pam_probe.inspect_unix({ check = "no_nullok", pam_paths = paths }).count == 0,
+            "Expected pam_unix nullok absence to pass")
+        assert(pam_probe.inspect_unix({ check = "strong_hash", pam_paths = paths }).count == 0,
+            "Expected sha512 pam_unix password hash to pass")
+        assert(pam_probe.inspect_unix({ check = "use_authtok", pam_paths = paths }).count == 0,
+            "Expected pam_unix use_authtok to pass")
+    end)
+end
+
+function test_inspect_unix_reports_nullok_remember_and_weak_hash()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/pam.d/system-auth" or path == "/etc/pam.d/password-auth" then
+                return make_reader({
+                    "auth sufficient pam_unix.so nullok",
+                    "account required pam_unix.so",
+                    "password sufficient pam_unix.so sha256 remember=5",
+                    "session required pam_unix.so",
+                })
+            end
+            return nil
+        end,
+    }, function()
+        local paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" }
+        assert(pam_probe.inspect_unix({ check = "no_nullok", pam_paths = paths }).count == 2,
+            "Expected nullok in both files to fail")
+        assert(pam_probe.inspect_unix({ check = "no_remember", pam_paths = paths }).count == 2,
+            "Expected pam_unix remember in both files to fail")
+        assert(pam_probe.inspect_unix({ check = "strong_hash", pam_paths = paths }).count == 4,
+            "Expected weak hash and missing strong hash in both files to fail")
+    end)
+end
+
+function test_inspect_unix_requires_every_password_line_to_have_strong_hash()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/pam.d/system-auth" or path == "/etc/pam.d/password-auth" then
+                return make_reader({
+                    "password sufficient pam_unix.so sha512 shadow use_authtok",
+                    "password required pam_unix.so shadow use_authtok",
+                })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_unix({
+            check = "strong_hash",
+            pam_paths = { "/etc/pam.d/system-auth", "/etc/pam.d/password-auth" },
+        })
+
+        assert(result.count == 2, "Expected password pam_unix lines without a strong hash to fail")
+    end)
+end
+
 function test_inspect_wheel_accepts_required_and_bracket_controls()
     with_dependencies({
         io_open = function(path, mode)
@@ -425,6 +772,89 @@ function test_inspect_wheel_accepts_required_and_bracket_controls()
         })
 
         assert(result.count == 0, "Expected su PAM stack to accept restrictive pam_wheel controls")
+    end)
+end
+
+function test_inspect_wheel_requires_empty_group_when_requested()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/pam.d/su" then
+                return make_reader({
+                    "auth required pam_wheel.so use_uid group=sugroup",
+                })
+            end
+            if path == "/etc/group" then
+                return make_reader({
+                    "sugroup:x:4000:",
+                })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_wheel({
+            pam_paths = { "/etc/pam.d/su" },
+            require_empty_group = true,
+        })
+
+        assert(result.count == 0, "Expected pam_wheel with use_uid and an empty group to pass")
+    end)
+end
+
+function test_inspect_wheel_reports_missing_or_nonempty_group_when_required()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/pam.d/su" then
+                return make_reader({
+                    "auth required pam_wheel.so use_uid",
+                })
+            end
+            if path == "/etc/pam.d/su-l" then
+                return make_reader({
+                    "auth required pam_wheel.so use_uid group=sugroup",
+                })
+            end
+            if path == "/etc/group" then
+                return make_reader({
+                    "sugroup:x:4000:alice",
+                })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_wheel({
+            pam_paths = { "/etc/pam.d/su", "/etc/pam.d/su-l" },
+            require_empty_group = true,
+        })
+
+        assert(result.count == 2, "Expected missing and non-empty groups to be reported")
+        assert(result.details[1].reason == "group_missing"
+            or result.details[2].reason == "group_missing",
+            "Expected missing group= argument to be reported")
+        assert(result.details[1].reason == "group_not_empty"
+            or result.details[2].reason == "group_not_empty",
+            "Expected non-empty su group to be reported")
+    end)
+end
+
+function test_inspect_wheel_reports_unreadable_group_file_when_group_required()
+    with_dependencies({
+        io_open = function(path)
+            if path == "/etc/pam.d/su" then
+                return make_reader({
+                    "auth required pam_wheel.so use_uid group=sugroup",
+                })
+            end
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.inspect_wheel({
+            pam_paths = { "/etc/pam.d/su" },
+            require_empty_group = true,
+        })
+
+        assert(result.count == 1, "Expected missing /etc/group evidence to fail")
+        assert(result.details[1].reason == "group_file_unreadable",
+            "Expected missing group evidence to be explicit")
     end)
 end
 

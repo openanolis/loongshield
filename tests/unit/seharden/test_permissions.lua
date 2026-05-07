@@ -42,3 +42,24 @@ function test_permissions_get_attributes_requires_path()
     assert(result == nil, "Expected nil result when path is missing")
     assert(err:match("requires a 'path' parameter"), "Expected missing path error")
 end
+
+function test_permissions_get_group_id_reports_lookup_results()
+    permissions_probe._test_set_dependencies({
+        fs_get_gid = function(name)
+            if name == "crontab" then
+                return 987
+            end
+            return nil
+        end
+    })
+
+    local result = permissions_probe.get_group_id({ name = "crontab" })
+    local missing = permissions_probe.get_group_id({ name = "missing" })
+
+    permissions_probe._test_set_dependencies()
+
+    assert(result.exists == true, "Expected existing groups to be marked present")
+    assert(result.gid == 987, "Expected group gid to be returned")
+    assert(missing.exists == false, "Expected missing groups to be marked absent")
+    assert(missing.gid == nil, "Expected missing group gid to be nil")
+end
