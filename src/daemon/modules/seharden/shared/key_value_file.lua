@@ -20,29 +20,73 @@ function M.strip_inline_comment(line)
     return line
 end
 
-function M.parse_handle(handle, opts)
+local function parse_assignment(trimmed, opts)
+    local key, value = trimmed:match("^([^=%s]+)%s*=%s*(.-)%s*$")
+    if not key and opts.allow_whitespace_assignment ~= false then
+        key, value = trimmed:match("^([%S]+)%s+(.-)%s*$")
+    end
+    return key, value
+end
+
+local function normalize_value(value, opts)
+    value = value:gsub('^"', ''):gsub('"$', '')
+    if opts.normalize_values == "lower" then
+        value = value:lower()
+    end
+    return value
+end
+
+function M.parse_line(line, opts)
     opts = opts or {}
 
-    local values = {}
-    for line in handle:lines() do
-        local active = M.strip_inline_comment(line)
-        local trimmed = text.trim(active)
-        if trimmed ~= "" and not trimmed:match("^#") then
-            local key, value = trimmed:match("^([^=%s]+)%s*=%s*(.-)%s*$")
-            if not key then
-                key, value = trimmed:match("^([%S]+)%s+(.-)%s*$")
-            end
+    local active = M.strip_inline_comment(line)
+    local trimmed = text.trim(active)
+    if trimmed == "" or trimmed:match("^#") then
+        return nil
+    end
 
-            if key and value then
-                value = value:gsub('^"', ''):gsub('"$', '')
-                if opts.normalize_values == "lower" then
-                    value = value:lower()
-                end
-                values[key] = value
-            end
+    if trimmed:match("^%[[^%]]+%]$") then
+        return { section = trimmed:match("^%[([^%]]+)%]$") }
+    end
+
+    local key, value = parse_assignment(trimmed, opts)
+    if not key or value == nil then
+        return nil
+    end
+
+    if opts.normalize_key then
+        key = opts.normalize_key(key)
+    end
+
+    return {
+        key = key,
+        value = normalize_value(value, opts),
+    }
+end
+
+function M.parse_entries(handle, opts)
+    opts = opts or {}
+
+    local entries = {}
+    local current_section
+    for line in handle:lines() do
+        local parsed = M.parse_line(line, opts)
+        if parsed and parsed.section and parsed.key == nil then
+            current_section = parsed.section
+        elseif parsed and (opts.section == nil or current_section == opts.section) then
+            parsed.section = current_section
+            entries[#entries + 1] = parsed
         end
     end
 
+    return entries
+end
+
+function M.parse_handle(handle, opts)
+    local values = {}
+    for _, entry in ipairs(M.parse_entries(handle, opts)) do
+        values[entry.key] = entry.value
+    end
     return values
 end
 
