@@ -97,4 +97,126 @@ function M.set_attributes(params)
     return true
 end
 
+-- Set permissions (and optionally ownership) on multiple paths from a probe result list.
+-- Designed for rules that use meta.map/for_all pattern (e.g., home directory permissions, SSH keys).
+-- params: { list = probe_data_table, mode = decimal_number, uid = optional_decimal, gid = optional_decimal }
+-- list.details is expected to contain entries with a .path field.
+function M.set_attributes_for_all(params)
+    if not params or not params.list then
+        return nil, "permissions.set_attributes_for_all: requires 'list' parameter"
+    end
+
+    local list = params.list
+    local entries = list.details
+    if not entries or type(entries) ~= "table" then
+        return nil, "permissions.set_attributes_for_all: 'list' must contain a 'details' table"
+    end
+
+    local want_mode
+    if params.mode ~= nil then
+        want_mode = tonumber(params.mode)
+        if not want_mode then
+            return nil, string.format("permissions.set_attributes_for_all: invalid mode '%s'",
+                tostring(params.mode))
+        end
+    end
+
+    if not want_mode then
+        return nil, "permissions.set_attributes_for_all: requires 'mode' parameter"
+    end
+
+    -- Optional uid and gid parameters
+    local want_uid = params.uid ~= nil and tonumber(params.uid) or nil
+    local want_gid = params.gid ~= nil and tonumber(params.gid) or nil
+
+    local changed = 0
+    local skipped_symlink = 0
+    local skipped_missing = 0
+    local already_compliant = 0
+    local errors = {}
+
+    for _, entry in ipairs(entries) do
+        local path = entry.path
+        if not path then
+            goto continue
+        end
+
+        if fsutil.is_symlink(path, _dependencies) then
+            log.debug("permissions.set_attributes_for_all: skipping symlink '%s'", path)
+            skipped_symlink = skipped_symlink + 1
+            goto continue
+        end
+
+        local attr = _dependencies.fs_stat(path)
+        if not attr then
+            log.warn("permissions.set_attributes_for_all: path not found: %s", path)
+            skipped_missing = skipped_missing + 1
+            goto continue
+        end
+
+        local needs_chown = false
+        local needs_chmod = false
+
+        -- Check if mode needs to be changed
+        if want_mode ~= attr:mode() then
+            needs_chmod = true
+        end
+
+        -- Check if ownership needs to be changed (only if uid/gid provided)
+        if want_uid ~= nil or want_gid ~= nil then
+            local target_uid = want_uid or attr:uid()
+            local target_gid = want_gid or attr:gid()
+            if target_uid ~= attr:uid() or target_gid ~= attr:gid() then
+                needs_chown = true
+            end
+        end
+
+        -- Skip if already compliant
+        if not needs_chmod and not needs_chown then
+            already_compliant = already_compliant + 1
+            goto continue
+        end
+
+        -- Fix ownership first (if needed)
+        if needs_chown then
+            local target_uid = want_uid or attr:uid()
+            local target_gid = want_gid or attr:gid()
+            log.info("permissions.set_attributes_for_all: chown %d:%d %s (was %d:%d)",
+                target_uid, target_gid, path, attr:uid(), attr:gid())
+            local ok, err = _dependencies.fs_chown(path, target_uid, target_gid)
+            if not ok then
+                errors[#errors + 1] = string.format("chown failed on '%s': %s",
+                    path, tostring(err))
+                goto continue
+            end
+        end
+
+        -- Fix permissions (if needed)
+        if needs_chmod then
+            log.info("permissions.set_attributes_for_all: chmod %o %s (was %o)",
+                want_mode, path, attr:mode())
+            local ok, err = _dependencies.fs_chmod(path, want_mode)
+            if not ok then
+                errors[#errors + 1] = string.format("chmod failed on '%s': %s",
+                    path, tostring(err))
+                goto continue
+            end
+        end
+
+        changed = changed + 1
+
+        ::continue::
+    end
+
+    if #errors > 0 then
+        return nil, string.format(
+            "permissions.set_attributes_for_all: %d error(s): %s",
+            #errors, table.concat(errors, "; "))
+    end
+
+    log.info("permissions.set_attributes_for_all: changed %d, already compliant %d, skipped symlink %d, missing %d",
+        changed, already_compliant, skipped_symlink, skipped_missing)
+    return true
+end
+
 return M

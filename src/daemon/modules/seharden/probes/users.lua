@@ -51,6 +51,23 @@ local SYSTEM_SHELL_EXCLUDED_USERS = {
     nfsnobody = true,
 }
 
+-- System paths that should never be treated as user home directories.
+-- These are typically symlinks or critical system directories.
+local SYSTEM_PATH_BLACKLIST = {
+    ["/sbin"] = true,
+    ["/bin"] = true,
+    ["/usr/sbin"] = true,
+    ["/usr/bin"] = true,
+    ["/dev"] = true,
+    ["/dev/null"] = true,
+    ["/etc"] = true,
+    ["/var"] = true,
+    ["/tmp"] = true,
+    ["/run"] = true,
+    ["/proc"] = true,
+    ["/sys"] = true,
+}
+
 function M._test_set_dependencies(deps)
     deps = deps or {}
     for key, default in pairs(_default_dependencies) do
@@ -566,6 +583,11 @@ function M.get_existing_home_directories()
     local details = {}
     for _, user in ipairs(real_users) do
         if type(user.home) == "string" and user.home ~= "" and user.home:sub(1, 1) == "/" then
+            -- Skip known system paths that should never be treated as home directories
+            if SYSTEM_PATH_BLACKLIST[user.home] then
+                goto continue
+            end
+
             local attr = _dependencies.lfs_attributes(user.home)
             if attr and attr.mode == "directory" then
                 details[#details + 1] = {
@@ -574,6 +596,8 @@ function M.get_existing_home_directories()
                 }
             end
         end
+
+        ::continue::
     end
 
     return {

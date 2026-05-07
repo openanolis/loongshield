@@ -74,6 +74,13 @@ function M.run(mode, rules, opts)
                         rule.id, #(rule.reinforce or {}))
                     dry_run_pending = dry_run_pending + 1
                 elseif enforce_status == "DONE" then
+                    -- Clear SSH probe cache to force fresh sshd -T execution after config changes
+                    local ssh_probe = require('seharden.probes.ssh')
+                    if type(ssh_probe._test_clear_cache) == "function" then
+                        ssh_probe._test_clear_cache()
+                        log.debug("Cleared SSH probe cache for fresh verification.")
+                    end
+
                     local verify_status, verify_msg = rule_executor.audit(rule)
                     if verify_status == "PASS" then
                         log.info("[%s] FIXED: %s", rule.id, rule.desc)

@@ -1495,3 +1495,143 @@ function test_sudo_ensure_audit_watches_resolves_dynamic_sudoers_paths()
     assert(captured[1].permissions == "wa" and captured[2].permissions == "wa" and captured[3].permissions == "wa",
         "Expected sudo audit-watch enforcement to pass through the requested permissions")
 end
+
+--------------------------------------------------------------------------------
+-- users enforcer: username injection hardening
+--------------------------------------------------------------------------------
+
+local users_enforcer = require('seharden.enforcers.users')
+
+function test_users_set_password_max_days_rejects_unsafe_username()
+    users_enforcer._test_set_dependencies({
+        os_execute = function()
+            error("os_execute must NOT be called for unsafe usernames")
+        end,
+    })
+
+    local ok, err = users_enforcer.set_password_max_days_for_root({
+        max_days = 90,
+        entries = {
+            { user = "alice;touch /tmp/x", pass_max_days = 999 },
+        },
+    })
+    users_enforcer._test_set_dependencies()
+
+    assert(ok == nil, "Expected unsafe username to be rejected")
+    assert(err:find("unsafe username", 1, true),
+        "Expected error to mention unsafe username")
+end
+
+function test_users_set_password_min_days_rejects_unsafe_username()
+    users_enforcer._test_set_dependencies({
+        os_execute = function()
+            error("os_execute must NOT be called for unsafe usernames")
+        end,
+    })
+
+    local ok, err = users_enforcer.set_password_min_days_for_root({
+        min_days = 7,
+        entries = {
+            { user = "bob$(rm -rf /)", pass_min_days = 0 },
+        },
+    })
+    users_enforcer._test_set_dependencies()
+
+    assert(ok == nil, "Expected unsafe username to be rejected")
+    assert(err:find("unsafe username", 1, true),
+        "Expected error to mention unsafe username")
+end
+
+function test_users_set_password_max_days_accepts_safe_usernames()
+    local commands = {}
+    users_enforcer._test_set_dependencies({
+        os_execute = function(cmd)
+            commands[#commands + 1] = cmd
+            return true, nil, 0
+        end,
+    })
+
+    local ok = users_enforcer.set_password_max_days_for_root({
+        max_days = 90,
+        entries = {
+            { user = "alice", pass_max_days = 999 },
+            { user = "bob_smith", pass_max_days = 100 },
+            { user = "carol.admin", pass_max_days = 50 },  -- already compliant, skipped
+        },
+    })
+    users_enforcer._test_set_dependencies()
+
+    assert(ok == true, "Expected safe usernames to succeed")
+    assert(#commands == 2, "Expected two chage commands (carol.admin already compliant)")
+    assert(commands[1]:find("alice"), "Expected alice command to be built")
+    assert(commands[2]:find("bob_smith"), "Expected bob_smith command to be built")
+end
+
+--------------------------------------------------------------------------------
+-- sudo enforcer: !authenticate Defaults handling
+--------------------------------------------------------------------------------
+
+function test_sudo_remove_nopasswd_strips_authenticate_disabled_defaults()
+    local root_path = "/etc/sudoers"
+    local include_dir = "/etc/sudoers.d"
+    local include_file = include_dir .. "/custom"
+    local deps, files, attrs = make_fake_text_fs(
+        {
+            [root_path] = table.concat({
+                "Defaults !authenticate",
+                "#includedir /etc/sudoers.d",
+            }, "\n") .. "\n",
+            [include_file] = table.concat({
+                "Defaults:deploy !authenticate",
+                "deploy ALL=(ALL) NOPASSWD: ALL",
+            }, "\n") .. "\n",
+        },
+        {
+            [root_path] = { type = "file", uid = 0, gid = 0, mode = 288 },
+            [include_dir] = { type = "directory" },
+            [include_file] = { type = "file", uid = 0, gid = 0, mode = 288 },
+        },
+        {
+            [include_dir] = { "custom" },
+        }
+    )
+
+    sudo_enforcer._test_set_dependencies(deps)
+    local ok = sudo_enforcer.remove_nopasswd({ root_path = root_path })
+    sudo_enforcer._test_set_dependencies()
+
+    assert(ok == true, "Expected remove_nopasswd to succeed")
+    assert(not files[root_path]:find("!authenticate", 1, true),
+        "Expected global !authenticate Defaults line to be dropped")
+    assert(not files[include_file]:find("!authenticate", 1, true),
+        "Expected scoped !authenticate Defaults line to be dropped")
+    assert(not files[include_file]:find("NOPASSWD:", 1, true),
+        "Expected NOPASSWD tag to be removed from rule line")
+end
+
+function test_sudo_remove_nopasswd_preserves_other_tokens_when_stripping_authenticate()
+    local root_path = "/etc/sudoers"
+    local deps, files, attrs = make_fake_text_fs(
+        {
+            [root_path] = table.concat({
+                "Defaults authenticate, !authenticate, use_pty",
+            }, "\n") .. "\n",
+        },
+        {
+            [root_path] = { type = "file", uid = 0, gid = 0, mode = 288 },
+        },
+        {}
+    )
+
+    sudo_enforcer._test_set_dependencies(deps)
+    local ok = sudo_enforcer.remove_nopasswd({ root_path = root_path })
+    sudo_enforcer._test_set_dependencies()
+
+    assert(ok == true, "Expected remove_nopasswd to succeed")
+    assert(not files[root_path]:find("!authenticate", 1, true),
+        "Expected !authenticate token to be removed")
+    assert(files[root_path]:find("authenticate", 1, true),
+        "Expected positive authenticate token to be preserved")
+    assert(files[root_path]:find("use_pty", 1, true),
+        "Expected other tokens like use_pty to be preserved")
+end
