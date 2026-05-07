@@ -90,6 +90,10 @@ rules:
           key: "found"
           compare: is_falsy
           message: "Found accounts in /etc/shadow with empty passwords."
+    reinforce:
+      - action: users.lock_empty_password_accounts
+        params:
+          shadow_path: "/etc/shadow"
 
   - id: "1.1.2"
     desc: "Ensure no duplicate UIDs exist"
@@ -112,34 +116,50 @@ rules:
           message: "Found duplicate UIDs in /etc/passwd."
 
   - id: "1.1.3"
-    desc: "Ensure root is the only UID 0 account"
+    desc: "Ensure password minimum length is configured to 8 or more"
     level: ["l1_server", "l1_workstation"]
     status: automated
     probes:
-      - name: root_uid_zero_check
-        func: file.find_pattern
+      - name: pwquality_check
+        func: pam.inspect_pwquality
         params:
-          paths: ["/etc/passwd"]
-          pattern: "^root:[^:]*:0:0:"
-      - name: duplicate_uid_check
-        func: file.find_duplicate_values_in_field
-        params:
-          path: "/etc/passwd"
-          field_index: 3
-          match_key: 0
-          key_name: "uid"
-          value_index: 1
+          pam_paths:
+            - "/etc/pam.d/system-auth"
+            - "/etc/pam.d/password-auth"
+          config_paths:
+            - "/etc/security/pwquality.conf"
+            - "/etc/security/pwquality.conf.d/*.conf"
+          min_minlen: 8
+          min_minclass: 3
+          default_minlen: 8
     assertion:
       all_of:
-        - actual: "%{probe.root_uid_zero_check}"
-          key: "found"
-          compare: is_true
-          message: "The root account is not configured with UID 0."
-        - actual: "%{probe.duplicate_uid_check}"
-          key: "count"
+        - actual: "%{probe.pwquality_check}"
+          key: "weak_minlen_count"
           compare: equals
           expected: 0
-          message: "Found duplicate UIDs in /etc/passwd; root is not the only UID 0 account."
+          message: "The effective minimum password length is less than 8 in one or more PAM password stacks."
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/security/pwquality.conf", key: "minlen", value: "8", separator: "=" }
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/system-auth"
+          kind: "password"
+          module: "pam_pwquality.so"
+          control: "requisite"
+          args: ["try_first_pass", "local_users_only"]
+          anchor_kind: "password"
+          anchor_module: "pam_unix.so"
+      - action: pam.ensure_entry
+        params:
+          path: "/etc/pam.d/password-auth"
+          kind: "password"
+          module: "pam_pwquality.so"
+          control: "requisite"
+          args: ["try_first_pass", "local_users_only"]
+          anchor_kind: "password"
+          anchor_module: "pam_unix.so"
 
   - id: "1.1.4"
     desc: "Ensure password expiration is 90 days or less"
@@ -168,6 +188,12 @@ rules:
               - key: "pass_max_days"
                 compare: is_less_than_or_equal_to
                 expected: 90
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/login.defs", key: "PASS_MAX_DAYS", value: "90", separator: " " }
+      - action: users.set_password_max_days_for_root
+        params:
+          max_days: 90
 
   - id: "1.1.5"
     desc: "Ensure minimum days between password changes is 7 or more"
@@ -196,6 +222,12 @@ rules:
               - key: "pass_min_days"
                 compare: is_greater_than_or_equal_to
                 expected: 7
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/login.defs", key: "PASS_MIN_DAYS", value: "7", separator: " " }
+      - action: users.set_password_min_days_for_root
+        params:
+          min_days: 7
 
   - id: "1.1.6"
     desc: "Ensure password complexity policy is enabled"
@@ -249,50 +281,34 @@ rules:
           anchor_module: "pam_unix.so"
 
   - id: "1.1.7"
-    desc: "Ensure password minimum length is configured to 8 or more"
+    desc: "Ensure root is the only UID 0 account"
     level: ["l1_server", "l1_workstation"]
     status: automated
     probes:
-      - name: pwquality_check
-        func: pam.inspect_pwquality
+      - name: root_uid_zero_check
+        func: file.find_pattern
         params:
-          pam_paths:
-            - "/etc/pam.d/system-auth"
-            - "/etc/pam.d/password-auth"
-          config_paths:
-            - "/etc/security/pwquality.conf"
-            - "/etc/security/pwquality.conf.d/*.conf"
-          min_minlen: 8
-          min_minclass: 3
-          default_minlen: 8
+          paths: ["/etc/passwd"]
+          pattern: "^root:[^:]*:0:0:"
+      - name: duplicate_uid_check
+        func: file.find_duplicate_values_in_field
+        params:
+          path: "/etc/passwd"
+          field_index: 3
+          match_key: 0
+          key_name: "uid"
+          value_index: 1
     assertion:
       all_of:
-        - actual: "%{probe.pwquality_check}"
-          key: "weak_minlen_count"
+        - actual: "%{probe.root_uid_zero_check}"
+          key: "found"
+          compare: is_true
+          message: "The root account is not configured with UID 0."
+        - actual: "%{probe.duplicate_uid_check}"
+          key: "count"
           compare: equals
           expected: 0
-          message: "The effective minimum password length is less than 8 in one or more PAM password stacks."
-    reinforce:
-      - action: file.set_key_value
-        params: { path: "/etc/security/pwquality.conf", key: "minlen", value: "8", separator: "=" }
-      - action: pam.ensure_entry
-        params:
-          path: "/etc/pam.d/system-auth"
-          kind: "password"
-          module: "pam_pwquality.so"
-          control: "requisite"
-          args: ["try_first_pass", "local_users_only"]
-          anchor_kind: "password"
-          anchor_module: "pam_unix.so"
-      - action: pam.ensure_entry
-        params:
-          path: "/etc/pam.d/password-auth"
-          kind: "password"
-          module: "pam_pwquality.so"
-          control: "requisite"
-          args: ["try_first_pass", "local_users_only"]
-          anchor_kind: "password"
-          anchor_module: "pam_unix.so"
+          message: "Found duplicate UIDs in /etc/passwd; root is not the only UID 0 account."
 
   - id: "1.1.8"
     desc: "Ensure password reuse is restricted for at least the last 24 passwords"
@@ -338,7 +354,51 @@ rules:
           anchor_kind: "password"
           anchor_module: "pam_unix.so"
 
-  - id: "1.1.9"
+  - id: "1.2.1"
+    desc: "Ensure SSH protocol 1 is not enabled"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: ssh_protocol1_ondisk
+        func: file.find_pattern
+        params:
+          paths:
+            - "/etc/ssh/sshd_config"
+            - "/etc/ssh/sshd_config.d/*.conf"
+          pattern: "(?i)^%s*protocol%s+1([,%s]|$)|^%s*protocol%s+[^#]*,%s*1([,%s]|$)"
+    assertion:
+      all_of:
+        - actual: "%{probe.ssh_protocol1_ondisk}"
+          key: "found"
+          compare: is_falsy
+          message: "SSH configuration explicitly enables protocol 1."
+    reinforce:
+      - action: file.remove_line_matching
+        params:
+          path: "/etc/ssh/sshd_config"
+          pattern: "^%s*[Pp][Rr][Oo][Tt][Oo][Cc][Oo][Ll]%s+1"
+
+  - id: "1.2.2"
+    desc: "Ensure telnet packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: telnet_installed
+        func: packages.get_installed
+        params:
+          name: "telnet*"
+    assertion:
+      all_of:
+        - actual: "%{probe.telnet_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Telnet packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "telnet*" }
+
+  - id: "1.3.1"
     desc: "Ensure login failure lockout policy is configured"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -425,52 +485,7 @@ rules:
           anchor_kind: "auth"
           anchor_module: "pam_unix.so"
 
-  - id: "1.2.1"
-    desc: "Ensure session timeout is configured to 30 minutes or less"
-    level: ["l1_server", "l1_workstation"]
-    status: automated
-    probes:
-      - name: session_timeout_check
-        func: shell.find_tmout_assignments
-        params:
-          paths:
-            - "/etc/profile"
-            - "/etc/bashrc"
-            - "/etc/profile.d/*.sh"
-          max_value: 1800
-    assertion:
-      all_of:
-        - actual: "%{probe.session_timeout_check}"
-          key: "count"
-          compare: is_greater_than
-          expected: 0
-          message: "No compliant TMOUT setting of 1800 seconds or less was found in system-wide profiles."
-        - actual: "%{probe.session_timeout_check}"
-          key: "conflicting_count"
-          compare: equals
-          expected: 0
-          message: "Found explicit TMOUT settings that disable or weaken the session timeout policy."
-
-  - id: "1.2.2"
-    desc: "Ensure SSH protocol 1 is not enabled"
-    level: ["l1_server", "l1_workstation"]
-    status: automated
-    probes:
-      - name: ssh_protocol1_ondisk
-        func: file.find_pattern
-        params:
-          paths:
-            - "/etc/ssh/sshd_config"
-            - "/etc/ssh/sshd_config.d/*.conf"
-          pattern: "(?i)^%s*protocol%s+1([,%s]|$)|^%s*protocol%s+[^#]*,%s*1([,%s]|$)"
-    assertion:
-      all_of:
-        - actual: "%{probe.ssh_protocol1_ondisk}"
-          key: "found"
-          compare: is_falsy
-          message: "SSH configuration explicitly enables protocol 1."
-
-  - id: "1.2.3"
+  - id: "1.3.2"
     desc: "Ensure SSH root login is disabled"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -501,7 +516,7 @@ rules:
           compare: is_falsy
           message: "PermitRootLogin is explicitly set to a non-'no' value in an SSH configuration file."
 
-  - id: "1.2.4"
+  - id: "1.3.3"
     desc: "Ensure SSH MaxAuthTries is set to 4 or less"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -531,8 +546,11 @@ rules:
           key: "found"
           compare: is_falsy
           message: "MaxAuthTries is set to a value greater than 4 in SSH configuration."
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/ssh/sshd_config", key: "MaxAuthTries", value: "4", separator: " " }
 
-  - id: "1.2.5"
+  - id: "1.3.4"
     desc: "Ensure SSH LoginGraceTime is set to 60 seconds or less"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -552,8 +570,11 @@ rules:
           compare: is_less_than_or_equal_to
           expected: 60
           message: "The effective LoginGraceTime is greater than 60 seconds."
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/ssh/sshd_config", key: "LoginGraceTime", value: "60", separator: " " }
 
-  - id: "1.2.6"
+  - id: "1.3.5"
     desc: "Ensure SSH idle session disconnect is configured"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -589,26 +610,42 @@ rules:
           compare: is_less_than_or_equal_to
           expected: 2
           message: "The effective ClientAliveCountMax is greater than 2."
+    reinforce:
+      - action: file.set_key_value
+        params: { path: "/etc/ssh/sshd_config", key: "ClientAliveInterval", value: "300", separator: " " }
+      - action: file.set_key_value
+        params: { path: "/etc/ssh/sshd_config", key: "ClientAliveCountMax", value: "2", separator: " " }
 
-  - id: "1.2.7"
-    desc: "Ensure telnet packages are not installed"
+  - id: "1.3.6"
+    desc: "Ensure session timeout is configured to 30 minutes or less"
     level: ["l1_server", "l1_workstation"]
     status: automated
     probes:
-      - name: telnet_installed
-        func: packages.get_installed
+      - name: session_timeout_check
+        func: shell.find_tmout_assignments
         params:
-          name: "telnet*"
+          paths:
+            - "/etc/profile"
+            - "/etc/bashrc"
+            - "/etc/profile.d/*.sh"
+          max_value: 1800
     assertion:
       all_of:
-        - actual: "%{probe.telnet_installed}"
+        - actual: "%{probe.session_timeout_check}"
           key: "count"
+          compare: is_greater_than
+          expected: 0
+          message: "No compliant TMOUT setting of 1800 seconds or less was found in system-wide profiles."
+        - actual: "%{probe.session_timeout_check}"
+          key: "conflicting_count"
           compare: equals
           expected: 0
-          message: "Telnet packages are installed."
+          message: "Found explicit TMOUT settings that disable or weaken the session timeout policy."
     reinforce:
-      - action: packages.remove_matching
-        params: { pattern: "telnet*" }
+      - action: file.set_key_value
+        params: { path: "/etc/profile.d/loongshield-session-timeout.sh", key: "TMOUT", value: "1800", separator: "=" }
+      - action: file.set_key_value
+        params: { path: "/etc/bashrc", key: "TMOUT", value: "1800", separator: "=" }
 
   # -----------------------------------------------------------------------
   # Category: access control
@@ -694,48 +731,7 @@ rules:
           expected: 0
           message: "Found explicit system-wide shell umask settings that are weaker than 027."
 
-  - id: "2.1.4"
-    desc: "Ensure sudo commands use pty"
-    level: ["l1_server", "l1_workstation"]
-    status: automated
-    probes:
-      - name: sudo_use_pty_check
-        func: sudo.find_use_pty
-        params:
-          paths: ["/etc/sudoers"]
-    assertion:
-      all_of:
-        - actual: "%{probe.sudo_use_pty_check}"
-          key: "found"
-          compare: is_true
-          message: "The 'use_pty' option is not enabled in sudo configuration."
-        - actual: "%{probe.sudo_use_pty_check}"
-          key: "conflicting_count"
-          compare: equals
-          expected: 0
-          message: "Found explicit sudo configuration that disables 'use_pty'."
-    reinforce:
-      - action: sudo.set_use_pty
-        params: { root_path: "/etc/sudoers" }
-
-  - id: "2.1.5"
-    desc: "Ensure users must provide password for privilege escalation"
-    level: ["l1_server", "l1_workstation"]
-    status: automated
-    probes:
-      - name: sudo_nopasswd_check
-        func: sudo.find_nopasswd_entries
-        params:
-          paths: ["/etc/sudoers"]
-    assertion:
-      all_of:
-        - actual: "%{probe.sudo_nopasswd_check}"
-          key: "count"
-          compare: equals
-          expected: 0
-          message: "Found sudo configurations that allow privilege escalation without a password (NOPASSWD)."
-
-  - id: "2.1.6"
+  - id: "2.2.1"
     desc: "Ensure permissions on active sudoers configuration paths are configured"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -786,7 +782,7 @@ rules:
                     compare: equals
                     expected: 0
 
-  - id: "2.1.7"
+  - id: "2.2.2"
     desc: "Ensure permissions on /etc/passwd are configured"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -816,7 +812,7 @@ rules:
       - action: permissions.set_attributes
         params: { path: "/etc/passwd", uid: 0, gid: 0, mode: 420 }
 
-  - id: "2.1.8"
+  - id: "2.2.3"
     desc: "Ensure permissions on /etc/shadow are configured"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -846,7 +842,7 @@ rules:
       - action: permissions.set_attributes
         params: { path: "/etc/shadow", uid: 0, gid: 0, mode: 0 }
 
-  - id: "2.1.9"
+  - id: "2.2.4"
     desc: "Ensure permissions on /etc/group are configured"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -876,7 +872,7 @@ rules:
       - action: permissions.set_attributes
         params: { path: "/etc/group", uid: 0, gid: 0, mode: 420 }
 
-  - id: "2.1.10"
+  - id: "2.2.5"
     desc: "Ensure permissions on /etc/gshadow are configured"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -906,23 +902,48 @@ rules:
       - action: permissions.set_attributes
         params: { path: "/etc/gshadow", uid: 0, gid: 0, mode: 0 }
 
-  - id: "2.1.11"
-    desc: "Ensure non-root system accounts use non-login shells"
+  - id: "2.3.1"
+    desc: "Ensure sudo commands use pty"
     level: ["l1_server", "l1_workstation"]
     status: automated
     probes:
-      - name: interactive_system_accounts
-        func: users.find_interactive_system_accounts
-        params: {}
+      - name: sudo_use_pty_check
+        func: sudo.find_use_pty
+        params:
+          paths: ["/etc/sudoers"]
     assertion:
       all_of:
-        - actual: "%{probe.interactive_system_accounts}"
+        - actual: "%{probe.sudo_use_pty_check}"
+          key: "found"
+          compare: is_true
+          message: "The 'use_pty' option is not enabled in sudo configuration."
+        - actual: "%{probe.sudo_use_pty_check}"
+          key: "conflicting_count"
+          compare: equals
+          expected: 0
+          message: "Found explicit sudo configuration that disables 'use_pty'."
+    reinforce:
+      - action: sudo.set_use_pty
+        params: { root_path: "/etc/sudoers" }
+
+  - id: "2.3.2"
+    desc: "Ensure users must provide password for privilege escalation"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: sudo_nopasswd_check
+        func: sudo.find_nopasswd_entries
+        params:
+          paths: ["/etc/sudoers"]
+    assertion:
+      all_of:
+        - actual: "%{probe.sudo_nopasswd_check}"
           key: "count"
           compare: equals
           expected: 0
-          message: "Found non-root system accounts with interactive login shells."
+          message: "Found sudo configurations that allow privilege escalation without a password (NOPASSWD)."
 
-  - id: "2.1.12"
+  - id: "2.3.3"
     desc: "Ensure su access is restricted through pam_wheel"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -948,7 +969,69 @@ rules:
           control: "required"
           args: ["use_uid"]
 
-  - id: "2.1.13"
+  - id: "2.4.1"
+    desc: "Ensure non-root system accounts use non-login shells"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: interactive_system_accounts
+        func: users.find_interactive_system_accounts
+        params: {}
+    assertion:
+      all_of:
+        - actual: "%{probe.interactive_system_accounts}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "Found non-root system accounts with interactive login shells."
+
+  - id: "2.4.2"
+    desc: "Ensure the shutdown and halt accounts are locked"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: shutdown_account_present
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^shutdown:"
+      - name: shutdown_account_lock_status
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^shutdown:(!|\\*|\\*LK\\*)"
+      - name: halt_account_present
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^halt:"
+      - name: halt_account_lock_status
+        func: file.find_pattern
+        params:
+          paths: ["/etc/shadow"]
+          pattern: "^halt:(!|\\*|\\*LK\\*)"
+    assertion:
+      all_of:
+        - any_of:
+            - actual: "%{probe.shutdown_account_lock_status}"
+              key: "found"
+              compare: is_true
+              message: "The 'shutdown' account is neither removed nor locked in /etc/shadow."
+            - actual: "%{probe.shutdown_account_present}"
+              key: "found"
+              compare: is_falsy
+              message: "The 'shutdown' account is neither removed nor locked in /etc/shadow."
+        - any_of:
+            - actual: "%{probe.halt_account_lock_status}"
+              key: "found"
+              compare: is_true
+              message: "The 'halt' account is neither removed nor locked in /etc/shadow."
+            - actual: "%{probe.halt_account_present}"
+              key: "found"
+              compare: is_falsy
+              message: "The 'halt' account is neither removed nor locked in /etc/shadow."
+
+  - id: "2.5.1"
     desc: "Ensure SSH host public key permissions and ownership are configured"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -986,7 +1069,7 @@ rules:
                 compare: equals
                 expected: 0
 
-  - id: "2.1.14"
+  - id: "2.5.2"
     desc: "Ensure SSH host private key permissions and ownership are configured"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -1023,52 +1106,6 @@ rules:
               - key: "gid"
                 compare: equals
                 expected: 0
-
-  - id: "2.2.1"
-    desc: "Ensure the shutdown and halt accounts are locked"
-    level: ["l1_server", "l1_workstation"]
-    status: automated
-    probes:
-      - name: shutdown_account_present
-        func: file.find_pattern
-        params:
-          paths: ["/etc/shadow"]
-          pattern: "^shutdown:"
-      - name: shutdown_account_lock_status
-        func: file.find_pattern
-        params:
-          paths: ["/etc/shadow"]
-          pattern: "^shutdown:[!*]"
-      - name: halt_account_present
-        func: file.find_pattern
-        params:
-          paths: ["/etc/shadow"]
-          pattern: "^halt:"
-      - name: halt_account_lock_status
-        func: file.find_pattern
-        params:
-          paths: ["/etc/shadow"]
-          pattern: "^halt:[!*]"
-    assertion:
-      all_of:
-        - any_of:
-            - actual: "%{probe.shutdown_account_lock_status}"
-              key: "found"
-              compare: is_true
-              message: "The 'shutdown' account is neither removed nor locked in /etc/shadow."
-            - actual: "%{probe.shutdown_account_present}"
-              key: "found"
-              compare: is_falsy
-              message: "The 'shutdown' account is neither removed nor locked in /etc/shadow."
-        - any_of:
-            - actual: "%{probe.halt_account_lock_status}"
-              key: "found"
-              compare: is_true
-              message: "The 'halt' account is neither removed nor locked in /etc/shadow."
-            - actual: "%{probe.halt_account_present}"
-              key: "found"
-              compare: is_falsy
-              message: "The 'halt' account is neither removed nor locked in /etc/shadow."
 
   # -----------------------------------------------------------------------
   # Category: security audit
@@ -1344,7 +1381,7 @@ rules:
           value: "syslog"
           separator: "="
 
-  - id: "3.1.5.1"
+  - id: "3.2.2"
     desc: "Ensure auditing for processes that start prior to auditd is enabled"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -1364,7 +1401,7 @@ rules:
           compare: is_true
           message: "The 'audit=1' kernel parameter is not configured in the bootloader."
 
-  - id: "3.1.6"
+  - id: "3.3.1"
     desc: "Ensure file deletion events are collected by audit"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -1396,7 +1433,7 @@ rules:
           auid_min: "%{probe.login_defs.UID_MIN}"
           required_arches: "%{probe.audit_arches.arches}"
 
-  - id: "3.1.7"
+  - id: "3.3.2"
     desc: "Ensure changes to sudoers configuration are collected by audit"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -1428,7 +1465,7 @@ rules:
       - action: sudo.ensure_audit_watches
         params: { root_path: "/etc/sudoers", permissions: "wa" }
 
-  - id: "3.1.8"
+  - id: "3.3.3"
     desc: "Ensure changes to user and group information are collected by audit"
     level: ["l1_server", "l1_workstation"]
     status: automated
@@ -1630,6 +1667,106 @@ rules:
         params: { pattern: "ypbind*" }
 
   - id: "4.1.8"
+    desc: "Ensure rsh-server packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rsh_server_installed
+        func: packages.get_installed
+        params:
+          name: "rsh-server*"
+    assertion:
+      all_of:
+        - actual: "%{probe.rsh_server_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "rsh-server packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "rsh-server*" }
+
+  - id: "4.1.9"
+    desc: "Ensure rlogin-server packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rlogin_server_installed
+        func: packages.get_installed
+        params:
+          name: "rlogin-server*"
+    assertion:
+      all_of:
+        - actual: "%{probe.rlogin_server_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "rlogin-server packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "rlogin-server*" }
+
+  - id: "4.1.10"
+    desc: "Ensure telnet-server packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: telnet_server_installed
+        func: packages.get_installed
+        params:
+          name: "telnet-server*"
+    assertion:
+      all_of:
+        - actual: "%{probe.telnet_server_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "telnet-server packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "telnet-server*" }
+
+  - id: "4.1.11"
+    desc: "Ensure rexec-server packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: rexec_server_installed
+        func: packages.get_installed
+        params:
+          name: "rexec*"
+    assertion:
+      all_of:
+        - actual: "%{probe.rexec_server_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "rexec packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "rexec*" }
+
+  - id: "4.1.12"
+    desc: "Ensure finger-server packages are not installed"
+    level: ["l1_server", "l1_workstation"]
+    status: automated
+    probes:
+      - name: finger_server_installed
+        func: packages.get_installed
+        params:
+          name: "finger*"
+    assertion:
+      all_of:
+        - actual: "%{probe.finger_server_installed}"
+          key: "count"
+          compare: equals
+          expected: 0
+          message: "finger packages are installed."
+    reinforce:
+      - action: packages.remove_matching
+        params: { pattern: "finger*" }
+
+  - id: "4.2.1"
     desc: "Ensure high-risk management and sharing ports are not listening"
     level: ["l1_server", "l1_workstation"]
     status: automated

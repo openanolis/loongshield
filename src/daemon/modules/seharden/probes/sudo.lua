@@ -303,6 +303,7 @@ function M.find_logfile_entries(params)
     return {
         found = #details > 0,
         count = #details,
+        value = details[1] and details[1].value or nil,
         details = details,
     }
 end

@@ -262,10 +262,10 @@ function test_bundled_profiles_validate_all_level_counts_through_runtime_api()
         { path = "profiles/seharden/cis_alinux_3.yml", level = "l2_server", rules = 280, manual = 4 },
         { path = "profiles/seharden/cis_alinux_3.yml", level = "l1_workstation", rules = 167, manual = 3 },
         { path = "profiles/seharden/cis_alinux_3.yml", level = "l2_workstation", rules = 184, manual = 3 },
-        { path = "profiles/seharden/dengbao_3.yml", level = "l1_server", rules = 48, manual = 15 },
-        { path = "profiles/seharden/dengbao_3.yml", level = "l2_server", rules = 48, manual = 15 },
-        { path = "profiles/seharden/dengbao_3.yml", level = "l1_workstation", rules = 48, manual = 15 },
-        { path = "profiles/seharden/dengbao_3.yml", level = "l2_workstation", rules = 48, manual = 15 },
+        { path = "profiles/seharden/dengbao_3.yml", level = "l1_server", rules = 53, manual = 15 },
+        { path = "profiles/seharden/dengbao_3.yml", level = "l2_server", rules = 53, manual = 15 },
+        { path = "profiles/seharden/dengbao_3.yml", level = "l1_workstation", rules = 53, manual = 15 },
+        { path = "profiles/seharden/dengbao_3.yml", level = "l2_workstation", rules = 53, manual = 15 },
     }
 
     for _, case in ipairs(cases) do
@@ -1737,25 +1737,25 @@ end
 
 function test_dengbao_profile_parses_ssh_duration_values_semantically()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
-    local rule = find_rule_by_id(profile, "1.2.5")
+    local rule = find_rule_by_id(profile, "1.3.4")
     local probe = find_probe(rule, "login_grace_time_effective")
 
-    assert(rule ~= nil, "Expected dengbao profile to define SSH LoginGraceTime rule 1.2.5")
-    assert(probe ~= nil, "Expected 1.2.5 to define an SSH effective-value probe")
+    assert(rule ~= nil, "Expected dengbao profile to define SSH LoginGraceTime rule 1.3.4")
+    assert(probe ~= nil, "Expected 1.3.4 to define an SSH effective-value probe")
     assert(probe.func == "ssh.get_effective_value",
-        "Expected 1.2.5 to use ssh.get_effective_value")
+        "Expected 1.3.4 to use ssh.get_effective_value")
     assert(probe.params.value_type == "duration_seconds",
-        "Expected 1.2.5 to normalize SSH duration values before comparison")
+        "Expected 1.3.4 to normalize SSH duration values before comparison")
 end
 
 function test_dengbao_profile_detects_protocol_1_in_mixed_ssh_protocol_lists()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
-    local rule = find_rule_by_id(profile, "1.2.2")
+    local rule = find_rule_by_id(profile, "1.2.1")
     local probe = find_probe(rule, "ssh_protocol1_ondisk")
     local path = "/tmp/loongshield_test_sshd_protocol.conf"
 
-    assert(rule ~= nil, "Expected dengbao profile to define SSH protocol rule 1.2.2")
-    assert(probe ~= nil, "Expected 1.2.2 to define an on-disk SSH protocol probe")
+    assert(rule ~= nil, "Expected dengbao profile to define SSH protocol rule 1.2.1")
+    assert(probe ~= nil, "Expected 1.2.1 to define an on-disk SSH protocol probe")
 
     write_temp_file(path, "Protocol 2,1\n")
 
@@ -1766,19 +1766,19 @@ function test_dengbao_profile_detects_protocol_1_in_mixed_ssh_protocol_lists()
 
     os.remove(path)
 
-    assert(err == nil, "Expected 1.2.2 pattern evaluation to succeed")
+    assert(err == nil, "Expected 1.2.1 pattern evaluation to succeed")
     assert(result.found == true,
-        "Expected 1.2.2 to flag mixed SSH protocol lists that still include protocol 1")
+        "Expected 1.2.1 to flag mixed SSH protocol lists that still include protocol 1")
 end
 
 function test_dengbao_profile_detects_non_no_root_login_values_on_disk()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
-    local rule = find_rule_by_id(profile, "1.2.3")
+    local rule = find_rule_by_id(profile, "1.3.2")
     local probe = find_probe(rule, "permit_root_login_ondisk_noncompliant")
     local path = "/tmp/loongshield_test_sshd_root_login.conf"
 
-    assert(rule ~= nil, "Expected dengbao profile to define SSH root-login rule 1.2.3")
-    assert(probe ~= nil, "Expected 1.2.3 to define an on-disk SSH root-login probe")
+    assert(rule ~= nil, "Expected dengbao profile to define SSH root-login rule 1.3.2")
+    assert(probe ~= nil, "Expected 1.3.2 to define an on-disk SSH root-login probe")
 
     write_temp_file(path, "PermitRootLogin prohibit-password\n")
 
@@ -1789,19 +1789,19 @@ function test_dengbao_profile_detects_non_no_root_login_values_on_disk()
 
     os.remove(path)
 
-    assert(err == nil, "Expected 1.2.3 pattern evaluation to succeed")
+    assert(err == nil, "Expected 1.3.2 pattern evaluation to succeed")
     assert(result.found == true,
-        "Expected 1.2.3 to flag explicit non-'no' PermitRootLogin values")
+        "Expected 1.3.2 to flag explicit non-'no' PermitRootLogin values")
 end
 
 function test_dengbao_profile_ignores_commented_audit_boot_parameters()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
-    local rule = find_rule_by_id(profile, "3.1.5.1")
+    local rule = find_rule_by_id(profile, "3.2.2")
     local probe = find_probe(rule, "audit_boot_param")
     local path = "/tmp/loongshield_test_grub_audit.conf"
 
-    assert(rule ~= nil, "Expected dengbao profile to define audit boot rule 3.1.5.1")
-    assert(probe ~= nil, "Expected 3.1.5.1 to define a boot parameter probe")
+    assert(rule ~= nil, "Expected dengbao profile to define audit boot rule 3.2.2")
+    assert(probe ~= nil, "Expected 3.2.2 to define a boot parameter probe")
 
     write_temp_file(path, "# linux /vmlinuz audit=1\n")
 
@@ -1819,12 +1819,12 @@ function test_dengbao_profile_ignores_commented_audit_boot_parameters()
 
     os.remove(path)
 
-    assert(commented_err == nil, "Expected 3.1.5.1 commented-line evaluation to succeed")
+    assert(commented_err == nil, "Expected 3.2.2 commented-line evaluation to succeed")
     assert(commented_result.found == false,
-        "Expected 3.1.5.1 to ignore commented boot entries")
-    assert(active_err == nil, "Expected 3.1.5.1 active-line evaluation to succeed")
+        "Expected 3.2.2 to ignore commented boot entries")
+    assert(active_err == nil, "Expected 3.2.2 active-line evaluation to succeed")
     assert(active_result.found == true,
-        "Expected 3.1.5.1 to match active boot entries that enable audit=1")
+        "Expected 3.2.2 to match active boot entries that enable audit=1")
 end
 
 function test_cis_profile_ignores_commented_audit_boot_parameters()
@@ -1863,15 +1863,15 @@ end
 function test_dengbao_profile_uses_semantic_mode_comparisons()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
     local home_rule = find_rule_by_id(profile, "2.1.1")
-    local passwd_rule = find_rule_by_id(profile, "2.1.7")
-    local ssh_pub_rule = find_rule_by_id(profile, "2.1.13")
+    local passwd_rule = find_rule_by_id(profile, "2.2.2")
+    local ssh_pub_rule = find_rule_by_id(profile, "2.5.1")
 
     assert(home_rule.assertion.all_of[1].expected.all_of[1].compare == "mode_is_no_more_permissive",
         "Expected 2.1.1 to compare home directory permissions semantically")
     assert(passwd_rule.assertion.all_of[1].compare == "mode_is_no_more_permissive",
-        "Expected 2.1.7 to compare passwd permissions semantically")
+        "Expected 2.2.2 to compare passwd permissions semantically")
     assert(ssh_pub_rule.assertion.all_of[2].expected.all_of[1].compare == "mode_is_no_more_permissive",
-        "Expected 2.1.13 to compare SSH public key permissions semantically")
+        "Expected 2.5.1 to compare SSH public key permissions semantically")
 end
 
 function test_dengbao_profile_declares_manual_review_required_items()
@@ -1921,10 +1921,10 @@ end
 
 function test_dengbao_profile_reports_unavailable_listening_port_probe_explicitly()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
-    local rule = find_rule_by_id(profile, "4.1.8")
+    local rule = find_rule_by_id(profile, "4.2.1")
     local availability_assertion
 
-    assert(rule ~= nil, "Expected dengbao profile to define high-risk listening port rule 4.1.8")
+    assert(rule ~= nil, "Expected dengbao profile to define high-risk listening port rule 4.2.1")
 
     for _, child in ipairs(rule.assertion.all_of or {}) do
         if child.key == "available" then
@@ -1934,11 +1934,11 @@ function test_dengbao_profile_reports_unavailable_listening_port_probe_explicitl
     end
 
     assert(availability_assertion ~= nil,
-        "Expected 4.1.8 to check whether listening-port evidence is available")
+        "Expected 4.2.1 to check whether listening-port evidence is available")
     assert(availability_assertion.compare == "is_true",
-        "Expected 4.1.8 to require available listening-port evidence before checking count")
+        "Expected 4.2.1 to require available listening-port evidence before checking count")
     assert(availability_assertion.message:find("ss", 1, true),
-        "Expected 4.1.8 unavailable-evidence message to mention ss")
+        "Expected 4.2.1 unavailable-evidence message to mention ss")
 end
 
 function test_dengbao_profile_moves_unowned_path_review_to_manual_items()
@@ -1952,28 +1952,28 @@ end
 
 function test_dengbao_profile_uses_structured_audit_rule_probes()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
-    local delete_rule = find_rule_by_id(profile, "3.1.6")
-    local sudoers_rule = find_rule_by_id(profile, "3.1.7")
-    local identity_rule = find_rule_by_id(profile, "3.1.8")
+    local delete_rule = find_rule_by_id(profile, "3.3.1")
+    local sudoers_rule = find_rule_by_id(profile, "3.3.2")
+    local identity_rule = find_rule_by_id(profile, "3.3.3")
 
     assert(find_probe(delete_rule, "audit_arches").func == "system.get_supported_audit_arches",
-        "Expected 3.1.6 to detect host-supported audit arches before validating syscall coverage")
+        "Expected 3.3.1 to detect host-supported audit arches before validating syscall coverage")
     assert(find_probe(delete_rule, "file_delete_audit_rule").func == "audit.find_syscall_rule",
-        "Expected 3.1.6 to use structured syscall-rule parsing")
+        "Expected 3.3.1 to use structured syscall-rule parsing")
     assert(find_probe(delete_rule, "file_delete_audit_rule").params.required_arches == "%{probe.audit_arches.arches}",
-        "Expected 3.1.6 to require syscall coverage for each supported host audit arch")
+        "Expected 3.3.1 to require syscall coverage for each supported host audit arch")
     assert(find_probe(delete_rule, "file_delete_audit_rule").params.syscalls[5] == "renameat2",
-        "Expected 3.1.6 to include renameat2 in file deletion audit coverage on ALinux3")
+        "Expected 3.3.1 to include renameat2 in file deletion audit coverage on ALinux3")
     assert(find_probe(sudoers_rule, "sudoers_audit_paths").func == "sudo.collect_audit_paths",
-        "Expected 3.1.7 to resolve active sudoers paths structurally")
+        "Expected 3.3.2 to resolve active sudoers paths structurally")
     assert(find_probe(sudoers_rule, "sudoers_watch_rules").func == "meta.map",
-        "Expected 3.1.7 to map audit watch checks across active sudoers paths")
+        "Expected 3.3.2 to map audit watch checks across active sudoers paths")
     assert(find_probe(sudoers_rule, "sudoers_watch_rules").params.params_template.require_key == false,
-        "Expected 3.1.7 to avoid requiring audit keys for sudoers watch coverage")
+        "Expected 3.3.2 to avoid requiring audit keys for sudoers watch coverage")
     assert(find_probe(identity_rule, "passwd_watch_rule").func == "audit.find_watch_rule",
-        "Expected 3.1.8 to use structured audit watch parsing")
+        "Expected 3.3.3 to use structured audit watch parsing")
     assert(find_probe(identity_rule, "passwd_watch_rule").params.require_key == false,
-        "Expected 3.1.8 to avoid requiring audit keys for passwd watch coverage")
+        "Expected 3.3.3 to avoid requiring audit keys for passwd watch coverage")
 end
 
 function test_dengbao_profile_uses_structured_pam_shell_and_sudo_probes()
@@ -1984,34 +1984,34 @@ function test_dengbao_profile_uses_structured_pam_shell_and_sudo_probes()
         "Expected 1.1.6 to use structured PAM pwquality parsing")
     assert(find_probe(pwquality_rule, "pwquality_check").params.min_minclass == 3,
         "Expected 1.1.6 to require a minimum pwquality class-complexity baseline")
-    assert(find_probe(find_rule_by_id(profile, "1.1.7"), "pwquality_check").func == "pam.inspect_pwquality",
-        "Expected 1.1.7 to use structured PAM pwquality parsing")
+    assert(find_probe(find_rule_by_id(profile, "1.1.3"), "pwquality_check").func == "pam.inspect_pwquality",
+        "Expected 1.1.3 to use structured PAM pwquality parsing")
     assert(find_probe(find_rule_by_id(profile, "1.1.8"), "password_history_check").func == "pam.check_password_history",
         "Expected 1.1.8 to use structured PAM password-history parsing")
     assert(type(find_probe(find_rule_by_id(profile, "1.1.8"), "password_history_check").params.config_paths) == "table",
         "Expected 1.1.8 to evaluate layered pwhistory configuration paths")
-    assert(find_probe(find_rule_by_id(profile, "1.1.9"), "faillock_check").func == "pam.inspect_faillock",
-        "Expected 1.1.9 to use structured PAM faillock parsing")
+    assert(find_probe(find_rule_by_id(profile, "1.3.1"), "faillock_check").func == "pam.inspect_faillock",
+        "Expected 1.3.1 to use structured PAM faillock parsing")
     assert(find_probe(find_rule_by_id(profile, "1.1.4"), "shadow_entries").func == "users.get_login_shadow_entries",
         "Expected 1.1.4 to scope password expiration checks to login-capable accounts")
     assert(find_probe(find_rule_by_id(profile, "1.1.5"), "shadow_entries").func == "users.get_login_shadow_entries",
         "Expected 1.1.5 to scope password aging checks to login-capable accounts")
-    assert(find_probe(find_rule_by_id(profile, "1.2.1"), "session_timeout_check").func == "shell.find_tmout_assignments",
-        "Expected 1.2.1 to use structured TMOUT parsing")
+    assert(find_probe(find_rule_by_id(profile, "1.3.6"), "session_timeout_check").func == "shell.find_tmout_assignments",
+        "Expected 1.3.6 to use structured TMOUT parsing")
     assert(find_probe(find_rule_by_id(profile, "2.1.2"), "login_defs_umask").func == "shell.check_umask_value",
         "Expected 2.1.2 to validate UMASK semantically")
     assert(find_probe(find_rule_by_id(profile, "2.1.3"), "shell_umask_check").func == "shell.find_umask_commands",
         "Expected 2.1.3 to use structured shell umask parsing")
-    assert(find_probe(find_rule_by_id(profile, "2.1.6"), "sudoers_permission_paths").func == "sudo.collect_permission_paths",
-        "Expected 2.1.6 to resolve active sudoers permission paths structurally")
+    assert(find_probe(find_rule_by_id(profile, "2.2.1"), "sudoers_permission_paths").func == "sudo.collect_permission_paths",
+        "Expected 2.2.1 to resolve active sudoers permission paths structurally")
     assert(find_probe(find_rule_by_id(profile, "2.1.1"), "local_user_home_directories").func == "users.get_existing_home_directories",
         "Expected 2.1.1 to scope home permission checks to existing home directories")
-    assert(find_probe(find_rule_by_id(profile, "2.1.12"), "su_pam_wheel_check").func == "pam.inspect_wheel",
-        "Expected 2.1.12 to use structured PAM wheel parsing")
-    assert(find_probe(find_rule_by_id(profile, "2.1.4"), "sudo_use_pty_check").func == "sudo.find_use_pty",
-        "Expected 2.1.4 to use structured sudo Defaults parsing")
-    assert(find_probe(find_rule_by_id(profile, "2.1.5"), "sudo_nopasswd_check").func == "sudo.find_nopasswd_entries",
-        "Expected 2.1.5 to use structured sudo rule parsing")
+    assert(find_probe(find_rule_by_id(profile, "2.3.3"), "su_pam_wheel_check").func == "pam.inspect_wheel",
+        "Expected 2.3.3 to use structured PAM wheel parsing")
+    assert(find_probe(find_rule_by_id(profile, "2.3.1"), "sudo_use_pty_check").func == "sudo.find_use_pty",
+        "Expected 2.3.1 to use structured sudo Defaults parsing")
+    assert(find_probe(find_rule_by_id(profile, "2.3.2"), "sudo_nopasswd_check").func == "sudo.find_nopasswd_entries",
+        "Expected 2.3.2 to use structured sudo rule parsing")
 end
 
 function test_dengbao_profile_requires_pwquality_character_class_complexity()
@@ -2027,24 +2027,24 @@ end
 
 function test_dengbao_profile_scopes_root_uid_rule_to_uid_zero_only()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
-    local rule = find_rule_by_id(profile, "1.1.3")
+    local rule = find_rule_by_id(profile, "1.1.7")
     local probe = find_probe(rule, "duplicate_uid_check")
 
-    assert(rule ~= nil, "Expected dengbao profile to define root UID 0 rule 1.1.3")
-    assert(probe ~= nil, "Expected 1.1.3 to define a duplicate UID probe")
+    assert(rule ~= nil, "Expected dengbao profile to define root UID 0 rule 1.1.7")
+    assert(probe ~= nil, "Expected 1.1.7 to define a duplicate UID probe")
     assert(tostring(probe.params.match_key) == "0",
-        "Expected 1.1.3 to scope duplicate-UID detection to UID 0 only")
+        "Expected 1.1.7 to scope duplicate-UID detection to UID 0 only")
 end
 
 function test_dengbao_profile_allows_removed_or_locked_shutdown_halt_accounts()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
-    local rule = find_rule_by_id(profile, "2.2.1")
+    local rule = find_rule_by_id(profile, "2.4.2")
 
     assert(rule ~= nil, "Expected dengbao profile to define shutdown and halt account handling")
     assert(find_probe(rule, "shutdown_account_present") ~= nil,
-        "Expected 2.2.1 to distinguish between removed and locked shutdown accounts")
+        "Expected 2.4.2 to distinguish between removed and locked shutdown accounts")
     assert(find_probe(rule, "halt_account_present") ~= nil,
-        "Expected 2.2.1 to distinguish between removed and locked halt accounts")
+        "Expected 2.4.2 to distinguish between removed and locked halt accounts")
 end
 
 function test_dengbao_profile_covers_core_identity_access_audit_and_intrusion_controls()
@@ -2080,24 +2080,24 @@ end
 function test_dengbao_profile_declares_stable_low_risk_reinforce_steps()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
     local rule_116 = find_rule_by_id(profile, "1.1.6")
-    local rule_117 = find_rule_by_id(profile, "1.1.7")
+    local rule_117 = find_rule_by_id(profile, "1.1.3")
     local rule_118 = find_rule_by_id(profile, "1.1.8")
-    local rule_119 = find_rule_by_id(profile, "1.1.9")
+    local rule_119 = find_rule_by_id(profile, "1.3.1")
     local rule_212 = find_rule_by_id(profile, "2.1.2")
-    local rule_214 = find_rule_by_id(profile, "2.1.4")
-    local rule_217 = find_rule_by_id(profile, "2.1.7")
-    local rule_218 = find_rule_by_id(profile, "2.1.8")
-    local rule_219 = find_rule_by_id(profile, "2.1.9")
-    local rule_2110 = find_rule_by_id(profile, "2.1.10")
-    local rule_2112 = find_rule_by_id(profile, "2.1.12")
+    local rule_214 = find_rule_by_id(profile, "2.3.1")
+    local rule_217 = find_rule_by_id(profile, "2.2.2")
+    local rule_218 = find_rule_by_id(profile, "2.2.3")
+    local rule_219 = find_rule_by_id(profile, "2.2.4")
+    local rule_2110 = find_rule_by_id(profile, "2.2.5")
+    local rule_2112 = find_rule_by_id(profile, "2.3.3")
     local rule_311 = find_rule_by_id(profile, "3.1.1")
     local rule_312 = find_rule_by_id(profile, "3.1.2")
     local rule_313 = find_rule_by_id(profile, "3.1.3")
     local rule_314 = find_rule_by_id(profile, "3.1.4")
     local rule_315 = find_rule_by_id(profile, "3.1.5")
-    local rule_316 = find_rule_by_id(profile, "3.1.6")
-    local rule_317 = find_rule_by_id(profile, "3.1.7")
-    local rule_318 = find_rule_by_id(profile, "3.1.8")
+    local rule_316 = find_rule_by_id(profile, "3.3.1")
+    local rule_317 = find_rule_by_id(profile, "3.3.2")
+    local rule_318 = find_rule_by_id(profile, "3.3.3")
     local rule_413 = find_rule_by_id(profile, "4.1.3")
 
     assert(find_reinforce_action(rule_116, "file.set_key_value").params.key == "minclass",
@@ -2105,17 +2105,17 @@ function test_dengbao_profile_declares_stable_low_risk_reinforce_steps()
     assert(find_reinforce_action(rule_116, "pam.ensure_entry") ~= nil,
         "Expected 1.1.6 to ensure pam_pwquality is present in PAM stacks")
     assert(find_reinforce_action(rule_117, "file.set_key_value").params.key == "minlen",
-        "Expected 1.1.7 to reinforce pwquality minlen in configuration")
+        "Expected 1.1.3 to reinforce pwquality minlen in configuration")
     assert(find_reinforce_action(rule_117, "pam.ensure_entry") ~= nil,
-        "Expected 1.1.7 to ensure pam_pwquality is present in PAM stacks")
+        "Expected 1.1.3 to ensure pam_pwquality is present in PAM stacks")
     assert(find_reinforce_action(rule_118, "file.set_key_value").params.path == "/etc/security/pwhistory.conf",
         "Expected 1.1.8 to reinforce pwhistory defaults in the dedicated config file")
     assert(find_reinforce_action(rule_118, "pam.ensure_entry") ~= nil,
         "Expected 1.1.8 to ensure pam_pwhistory is present in PAM stacks")
     assert(find_reinforce_action(rule_119, "file.set_key_value").params.path == "/etc/security/faillock.conf",
-        "Expected 1.1.9 to reinforce faillock defaults in the dedicated config file")
+        "Expected 1.3.1 to reinforce faillock defaults in the dedicated config file")
     assert(find_reinforce_action(rule_119, "pam.ensure_entry") ~= nil,
-        "Expected 1.1.9 to ensure pam_faillock is present in PAM stacks")
+        "Expected 1.3.1 to ensure pam_faillock is present in PAM stacks")
 
     local umask_step = find_reinforce_action(rule_212, "file.set_key_value")
     assert(umask_step ~= nil, "Expected 2.1.2 to declare a login.defs reinforce step")
@@ -2124,18 +2124,18 @@ function test_dengbao_profile_declares_stable_low_risk_reinforce_steps()
     assert(umask_step.params.value == "027", "Expected 2.1.2 to reinforce UMASK to 027")
     assert(umask_step.params.separator == " ", "Expected 2.1.2 to preserve login.defs whitespace-separated syntax")
     assert(find_reinforce_action(rule_214, "sudo.set_use_pty") ~= nil,
-        "Expected 2.1.4 to declare the sudo use_pty enforcer")
+        "Expected 2.3.1 to declare the sudo use_pty enforcer")
 
     assert(find_reinforce_action(rule_217, "permissions.set_attributes").params.mode == 420,
-        "Expected 2.1.7 to reinforce /etc/passwd to mode 0644")
+        "Expected 2.2.2 to reinforce /etc/passwd to mode 0644")
     assert(find_reinforce_action(rule_218, "permissions.set_attributes").params.mode == 0,
-        "Expected 2.1.8 to reinforce /etc/shadow to mode 0000")
+        "Expected 2.2.3 to reinforce /etc/shadow to mode 0000")
     assert(find_reinforce_action(rule_219, "permissions.set_attributes").params.mode == 420,
-        "Expected 2.1.9 to reinforce /etc/group to mode 0644")
+        "Expected 2.2.4 to reinforce /etc/group to mode 0644")
     assert(find_reinforce_action(rule_2110, "permissions.set_attributes").params.mode == 0,
-        "Expected 2.1.10 to reinforce /etc/gshadow to mode 0000")
+        "Expected 2.2.5 to reinforce /etc/gshadow to mode 0000")
     assert(find_reinforce_action(rule_2112, "pam.ensure_entry").params.module == "pam_wheel.so",
-        "Expected 2.1.12 to reinforce su restrictions with pam_wheel")
+        "Expected 2.3.3 to reinforce su restrictions with pam_wheel")
 
     assert(find_reinforce_action(rule_311, "packages.install").params.name == "audit",
         "Expected 3.1.1 to install the audit package")
@@ -2155,20 +2155,20 @@ function test_dengbao_profile_declares_stable_low_risk_reinforce_steps()
     assert(space_left_step ~= nil and space_left_step.params.value == "syslog",
         "Expected 3.1.5 to choose a low-disruption syslog action for space_left_action")
     assert(find_reinforce_action(rule_316, "audit.ensure_syscall_rule") ~= nil,
-        "Expected 3.1.6 to declare structured syscall audit reinforcement")
+        "Expected 3.3.1 to declare structured syscall audit reinforcement")
     assert(type(rule_317.reinforce) == "table" and #rule_317.reinforce == 1,
-        "Expected 3.1.7 to use one dynamic sudo audit-watch reinforce step")
+        "Expected 3.3.2 to use one dynamic sudo audit-watch reinforce step")
     assert(find_reinforce_action(rule_317, "sudo.ensure_audit_watches").params.root_path == "/etc/sudoers",
-        "Expected 3.1.7 to derive audit watches from the active sudoers root path")
+        "Expected 3.3.2 to derive audit watches from the active sudoers root path")
     assert(find_reinforce_action(rule_318, "audit.ensure_watch_rule") ~= nil,
-        "Expected 3.1.8 to declare audit watch reinforcement for identity files")
+        "Expected 3.3.3 to declare audit watch reinforcement for identity files")
     assert(find_reinforce_action(rule_413, "packages.remove").params.name == "kexec-tools",
         "Expected 4.1.3 to remove the kexec-tools package")
 end
 
 function test_dengbao_profile_uses_pattern_based_package_removal_for_globbed_rules()
     local profile = lyaml.load(read_file("profiles/seharden/dengbao_3.yml"))
-    local rule_127 = find_rule_by_id(profile, "1.2.7")
+    local rule_127 = find_rule_by_id(profile, "1.2.2")
     local rule_411 = find_rule_by_id(profile, "4.1.1")
     local rule_412 = find_rule_by_id(profile, "4.1.2")
     local rule_414 = find_rule_by_id(profile, "4.1.4")
@@ -2177,7 +2177,7 @@ function test_dengbao_profile_uses_pattern_based_package_removal_for_globbed_rul
     local rule_417 = find_rule_by_id(profile, "4.1.7")
 
     assert(find_reinforce_action(rule_127, "packages.remove_matching").params.pattern == "telnet*",
-        "Expected 1.2.7 to remove matching telnet packages")
+        "Expected 1.2.2 to remove matching telnet packages")
     assert(find_reinforce_action(rule_411, "packages.remove_matching").params.pattern == "avahi-daemon*",
         "Expected 4.1.1 to remove matching Avahi packages")
     assert(find_reinforce_action(rule_412, "packages.remove_matching").params.pattern == "bluez*",
