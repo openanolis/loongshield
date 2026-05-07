@@ -14,7 +14,20 @@ local function is_restrictive_wheel_control(control)
     return false
 end
 
-local function get_wheel_entry_reason(entry)
+local function group_membership_reason(group_name, groups)
+    if group_name == nil or group_name == "" then
+        return "group_missing"
+    end
+    if groups == nil or groups[group_name] == nil then
+        return "group_not_found"
+    end
+    if #groups[group_name] > 0 then
+        return "group_not_empty"
+    end
+    return nil
+end
+
+local function get_wheel_entry_reason(entry, opts)
     if common.has_arg(entry.args, "deny") then
         return "deny_enabled"
     end
@@ -31,6 +44,10 @@ local function get_wheel_entry_reason(entry)
         return "control_not_restrictive"
     end
 
+    if opts and opts.require_empty_group then
+        return group_membership_reason(common.parse_option(entry.args, "group"), opts.groups)
+    end
+
     return nil
 end
 
@@ -41,6 +58,21 @@ function M.inspect(params)
     end
 
     local details = {}
+    local group_members
+    if params.require_empty_group then
+        group_members = common.load_group_members(params.group_path or "/etc/group")
+        if not group_members then
+            return {
+                count = 1,
+                details = {
+                    {
+                        path = params.group_path or "/etc/group",
+                        reason = "group_file_unreadable",
+                    },
+                },
+            }
+        end
+    end
 
     for _, path in ipairs(pam_paths) do
         local entries = common.load_pam_entries(path)
@@ -55,10 +87,15 @@ function M.inspect(params)
             for _, entry in ipairs(entries) do
                 if entry.kind == "auth" and entry.module == "pam_wheel.so" then
                     found_module = true
-                    local reason = get_wheel_entry_reason(entry)
+                    local reason = get_wheel_entry_reason(entry, {
+                        require_empty_group = params.require_empty_group,
+                        groups = group_members,
+                    })
                     if reason == nil then
                         compliant = true
-                    elseif reason == "deny_enabled" or reason == "trust_enabled" then
+                    elseif reason == "deny_enabled"
+                        or reason == "trust_enabled"
+                        or reason == "group_not_empty" then
                         dangerous_reason = reason
                         break
                     elseif weak_reason == nil then

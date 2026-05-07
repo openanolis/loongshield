@@ -60,6 +60,106 @@ local function get_pwquality_policy(entry, default_config, params)
     }
 end
 
+local function as_number(value)
+    if value == true or value == nil then
+        return nil
+    end
+    return tonumber(value)
+end
+
+local function value_is_disallowed(value, disallowed_values)
+    if type(disallowed_values) ~= "table" then
+        return false
+    end
+
+    local text_value = tostring(value)
+    local numeric_value = tonumber(value)
+    for _, disallowed in ipairs(disallowed_values) do
+        if text_value == tostring(disallowed) then
+            return true
+        end
+        local numeric_disallowed = tonumber(disallowed)
+        if numeric_value ~= nil and numeric_disallowed ~= nil and numeric_value == numeric_disallowed then
+            return true
+        end
+    end
+    return false
+end
+
+local function flag_is_enabled(value)
+    if value == true then
+        return true
+    end
+
+    local normalized = tostring(value or ""):lower()
+    return normalized == "1" or normalized == "yes" or normalized == "true"
+end
+
+local function setting_is_compliant(value, params)
+    if params.require_flag and not flag_is_enabled(value) then
+        return false, "flag_missing_or_disabled"
+    end
+
+    if params.require_present and value == nil then
+        return false, "setting_missing"
+    end
+
+    if value == nil and params.default_value ~= nil then
+        value = params.default_value
+    end
+
+    if value_is_disallowed(value, params.disallowed_values) then
+        return false, "disallowed_value"
+    end
+
+    if params.min_value ~= nil or params.max_value ~= nil then
+        local numeric = as_number(value)
+        if numeric == nil then
+            return false, "value_invalid"
+        end
+        if params.min_value ~= nil and numeric < tonumber(params.min_value) then
+            return false, "value_too_small"
+        end
+        if params.max_value ~= nil and numeric > tonumber(params.max_value) then
+            return false, "value_too_large"
+        end
+    end
+
+    return true
+end
+
+local function inspect_module_arguments(params, details)
+    local pam_paths = params.pam_paths or {}
+    local option = params.option
+    local count = 0
+
+    for _, path in ipairs(pam_paths) do
+        local entries = common.load_pam_entries(path)
+        if not entries then
+            count = count + 1
+            common.add_detail(details, path, "pam_file_unreadable")
+        else
+            for _, entry in ipairs(entries) do
+                if entry.kind == "password" and entry.module == "pam_pwquality.so" then
+                    local value = common.parse_option(entry.args, option)
+                    if value ~= nil then
+                        local ok, reason = setting_is_compliant(value, params)
+                        if not ok then
+                            count = count + 1
+                            common.add_detail(details, path, "module_argument_" .. reason, {
+                                option = option,
+                                value = value,
+                            })
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return count
+end
+
 function M.inspect(params)
     local pam_paths, path_err = common.resolve_pam_paths(params, "pam.inspect_pwquality")
     if not pam_paths then
@@ -155,6 +255,65 @@ function M.inspect(params)
         weak_complexity_count = weak_complexity_count,
         weak_minlen_count = weak_minlen_count,
         details = details
+    }
+end
+
+function M.inspect_setting(params)
+    if not params or not params.option then
+        return nil, "Probe 'pam.inspect_pwquality_setting' requires an 'option' parameter."
+    end
+
+    local option = params.option
+    local config_paths = params.config_paths or {
+        "/etc/security/pwquality.conf.d/*.conf",
+        "/etc/security/pwquality.conf",
+    }
+    local values, _, _, err = common.load_ordered_settings(config_paths)
+    if err then
+        return {
+            available = false,
+            compliant = false,
+            count = 1,
+            option = option,
+            config_compliant = false,
+            module_argument_violation_count = 0,
+            details = {
+                {
+                    path = table.concat(config_paths, ","),
+                    reason = "config_unreadable",
+                    error = err,
+                }
+            },
+        }
+    end
+
+    local config_value = values and values[option]
+    if config_value == nil and params.default_value ~= nil then
+        config_value = params.default_value
+    end
+
+    local config_ok, config_reason = setting_is_compliant(config_value, params)
+    local details = {}
+    if not config_ok then
+        common.add_detail(details, params.config_paths and table.concat(params.config_paths, ",") or option,
+            "config_" .. config_reason, {
+                option = option,
+                value = config_value,
+            })
+    end
+
+    local module_argument_violation_count = inspect_module_arguments(params, details)
+    local compliant = config_ok and module_argument_violation_count == 0
+
+    return {
+        available = true,
+        compliant = compliant,
+        count = compliant and 0 or #details,
+        option = option,
+        config_value = config_value,
+        config_compliant = config_ok,
+        module_argument_violation_count = module_argument_violation_count,
+        details = details,
     }
 end
 

@@ -1,6 +1,7 @@
 local key_value_file = require('seharden.shared.key_value_file')
 local pam_parser = require('seharden.parsers.pam')
 local path_list = require('seharden.shared.path_list')
+local text = require('seharden.shared.text')
 
 local M = {}
 
@@ -100,6 +101,49 @@ function M.load_optional_key_value_files(path_specs)
     return values, found
 end
 
+function M.load_ordered_settings(path_specs)
+    local paths, err = expand_ordered_paths(path_specs)
+    if not paths then
+        return nil, nil, false, err
+    end
+
+    local values = {}
+    local entries = {}
+    local found = false
+
+    for _, path in ipairs(paths) do
+        local file = dependencies.io_open(path, "r")
+        if not file then
+            return nil, nil, false, string.format("Could not open config file '%s' for reading.", path)
+        end
+        found = true
+
+        for line in file:lines() do
+            local active = key_value_file.strip_inline_comment(line)
+            local trimmed = text.trim(active)
+            if trimmed ~= "" and not trimmed:match("^#") then
+                local key, value = trimmed:match("^([^=%s]+)%s*=%s*(.-)%s*$")
+                if not key then
+                    key = trimmed:match("^(%S+)$")
+                    value = key and true or nil
+                end
+                if key then
+                    local entry = {
+                        path = path,
+                        key = key,
+                        value = value,
+                    }
+                    entries[#entries + 1] = entry
+                    values[key] = value
+                end
+            end
+        end
+        file:close()
+    end
+
+    return values, entries, found
+end
+
 function M.parse_option(args, option_name)
     for _, arg in ipairs(args) do
         local value = arg:match("^" .. option_name .. "=(.+)$")
@@ -158,6 +202,29 @@ function M.load_pam_entries(path)
     end
     file:close()
     return entries
+end
+
+function M.load_group_members(path)
+    local file = dependencies.io_open(path or "/etc/group", "r")
+    if not file then
+        return nil
+    end
+
+    local groups = {}
+    for line in file:lines() do
+        local name, members = line:match("^([^:]+):[^:]*:[^:]*:(.*)$")
+        if name then
+            local list = {}
+            for member in tostring(members or ""):gmatch("[^,]+") do
+                if member ~= "" then
+                    list[#list + 1] = member
+                end
+            end
+            groups[name] = list
+        end
+    end
+    file:close()
+    return groups
 end
 
 return M
