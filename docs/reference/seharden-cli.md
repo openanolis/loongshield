@@ -2,7 +2,7 @@
 
 `seharden` audits a host against a YAML profile and can optionally apply reinforce actions for failed rules.
 
-The default bundled profile is `cis_alinux_3`, which is aimed at Alibaba Cloud Linux 3 and similar OpenAnolis-style hosts. On other RPM-based systems, pick an explicit profile with `--config`.
+The default bundled profile is `cis_alinux_3`, which targets the CIS Alibaba Cloud Linux 3 Benchmark v2.0.0 and similar OpenAnolis-style hosts. On other RPM-based systems, pick an explicit profile with `--config`.
 
 ## Syntax
 

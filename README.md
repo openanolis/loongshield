@@ -8,6 +8,7 @@ profile-driven auditing, optional hardening actions, and RPM package file verifi
 ```sh
 loongshield seharden --scan --config dengbao_3 --verbose
 loongshield rpm --verify nginx --config https://example.com/sbom.json
+loongshield lua-lsm status
 ```
 
 ## Quick Start
@@ -47,12 +48,14 @@ make rpm-in-docker
 - Development, testing, and packaging workflows assume an RPM-based Linux environment.
 - `loongshield seharden` defaults to the bundled `cis_alinux_3` profile.
 - `loongshield rpm` defaults to the OpenAnolis SBOM service.
+- `loongshield lua-lsm` requires a kernel with Lua-LSM enabled and never auto-loads policies.
 - On other RPM-based distributions, expect to pass an explicit `--config` or `--sbom-url`.
 
 ## Project Scope
 
 - Currently focused on host hardening and verification on RPM-based Linux with systemd.
 - The optional kernel module under `src/kmod/` is not required for normal userspace workflows.
+- Lua-LSM support manages a kernel-provided built-in LSM through securityfs;
 - The project is released under the [MIT License](LICENSE).
 
 ## Versioning And Compatibility
@@ -70,6 +73,7 @@ make rpm-in-docker
 - SEHarden usage: [docs/reference/seharden-cli.md](docs/reference/seharden-cli.md)
 - SEHarden profile format: [docs/reference/seharden-profile-format.md](docs/reference/seharden-profile-format.md)
 - RPM verification usage: [docs/reference/rpm-cli.md](docs/reference/rpm-cli.md)
+- Lua-LSM usage: [docs/reference/lua-lsm-cli.md](docs/reference/lua-lsm-cli.md)
 - Build and test: [docs/developer/build-and-test.md](docs/developer/build-and-test.md)
 - Docker workflow: [docs/developer/docker-development.md](docs/developer/docker-development.md)
 - Submodule source policy: [docs/developer/submodule-sources.md](docs/developer/submodule-sources.md)

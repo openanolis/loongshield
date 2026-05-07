@@ -7,6 +7,13 @@ Profiles are YAML documents consumed by `loongshield seharden`. They define leve
 - `id`: stable profile identifier, for example `agentos_baseline`.
 - `title` or `policy`: human-readable name.
 - `version`: profile version string.
+- `source`: optional upstream benchmark or policy source URL.
+- `benchmark_version`: optional upstream benchmark version when the profile tracks an external benchmark.
+- `benchmark_workbench_source`: optional upstream WorkBench artifact URL.
+- `benchmark_pdf_source`: optional upstream benchmark PDF URL.
+- `benchmark_build_kit_source`: optional upstream benchmark build-kit URL.
+- `benchmark_update_source`: optional upstream release or update note URL.
+- `coverage`: optional short coverage label, for example `automated_subset`.
 - `levels`: ordered level list. Levels may use `inherits_from`.
 - `default_level`: optional level ID used when the caller omits `--level`.
 - `manual_review_required`: optional list of operator review items that stay outside automated host checks.

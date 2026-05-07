@@ -154,6 +154,8 @@ The optional `sysmon` kernel module sits at the edge for cases where kernel-leve
 
 That is a good design choice for a security tool that still needs to be buildable, deployable, and operable on ordinary hosts. Kernel code is higher cost and higher risk, so Loongshield keeps it optional instead of making it a hard dependency for everything.
 
+Lua-LSM follows the same boundary from the Loongshield side. The kernel owns the built-in LSM and `/sys/kernel/security/lua` ABI, while Loongshield only manages readiness checks, policy validation, and explicit securityfs load/unload operations.
+
 ## Why Testing Is Layered This Way
 
 The test layout matches the architecture:

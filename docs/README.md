@@ -8,6 +8,7 @@ This tree is split by audience, not by implementation detail. Public caller docs
 - SEHarden operators and profile authors: [reference/seharden-cli.md](./reference/seharden-cli.md)
 - AgentOS baseline automation: [skill/agent-sec-seharden.md](./skill/agent-sec-seharden.md)
 - RPM verification users: [reference/rpm-cli.md](./reference/rpm-cli.md)
+- Lua-LSM operators: [reference/lua-lsm-cli.md](./reference/lua-lsm-cli.md)
 - Contributors: [developer/build-and-test.md](./developer/build-and-test.md)
 - Maintainer roadmap: [developer/roadmap.md](./developer/roadmap.md)
 - Community and process: [../CONTRIBUTING.md](../CONTRIBUTING.md), [../SECURITY.md](../SECURITY.md), [../SUPPORT.md](../SUPPORT.md), [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md), [../CHANGELOG.md](../CHANGELOG.md), [../RELEASING.md](../RELEASING.md)
@@ -23,12 +24,14 @@ docs/
     seharden-cli.md
     seharden-profile-format.md
     rpm-cli.md
+    lua-lsm-cli.md
   skill/
     agent-sec-seharden.md
   design/
     runtime-architecture.md
     boot-and-runtime-flow.md
     clean-architecture.md
+    lua-lsm-native-support.md
     agentos-seharden-design.md
     seharden-enforcer-guidelines.md
     rpm-verification-design.md

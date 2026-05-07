@@ -42,13 +42,13 @@ You can also install packages directly with `dnf` or `yum`:
 
 ```sh
 dnf install -y \
-  git cmake gcc gcc-c++ make \
-  perl perl-IPC-Cmd perl-FindBin which \
-  audit-libs-devel dbus-devel elfutils-libelf-devel \
-  libarchive-devel libattr-devel \
-  libcurl-devel libmount-devel libpsl-devel libyaml-devel \
-  libcap-devel libzstd-devel openssl-devel rpm-devel \
-  systemd-devel xz-devel
+  audit-libs-devel cmake dbus-devel elfutils-libelf-devel \
+  gcc gcc-c++ git libarchive-devel libattr-devel \
+  libcap-devel libcurl-devel libmount-devel libpsl-devel \
+  libyaml-devel libzstd-devel make openssl-devel \
+  perl-ExtUtils-MakeMaker perl-FindBin perl-IPC-Cmd \
+  rpm-build rpm-devel rpmdevtools systemd systemd-devel \
+  which xz-devel
 ```
 
 Then initialize submodules and build:
@@ -68,17 +68,19 @@ submodules that still intentionally point at public forks.
 make
 make test
 make test-quick
+make test-e2e
 make rpm
 make rpm-in-docker
 ```
 
-`make test` builds first and then runs the full Lua suite. `make test-quick` reuses the current build output and is the fastest way to rerun the full test suite after Lua-only or documentation changes.
+`make test` builds first and then runs the full Lua suite. `make test-quick` reuses the current build output and reruns only the source-loaded unit and integration tests; use `make test` or `make test-e2e` after changes that affect the embedded `loongshield` binary.
+`make test-e2e` builds first and then runs only the process-level CLI suite under `tests/e2e/`. Real bundled-profile scans require root privileges and are skipped by the test process when it is not running as root.
 
 ## Test Layout
 
 - `tests/unit/`: fast isolated module tests
 - `tests/integration/`: filesystem and system-behavior tests
-- `tests/e2e/`: reserved for full-flow suites; some revisions may not yet carry checked-in e2e cases
+- `tests/e2e/`: process-level full-flow suites that drive the built `loongshield` CLI
 - `tests/run.lua`: custom test discovery and runner
 
 ## Documentation Layout
