@@ -3,7 +3,7 @@
 %global debug_package %{nil}
 
 Name: loongshield
-Version: %{!?pkg_version:1.2.0}%{?pkg_version}
+Version: %{!?pkg_version:1.2.1}%{?pkg_version}
 Release: %{anolis_release}%{?dist}
 Summary: security shield framework for alinux/anolis
 Group: Development/Tools
@@ -165,6 +165,14 @@ install -m 0644 deps/luasocket/luasocket/LICENSE %{buildroot}%{_licensedir}/%{na
 %license %{_licensedir}/%{name}/third-party/*
 
 %changelog
+* Wed Jun 10 2026 Zongyao Chen - 1.2.1-1
+- Add Lua-LSM policy management commands, example policy assets, and documentation.
+- Update the CIS Alibaba Cloud Linux 3 SEHarden profile to v2.0.0 with expanded structured probe coverage.
+- Refactor SEHarden shared helpers for rule execution, assertions, templates, account files, PAM, paths, package inventory, systemctl, and key-value parsing.
+- Preserve SEHarden process exit codes and set bundled profile default levels.
+- Fix rpmdb nil iterator handling and harden CI/build/release validation paths.
+- Expand unit, integration, and e2e coverage, including SEHarden reinforce and CLI flows.
+
 * Mon Apr 20 2026 Zongyao Chen - 1.2.0-1
 - Add an optional OpenClaw hardening level to the AgentOS baseline profile.
 - Keep OpenClaw deployment-specific checks in manual review instead of host-only automation.

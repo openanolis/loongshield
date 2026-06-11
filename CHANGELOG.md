@@ -16,6 +16,22 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - None yet.
 
+## [1.2.1] - 2026-06-10
+
+### Added
+- Lua-LSM policy management commands, bundled example policy assets, and accompanying operator/developer documentation.
+- CIS Alibaba Cloud Linux 3 v2.0.0 SEHarden profile coverage, backed by expanded structured probes for audit, PAM, SSH, sudo, services, logging, packages, and user/account checks.
+- E2E test target support and additional SEHarden reinforce and CLI regression coverage.
+
+### Changed
+- SEHarden internals now share extracted helpers for rule execution, assertion evaluation, template resolution, package inventory, account files, PAM parsing, path expansion, systemctl, and key-value parsing.
+- Test suites are organized by domain, with manual scripts separated from automated unit/integration/e2e suites.
+
+### Fixed
+- SEHarden process exit codes are preserved, bundled profile default levels are set, and the Dengbao profile tolerates missing `auditd.conf` evidence where appropriate.
+- RPM verification handles nil rpmdb package iterators safely.
+- CI and build flows avoid release-bundle sigpipe failures, scope format checks to branch changes, move generated headers to the build directory, and expose filesystem chmod/chown helpers used by remediation code.
+
 ## [1.2.0] - 2026-04-20
 
 ### Added
