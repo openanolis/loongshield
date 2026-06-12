@@ -1,8 +1,6 @@
 # Contributing to Loongshield
 
 This guide covers the expected workflow for Loongshield contributors.
-Detailed coding and review standards live in
-[docs/developer/coding-standards.md](docs/developer/coding-standards.md).
 
 ## Development Environment
 
@@ -43,25 +41,23 @@ For more detail, see [docs/developer/build-and-test.md](docs/developer/build-and
 2. Keep each PR small and focused. Do not mix feature work, refactors, and unrelated cleanup.
 3. Match existing code style and module boundaries before adding new abstractions.
 4. Add or update tests for behavior changes and bug fixes.
-5. Update docs when changing user-visible commands, machine-readable output, profile semantics,
-   packaging behavior, or release workflow.
+5. Update docs when changing user-visible commands, machine-readable output,
+   profile semantics, packaging behavior, or release workflow.
 6. Run the smallest useful validation locally, then list the exact commands in the PR.
 
-## Public Contracts
+## Contract Changes
 
-Treat these surfaces as contracts:
+Treat documented behavior as a contract, especially:
 
-- Documented CLI options, exit behavior, and examples under `docs/reference/`.
-- Machine-readable CLI output, especially JSON output. JSON must include a `schema_version`
-  when it is consumed by another tool.
+- CLI options, exit behavior, and examples under `docs/reference/`.
+- Machine-readable CLI output. JSON consumed by another tool must include a `schema_version`.
 - SEHarden profile format and rule semantics under `docs/reference/seharden-profile-format.md`.
 - RPM source, spec, version, and commit metadata behavior under `dist/` and `Makefile`.
 
-Human-readable text output is for operators. Other tools should consume explicit
-machine-readable formats instead of parsing default text output.
-
-When a contract changes, update the implementation, docs, tests, and known downstream
-consumers in the same change whenever possible.
+Human-readable text output is for operators. Other tools should consume documented
+machine-readable formats instead of parsing default text output. When a contract changes,
+update the implementation, docs, tests, and known downstream consumers in the same change
+whenever possible.
 
 ## Commit Messages
 
@@ -97,6 +93,5 @@ PR descriptions should include:
 - What changed and why.
 - The user-visible, packaging, security, or compatibility impact.
 - The validation commands that were actually run.
-- Any contract, schema, or downstream consumer impact.
 
 Use `no-issue: <reason>` in the PR body when there is no linked issue.
