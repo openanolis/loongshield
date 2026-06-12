@@ -68,6 +68,7 @@ make rpm-in-docker
 
 ## Documentation
 
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Overview: [docs/README.md](docs/README.md)
 - Top-level CLI: [docs/reference/loongshield-cli.md](docs/reference/loongshield-cli.md)
 - SEHarden usage: [docs/reference/seharden-cli.md](docs/reference/seharden-cli.md)
