@@ -2,7 +2,7 @@ local text = require('seharden.shared.text')
 
 local M = {}
 
-local DEFAULT_CURRENT_POLICY_PATH = "/etc/crypto-policies/state/CURRENT.pol"
+local DEFAULT_CURRENT_POLICY_PATH = '/etc/crypto-policies/state/CURRENT.pol'
 
 local _default_dependencies = {
     io_open = io.open,
@@ -20,15 +20,15 @@ end
 M._test_set_dependencies()
 
 local function normalize(value)
-    return text.trim(tostring(value or "")):lower()
+    return text.trim(tostring(value or '')):lower()
 end
 
 local function uppercase(value)
-    return tostring(value or ""):upper()
+    return tostring(value or ''):upper()
 end
 
 local function strip_comment(line)
-    local comment_start = tostring(line or ""):find("#", 1, true)
+    local comment_start = tostring(line or ''):find('#', 1, true)
     if comment_start then
         return line:sub(1, comment_start - 1)
     end
@@ -37,21 +37,21 @@ end
 
 local function read_logical_lines(handle)
     local lines = {}
-    local pending = ""
+    local pending = ''
 
     for raw_line in handle:lines() do
-        local line = tostring(raw_line or ""):gsub("\r$", "")
-        local trimmed_right = line:gsub("%s+$", "")
+        local line = tostring(raw_line or ''):gsub('\r$', '')
+        local trimmed_right = line:gsub('%s+$', '')
 
-        if trimmed_right:sub(-1) == "\\" then
-            pending = pending .. trimmed_right:sub(1, -2) .. " "
+        if trimmed_right:sub(-1) == '\\' then
+            pending = pending .. trimmed_right:sub(1, -2) .. ' '
         else
             lines[#lines + 1] = pending .. line
-            pending = ""
+            pending = ''
         end
     end
 
-    if pending ~= "" then
+    if pending ~= '' then
         lines[#lines + 1] = pending
     end
 
@@ -59,23 +59,23 @@ local function read_logical_lines(handle)
 end
 
 local function parse_scopes(scope_expr)
-    if not scope_expr or scope_expr == "" then
-        return { "" }
+    if not scope_expr or scope_expr == '' then
+        return { '' }
     end
 
     scope_expr = text.trim(scope_expr)
-    scope_expr = scope_expr:gsub("^%{", ""):gsub("%}$", "")
+    scope_expr = scope_expr:gsub('^%{', ''):gsub('%}$', '')
 
     local scopes = {}
-    for scope in scope_expr:gmatch("[^,]+") do
+    for scope in scope_expr:gmatch('[^,]+') do
         local normalized = normalize(scope)
-        if normalized ~= "" then
+        if normalized ~= '' then
             scopes[#scopes + 1] = normalized
         end
     end
 
     if #scopes == 0 then
-        scopes[1] = ""
+        scopes[1] = ''
     end
 
     return scopes
@@ -83,17 +83,17 @@ end
 
 local function parse_entry_line(line)
     local active = text.trim(strip_comment(line))
-    if active == "" then
+    if active == '' then
         return {}
     end
 
-    local key, value = active:match("^([^=%s]+)%s*=%s*(.-)%s*$")
+    local key, value = active:match('^([^=%s]+)%s*=%s*(.-)%s*$')
     if not key then
         return {}
     end
 
     key = normalize(key)
-    local option, scope_expr = key:match("^([^@]+)@(.+)$")
+    local option, scope_expr = key:match('^([^@]+)@(.+)$')
     option = option or key
 
     local entries = {}
@@ -108,7 +108,7 @@ local function parse_entry_line(line)
 end
 
 local function read_entries(path)
-    local file, err = _dependencies.io_open(path, "r")
+    local file, err = _dependencies.io_open(path, 'r')
     if not file then
         return nil, err
     end
@@ -125,45 +125,45 @@ end
 
 local function split_tokens(value)
     local tokens = {}
-    for token in tostring(value or ""):gmatch("[^,%s]+") do
+    for token in tostring(value or ''):gmatch('[^,%s]+') do
         tokens[#tokens + 1] = token
     end
     return tokens
 end
 
 local function parse_token(raw_token)
-    local token = text.trim(tostring(raw_token or ""))
-    if token == "" then
+    local token = text.trim(tostring(raw_token or ''))
+    if token == '' then
         return nil
     end
 
-    if token:sub(1, 1) == "-" and #token > 1 then
+    if token:sub(1, 1) == '-' and #token > 1 then
         return {
-            op = "remove",
+            op = 'remove',
             value = uppercase(token:sub(2)),
         }
     end
 
-    if token:sub(-1) == "+" and #token > 1 then
+    if token:sub(-1) == '+' and #token > 1 then
         return {
-            op = "append",
+            op = 'append',
             value = uppercase(token:sub(1, -2)),
         }
     end
 
     return {
-        op = "set",
+        op = 'set',
         value = uppercase(token),
     }
 end
 
 local function escape_lua_pattern(value)
-    return tostring(value or ""):gsub("([%^%$%(%)%%%.%[%]%+%-%?%*])", "%%%1")
+    return tostring(value or ''):gsub('([%^%$%(%)%%%.%[%]%+%-%?%*])', '%%%1')
 end
 
 local function wildcard_matches(pattern, token)
-    pattern = escape_lua_pattern(uppercase(pattern)):gsub("%%%*", ".*")
-    return uppercase(token):match("^" .. pattern .. "$") ~= nil
+    pattern = escape_lua_pattern(uppercase(pattern)):gsub('%%%*', '.*')
+    return uppercase(token):match('^' .. pattern .. '$') ~= nil
 end
 
 local function remove_matching_tokens(state, pattern)
@@ -182,7 +182,7 @@ local function remove_matching_tokens(state, pattern)
 end
 
 local function add_token(state, token)
-    if token == "" or state.token_seen[token] then
+    if token == '' or state.token_seen[token] then
         return
     end
     state.tokens[#state.tokens + 1] = token
@@ -191,11 +191,12 @@ end
 
 local function get_scope_state(policy_state, option, scope)
     policy_state[option] = policy_state[option] or {}
-    policy_state[option][scope] = policy_state[option][scope] or {
-        present = false,
-        tokens = {},
-        token_seen = {},
-    }
+    policy_state[option][scope] = policy_state[option][scope]
+        or {
+            present = false,
+            tokens = {},
+            token_seen = {},
+        }
     return policy_state[option][scope]
 end
 
@@ -214,7 +215,7 @@ local function build_effective_state(entries)
             local parsed = parse_token(raw_token)
             if parsed then
                 parsed_tokens[#parsed_tokens + 1] = parsed
-                if parsed.op == "set" then
+                if parsed.op == 'set' then
                     has_set_token = true
                 end
             end
@@ -226,7 +227,7 @@ local function build_effective_state(entries)
         end
 
         for _, parsed in ipairs(parsed_tokens) do
-            if parsed.op == "remove" then
+            if parsed.op == 'remove' then
                 remove_matching_tokens(scope_state, parsed.value)
             else
                 add_token(scope_state, parsed.value)
@@ -262,7 +263,7 @@ local function token_has_segment_with_boundary(token, segment)
         end
 
         local following = token:sub(found_end + 1, found_end + 1)
-        if following == "" or not following:match("[%w_]") then
+        if following == '' or not following:match('[%w_]') then
             return true
         end
 
@@ -295,7 +296,7 @@ local function option_has_token(policy_state, option, predicate)
 end
 
 local function scalar_value_is(policy_state, option, expected)
-    local scope_state = get_existing_scope(policy_state, option, "")
+    local scope_state = get_existing_scope(policy_state, option, '')
     return scope_state ~= nil
         and scope_state.present == true
         and #scope_state.tokens == 1
@@ -303,14 +304,16 @@ local function scalar_value_is(policy_state, option, expected)
 end
 
 local function sha1_hash_signature_disabled(policy_state)
-    if not scope_present(policy_state, "hash", "") or not scope_present(policy_state, "sign", "") then
+    if not scope_present(policy_state, 'hash', '') or not scope_present(policy_state, 'sign', '') then
         return false
     end
 
-    for _, option in ipairs({ "hash", "sign" }) do
-        if option_has_token(policy_state, option, function(token)
-            return token_contains(token, "SHA1")
-        end) then
+    for _, option in ipairs({ 'hash', 'sign' }) do
+        if
+            option_has_token(policy_state, option, function(token)
+                return token_contains(token, 'SHA1')
+            end)
+        then
             return false
         end
     end
@@ -319,48 +322,50 @@ local function sha1_hash_signature_disabled(policy_state)
 end
 
 local function sha1_in_certs_disabled(policy_state)
-    return scalar_value_is(policy_state, "sha1_in_certs", "0")
+    return scalar_value_is(policy_state, 'sha1_in_certs', '0')
 end
 
 local function weak_macs_disabled(policy_state)
-    if not scope_present(policy_state, "mac", "") then
+    if not scope_present(policy_state, 'mac', '') then
         return false
     end
 
-    return not option_has_token(policy_state, "mac", function(token)
-        return token_has_segment_with_boundary(token, "-128")
+    return not option_has_token(policy_state, 'mac', function(token)
+        return token_has_segment_with_boundary(token, '-128')
     end)
 end
 
 local function is_ssh_scope(scope)
     scope = normalize(scope)
-    return scope == "ssh"
-        or scope == "libssh"
-        or scope == "libssh-server"
-        or scope == "libssh-client"
-        or scope == "openssh"
-        or scope == "openssh-server"
-        or scope == "openssh-client"
+    return scope == 'ssh'
+        or scope == 'libssh'
+        or scope == 'libssh-server'
+        or scope == 'libssh-client'
+        or scope == 'openssh'
+        or scope == 'openssh-server'
+        or scope == 'openssh-client'
 end
 
 local function ssh_scope_has_cbc(policy_state, scope)
-    return scope_has_token(policy_state, "cipher", scope, function(token)
-        return token_has_segment_with_boundary(token, "-CBC")
+    return scope_has_token(policy_state, 'cipher', scope, function(token)
+        return token_has_segment_with_boundary(token, '-CBC')
     end)
 end
 
 local function ssh_scope_present_and_clean(policy_state, scope)
-    return scope_present(policy_state, "cipher", scope) and not ssh_scope_has_cbc(policy_state, scope)
+    return scope_present(policy_state, 'cipher', scope) and not ssh_scope_has_cbc(policy_state, scope)
 end
 
 local function ssh_family_clean(policy_state, family)
     return ssh_scope_present_and_clean(policy_state, family)
-        or (ssh_scope_present_and_clean(policy_state, family .. "-server")
-            and ssh_scope_present_and_clean(policy_state, family .. "-client"))
+        or (
+            ssh_scope_present_and_clean(policy_state, family .. '-server')
+            and ssh_scope_present_and_clean(policy_state, family .. '-client')
+        )
 end
 
 local function ssh_cbc_disabled(policy_state)
-    if not scope_present(policy_state, "cipher", "") then
+    if not scope_present(policy_state, 'cipher', '') then
         return false
     end
 
@@ -370,13 +375,13 @@ local function ssh_cbc_disabled(policy_state)
         end
     end
 
-    local global_has_cbc = ssh_scope_has_cbc(policy_state, "")
+    local global_has_cbc = ssh_scope_has_cbc(policy_state, '')
     if not global_has_cbc then
         return true
     end
 
-    return ssh_scope_present_and_clean(policy_state, "ssh")
-        or (ssh_family_clean(policy_state, "openssh") and ssh_family_clean(policy_state, "libssh"))
+    return ssh_scope_present_and_clean(policy_state, 'ssh')
+        or (ssh_family_clean(policy_state, 'openssh') and ssh_family_clean(policy_state, 'libssh'))
 end
 
 function M.inspect_current(params)

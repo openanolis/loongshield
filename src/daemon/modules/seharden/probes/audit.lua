@@ -8,9 +8,9 @@ local _default_dependencies = {
     io_popen = io.popen,
     lfs_attributes = lfs.attributes,
     lfs_dir = lfs.dir,
-    audit_rules_path = "/etc/audit/audit.rules",
-    audit_rules_d_path = "/etc/audit/rules.d",
-    login_defs_path = "/etc/login.defs",
+    audit_rules_path = '/etc/audit/audit.rules',
+    audit_rules_d_path = '/etc/audit/rules.d',
+    login_defs_path = '/etc/login.defs',
 }
 
 local _dependencies = {}
@@ -29,13 +29,13 @@ local function shell_escape(arg)
 end
 
 local function normalize_path(path)
-    if path == "/" then
+    if path == '/' then
         return path
     end
 
-    local normalized = tostring(path):gsub("/+$", "")
-    if normalized == "" then
-        return "/"
+    local normalized = tostring(path):gsub('/+$', '')
+    if normalized == '' then
+        return '/'
     end
     return normalized
 end
@@ -43,17 +43,17 @@ end
 local function list_rule_files()
     local files = {}
     local audit_rules_attr = _dependencies.lfs_attributes(_dependencies.audit_rules_path)
-    if audit_rules_attr and audit_rules_attr.mode == "file" then
+    if audit_rules_attr and audit_rules_attr.mode == 'file' then
         files[#files + 1] = _dependencies.audit_rules_path
     end
 
     local rules_d_attr = _dependencies.lfs_attributes(_dependencies.audit_rules_d_path)
-    if rules_d_attr and rules_d_attr.mode == "directory" then
+    if rules_d_attr and rules_d_attr.mode == 'directory' then
         for name in _dependencies.lfs_dir(_dependencies.audit_rules_d_path) do
-            if name ~= "." and name ~= ".." and name:match("%.rules$") then
-                local path = _dependencies.audit_rules_d_path .. "/" .. name
+            if name ~= '.' and name ~= '..' and name:match('%.rules$') then
+                local path = _dependencies.audit_rules_d_path .. '/' .. name
                 local attr = _dependencies.lfs_attributes(path)
-                if attr and attr.mode == "file" then
+                if attr and attr.mode == 'file' then
                     files[#files + 1] = path
                 end
             end
@@ -67,12 +67,12 @@ end
 local function list_rules_d_files()
     local files = {}
     local rules_d_attr = _dependencies.lfs_attributes(_dependencies.audit_rules_d_path)
-    if rules_d_attr and rules_d_attr.mode == "directory" then
+    if rules_d_attr and rules_d_attr.mode == 'directory' then
         for name in _dependencies.lfs_dir(_dependencies.audit_rules_d_path) do
-            if name ~= "." and name ~= ".." and name:match("%.rules$") then
-                local path = _dependencies.audit_rules_d_path .. "/" .. name
+            if name ~= '.' and name ~= '..' and name:match('%.rules$') then
+                local path = _dependencies.audit_rules_d_path .. '/' .. name
                 local attr = _dependencies.lfs_attributes(path)
-                if attr and attr.mode == "file" then
+                if attr and attr.mode == 'file' then
                     files[#files + 1] = path
                 end
             end
@@ -85,7 +85,7 @@ end
 
 local function add_active_line(lines, line)
     local trimmed = text.trim(line)
-    if trimmed ~= "" and not trimmed:match("^#") then
+    if trimmed ~= '' and not trimmed:match('^#') then
         lines[#lines + 1] = trimmed
     end
 end
@@ -94,7 +94,7 @@ local function load_lines_from_files(files)
     local lines = {}
 
     for _, path in ipairs(files) do
-        local file, err = _dependencies.io_open(path, "r")
+        local file, err = _dependencies.io_open(path, 'r')
         if not file then
             return nil, string.format("Could not open file '%s': %s", path, tostring(err))
         end
@@ -130,10 +130,10 @@ local function normalize_popen_close(ok, _, code)
     if ok == true then
         return true
     end
-    if type(code) == "number" then
+    if type(code) == 'number' then
         return code == 0
     end
-    if type(ok) == "number" then
+    if type(ok) == 'number' then
         return ok == 0
     end
     if ok == nil and code == nil then
@@ -143,9 +143,9 @@ local function normalize_popen_close(ok, _, code)
 end
 
 local function load_loaded_rule_lines()
-    local handle = _dependencies.io_popen("auditctl -l 2>/dev/null", "r")
+    local handle = _dependencies.io_popen('auditctl -l 2>/dev/null', 'r')
     if not handle then
-        return {}, false, "Could not execute auditctl -l."
+        return {}, false, 'Could not execute auditctl -l.'
     end
 
     local lines = {}
@@ -155,33 +155,33 @@ local function load_loaded_rule_lines()
 
     local ok, status_type, code = handle:close()
     if not normalize_popen_close(ok, status_type, code) then
-        return {}, false, "auditctl -l did not complete successfully."
+        return {}, false, 'auditctl -l did not complete successfully.'
     end
 
     return lines, true, nil
 end
 
 local function load_source_lines(source)
-    if source == "persistent" then
+    if source == 'persistent' then
         return load_persistent_rule_lines()
     end
-    if source == "loaded" then
+    if source == 'loaded' then
         return load_loaded_rule_lines()
     end
-    if source == "all" then
+    if source == 'all' then
         local lines, err = load_rule_lines()
         return lines, lines ~= nil, err
     end
-    return nil, false, "Unknown audit rule source: " .. tostring(source)
+    return nil, false, 'Unknown audit rule source: ' .. tostring(source)
 end
 
 local function normalize_sources(params)
     local sources = params and params.sources or nil
     if sources == nil then
-        return { "persistent", "loaded" }
+        return { 'persistent', 'loaded' }
     end
-    if type(sources) ~= "table" or #sources == 0 then
-        return nil, "Audit rule sources must be a non-empty list."
+    if type(sources) ~= 'table' or #sources == 0 then
+        return nil, 'Audit rule sources must be a non-empty list.'
     end
     return sources
 end
@@ -197,11 +197,11 @@ local function read_uid_min(params)
 end
 
 local function line_has_key(line)
-    return line:match("%-k%s+%S+") ~= nil or line:match("%-F%s+key=%S+") ~= nil
+    return line:match('%-k%s+%S+') ~= nil or line:match('%-F%s+key=%S+') ~= nil
 end
 
 local function extract_key(line)
-    return line:match("%-k%s+(%S+)") or line:match("%-F%s+key=(%S+)")
+    return line:match('%-k%s+(%S+)') or line:match('%-F%s+key=(%S+)')
 end
 
 local function line_key_matches(line, key, require_key)
@@ -217,14 +217,14 @@ end
 local function has_required_permissions(actual, required)
     local present = {}
 
-    for permission in tostring(actual):gmatch(".") do
-        if permission:match("[rwax]") then
+    for permission in tostring(actual):gmatch('.') do
+        if permission:match('[rwax]') then
             present[permission] = true
         end
     end
 
-    for permission in tostring(required):gmatch(".") do
-        if permission:match("[rwax]") and not present[permission] then
+    for permission in tostring(required):gmatch('.') do
+        if permission:match('[rwax]') and not present[permission] then
             return false
         end
     end
@@ -233,33 +233,32 @@ local function has_required_permissions(actual, required)
 end
 
 local function extract_watch_target(line)
-    local watched_path = line:match("^%-w%s+(%S+)")
+    local watched_path = line:match('^%-w%s+(%S+)')
     if watched_path then
-        return watched_path, "watch"
+        return watched_path, 'watch'
     end
 
-    watched_path = line:match("%-F%s+path=(%S+)")
+    watched_path = line:match('%-F%s+path=(%S+)')
     if watched_path then
-        return watched_path, "path"
+        return watched_path, 'path'
     end
 
-    watched_path = line:match("%-F%s+dir=(%S+)")
+    watched_path = line:match('%-F%s+dir=(%S+)')
     if watched_path then
-        return watched_path, "dir"
+        return watched_path, 'dir'
     end
 end
 
 local function extract_watch_permissions(line)
-    return (line:match("%-p%s+([rwax]+)") or line:match("%-F%s+perm=([rwax]+)") or "")
+    return (line:match('%-p%s+([rwax]+)') or line:match('%-F%s+perm=([rwax]+)') or '')
 end
 
 local function is_always_exit_rule(line)
-    return line:match("^%-a%s+always,exit%f[%s]") ~= nil
-        or line:match("^%-a%s+exit,always%f[%s]") ~= nil
+    return line:match('^%-a%s+always,exit%f[%s]') ~= nil or line:match('^%-a%s+exit,always%f[%s]') ~= nil
 end
 
 local function line_matches_auid_min(line, threshold)
-    for raw_value in line:gmatch("%-F%s+auid>=(%d+)") do
+    for raw_value in line:gmatch('%-F%s+auid>=(%d+)') do
         local numeric_value = tonumber(raw_value)
         if numeric_value and numeric_value <= threshold then
             return true
@@ -270,9 +269,9 @@ local function line_matches_auid_min(line, threshold)
 end
 
 local function line_excludes_unset_auid(line)
-    return line:match("%-F%s+auid!=unset") ~= nil
-        or line:match("%-F%s+auid!=%-1") ~= nil
-        or line:match("%-F%s+auid!=4294967295") ~= nil
+    return line:match('%-F%s+auid!=unset') ~= nil
+        or line:match('%-F%s+auid!=%-1') ~= nil
+        or line:match('%-F%s+auid!=4294967295') ~= nil
 end
 
 local function line_has_exit(line, expected_exit)
@@ -280,9 +279,9 @@ local function line_has_exit(line, expected_exit)
         return true
     end
 
-    local normalized_expected = tostring(expected_exit):gsub("^%-", "")
-    for value in line:gmatch("%-F%s+exit=([^%s]+)") do
-        if value:gsub("^%-", "") == normalized_expected then
+    local normalized_expected = tostring(expected_exit):gsub('^%-', '')
+    for value in line:gmatch('%-F%s+exit=([^%s]+)') do
+        if value:gsub('^%-', '') == normalized_expected then
             return true
         end
     end
@@ -290,11 +289,11 @@ local function line_has_exit(line, expected_exit)
 end
 
 local function line_has_field(line, field)
-    if type(field) ~= "table" or not field.name then
+    if type(field) ~= 'table' or not field.name then
         return true
     end
 
-    for value in line:gmatch("%-F%s+" .. tostring(field.name) .. "=([^%s]+)") do
+    for value in line:gmatch('%-F%s+' .. tostring(field.name) .. '=([^%s]+)') do
         if field.value == nil or tostring(value) == tostring(field.value) then
             return true
         end
@@ -312,9 +311,9 @@ local function line_has_fields(line, fields)
 end
 
 local function normalize_comparison(value)
-    value = tostring(value or "")
-    if value == "uid!=euid" or value == "euid!=uid" then
-        return "uid!=euid"
+    value = tostring(value or '')
+    if value == 'uid!=euid' or value == 'euid!=uid' then
+        return 'uid!=euid'
     end
     return value
 end
@@ -325,7 +324,7 @@ local function line_has_comparison(line, expected)
     end
 
     local normalized_expected = normalize_comparison(expected)
-    for value in line:gmatch("%-C%s+([^%s]+)") do
+    for value in line:gmatch('%-C%s+([^%s]+)') do
         if normalize_comparison(value) == normalized_expected then
             return true
         end
@@ -358,9 +357,9 @@ end
 local function collect_syscalls(line)
     local syscalls = {}
 
-    for token in line:gmatch("%-S%s+([^%s]+)") do
-        for syscall in token:gmatch("([^,]+)") do
-            if syscall ~= "" then
+    for token in line:gmatch('%-S%s+([^%s]+)') do
+        for syscall in token:gmatch('([^,]+)') do
+            if syscall ~= '' then
                 syscalls[syscall] = true
             end
         end
@@ -370,7 +369,7 @@ local function collect_syscalls(line)
 end
 
 local function extract_syscall_arch(line)
-    return line:match("%-F%s+arch=(%S+)")
+    return line:match('%-F%s+arch=(%S+)')
 end
 
 local function normalize_required_arches(required_arches)
@@ -378,7 +377,7 @@ local function normalize_required_arches(required_arches)
         return nil
     end
 
-    if type(required_arches) ~= "table" or #required_arches == 0 then
+    if type(required_arches) ~= 'table' or #required_arches == 0 then
         return nil, "Probe 'audit.find_syscall_rule' requires 'required_arches' to be a non-empty list when provided."
     end
 
@@ -386,11 +385,12 @@ local function normalize_required_arches(required_arches)
     local seen = {}
 
     for index, arch in ipairs(required_arches) do
-        if type(arch) ~= "string" or arch == "" then
-            return nil, string.format(
-                "Probe 'audit.find_syscall_rule' requires non-empty strings in required_arches[%d].",
-                index
-            )
+        if type(arch) ~= 'string' or arch == '' then
+            return nil,
+                string.format(
+                    "Probe 'audit.find_syscall_rule' requires non-empty strings in required_arches[%d].",
+                    index
+                )
         end
 
         if not seen[arch] then
@@ -407,25 +407,24 @@ local function is_same_or_descendant_path(path, parent_path)
         return true
     end
 
-    if parent_path == "/" then
+    if parent_path == '/' then
         return true
     end
 
-    return path:sub(1, #parent_path) == parent_path
-        and path:sub(#parent_path + 1, #parent_path + 1) == "/"
+    return path:sub(1, #parent_path) == parent_path and path:sub(#parent_path + 1, #parent_path + 1) == '/'
 end
 
 local function watch_target_is_directory(watch_kind, watched_path)
-    if watch_kind == "dir" then
+    if watch_kind == 'dir' then
         return true
     end
 
-    if watch_kind ~= "watch" then
+    if watch_kind ~= 'watch' then
         return false
     end
 
     local attr = _dependencies.lfs_attributes(watched_path)
-    return attr and attr.mode == "directory"
+    return attr and attr.mode == 'directory'
 end
 
 local function find_watch_rule_in_lines(lines, params)
@@ -434,8 +433,7 @@ local function find_watch_rule_in_lines(lines, params)
 
     for _, line in ipairs(lines) do
         local watched_path, watch_kind = extract_watch_target(line)
-        local is_watch_rule = line:match("^%-w%s+") ~= nil
-            or (is_always_exit_rule(line) and watched_path ~= nil)
+        local is_watch_rule = line:match('^%-w%s+') ~= nil or (is_always_exit_rule(line) and watched_path ~= nil)
 
         if is_watch_rule and watched_path then
             local normalized_watched_path = normalize_path(watched_path)
@@ -447,16 +445,18 @@ local function find_watch_rule_in_lines(lines, params)
 
             if path_matches then
                 local permissions = extract_watch_permissions(line)
-                if has_required_permissions(permissions, params.permissions)
-                    and line_key_matches(line, params.key, require_key) then
+                if
+                    has_required_permissions(permissions, params.permissions)
+                    and line_key_matches(line, params.key, require_key)
+                then
                     return {
                         found = true,
                         details = {
                             path = watched_path,
                             permissions = permissions,
                             key = extract_key(line),
-                            line = line
-                        }
+                            line = line,
+                        },
                     }
                 end
             end
@@ -467,10 +467,10 @@ local function find_watch_rule_in_lines(lines, params)
 end
 
 function M.find_watch_rule(params)
-    if not params or type(params.path) ~= "string" or params.path == "" then
+    if not params or type(params.path) ~= 'string' or params.path == '' then
         return nil, "Probe 'audit.find_watch_rule' requires a non-empty 'path' parameter."
     end
-    if type(params.permissions) ~= "string" or params.permissions == "" then
+    if type(params.permissions) ~= 'string' or params.permissions == '' then
         return nil, "Probe 'audit.find_watch_rule' requires a non-empty 'permissions' parameter."
     end
 
@@ -485,10 +485,10 @@ end
 local function normalize_exit_requirements(exits)
     if exits == nil then
         return {
-            { key = "*", value = nil },
+            { key = '*', value = nil },
         }
     end
-    if type(exits) ~= "table" or #exits == 0 then
+    if type(exits) ~= 'table' or #exits == 0 then
         return nil, "Probe 'audit.find_syscall_rule' requires 'exits' to be a non-empty list when provided."
     end
 
@@ -508,7 +508,7 @@ local function normalize_exit_requirements(exits)
 end
 
 local function get_syscall_bucket(buckets, arch, exit_key)
-    local arch_key = arch or "*"
+    local arch_key = arch or '*'
     if buckets[arch_key] == nil then
         buckets[arch_key] = {}
     end
@@ -562,7 +562,7 @@ local function find_syscall_rule_in_lines(lines, params, auid_min)
 
     local active_arches = {}
     for arch in pairs(buckets) do
-        if arch ~= "*" then
+        if arch ~= '*' then
             active_arches[#active_arches + 1] = arch
         end
     end
@@ -585,23 +585,22 @@ local function find_syscall_rule_in_lines(lines, params, auid_min)
             for _, exit_requirement in ipairs(required_exits) do
                 local bucket = buckets[arch] and buckets[arch][exit_requirement.key]
                 if bucket == nil and allow_global_fallback then
-                    bucket = buckets["*"] and buckets["*"][exit_requirement.key]
+                    bucket = buckets['*'] and buckets['*'][exit_requirement.key]
                 end
                 require_syscalls_for_bucket(bucket)
             end
         end
     elseif #active_arches == 0 then
         for _, exit_requirement in ipairs(required_exits) do
-            require_syscalls_for_bucket(buckets["*"] and buckets["*"][exit_requirement.key])
+            require_syscalls_for_bucket(buckets['*'] and buckets['*'][exit_requirement.key])
         end
     else
         for _, arch in ipairs(active_arches) do
             for _, exit_requirement in ipairs(required_exits) do
                 local bucket = buckets[arch] and buckets[arch][exit_requirement.key]
-                local global_bucket = buckets["*"] and buckets["*"][exit_requirement.key]
+                local global_bucket = buckets['*'] and buckets['*'][exit_requirement.key]
                 for _, syscall in ipairs(params.syscalls) do
-                    if not (global_bucket and global_bucket[syscall])
-                        and not (bucket and bucket[syscall]) then
+                    if not (global_bucket and global_bucket[syscall]) and not (bucket and bucket[syscall]) then
                         missing_set[syscall] = true
                     end
                 end
@@ -620,7 +619,7 @@ local function find_syscall_rule_in_lines(lines, params, auid_min)
 
     return {
         count = #missing,
-        details = missing
+        details = missing,
     }
 end
 
@@ -631,12 +630,14 @@ local function find_path_exec_rule_in_lines(lines, params, auid_min)
 
     for _, line in ipairs(lines) do
         local watched_path = extract_watch_target(line)
-        if is_always_exit_rule(line)
+        if
+            is_always_exit_rule(line)
             and watched_path
             and normalize_path(watched_path) == target_path
-            and has_required_permissions(extract_watch_permissions(line), params.permissions or "x")
+            and has_required_permissions(extract_watch_permissions(line), params.permissions or 'x')
             and line_matches_auid_filters(line, auid_min, require_auid_unset_exclusion)
-            and line_key_matches(line, params.key, require_key) then
+            and line_key_matches(line, params.key, require_key)
+        then
             return {
                 found = true,
                 details = {
@@ -653,21 +654,22 @@ local function find_path_exec_rule_in_lines(lines, params, auid_min)
 end
 
 local function directive_name_matches(line, name)
-    if name == "-c" then
-        return line:match("^%-c%f[%s]") ~= nil
+    if name == '-c' then
+        local trimmed = line:match('^%s*(.-)%s*$') or line
+        return trimmed == '-c'
     end
-    if name == "-e" then
-        return line:match("^%-e%s+") ~= nil
+    if name == '-e' then
+        return line:match('^%-e%s+') ~= nil
     end
     return false
 end
 
 local function directive_value(line, name)
-    if name == "-c" then
+    if name == '-c' then
         return nil
     end
-    if name == "-e" then
-        return line:match("^%-e%s+(%S+)")
+    if name == '-e' then
+        return line:match('^%-e%s+(%S+)')
     end
     return nil
 end
@@ -720,40 +722,40 @@ local function evaluate_requirement(lines, requirement, defaults, default_auid_m
     local params = merge_requirement_params(defaults, requirement)
     local kind = requirement.type
 
-    if kind == "watch" then
-        if type(params.path) ~= "string" or type(params.permissions) ~= "string" then
-            return nil, "Audit watch requirements need path and permissions."
+    if kind == 'watch' then
+        if type(params.path) ~= 'string' or type(params.permissions) ~= 'string' then
+            return nil, 'Audit watch requirements need path and permissions.'
         end
         return find_watch_rule_in_lines(lines, params)
     end
 
-    if kind == "syscall" then
-        if type(params.syscalls) ~= "table" or #params.syscalls == 0 then
-            return nil, "Audit syscall requirements need a non-empty syscalls list."
+    if kind == 'syscall' then
+        if type(params.syscalls) ~= 'table' or #params.syscalls == 0 then
+            return nil, 'Audit syscall requirements need a non-empty syscalls list.'
         end
         return find_syscall_rule_in_lines(lines, params, auid_min_for_requirement(requirement, default_auid_min))
     end
 
-    if kind == "path_exec" then
-        if type(params.path) ~= "string" then
-            return nil, "Audit path_exec requirements need path."
+    if kind == 'path_exec' then
+        if type(params.path) ~= 'string' then
+            return nil, 'Audit path_exec requirements need path.'
         end
         return find_path_exec_rule_in_lines(lines, params, auid_min_for_requirement(requirement, default_auid_min))
     end
 
-    if kind == "directive" then
-        if type(params.directive or params.name) ~= "string" then
-            return nil, "Audit directive requirements need directive."
+    if kind == 'directive' then
+        if type(params.directive or params.name) ~= 'string' then
+            return nil, 'Audit directive requirements need directive.'
         end
         return find_directive_in_lines(lines, params)
     end
 
-    return nil, "Unknown audit rule requirement type: " .. tostring(kind)
+    return nil, 'Unknown audit rule requirement type: ' .. tostring(kind)
 end
 
 function M.inspect_rule_coverage(params)
     params = params or {}
-    if type(params.requirements) ~= "table" or #params.requirements == 0 then
+    if type(params.requirements) ~= 'table' or #params.requirements == 0 then
         return nil, "Probe 'audit.inspect_rule_coverage' requires a non-empty 'requirements' list."
     end
 
@@ -818,7 +820,7 @@ function M.inspect_rule_coverage(params)
         end
 
         details[#details + 1] = {
-            name = requirement.name or ("requirement_" .. tostring(index)),
+            name = requirement.name or ('requirement_' .. tostring(index)),
             type = requirement.type,
             configured = requirement_ok,
             sources = source_details,
@@ -840,30 +842,31 @@ function M.inspect_rule_coverage(params)
 end
 
 local function run_lines(command)
-    local handle = _dependencies.io_popen(command, "r")
+    local handle = _dependencies.io_popen(command, 'r')
     if not handle then
-        return nil, "Could not execute command: " .. command
+        return nil, 'Could not execute command: ' .. command
     end
 
     local lines = {}
     for line in handle:lines() do
         local trimmed = text.trim(line)
-        if trimmed ~= "" then
+        if trimmed ~= '' then
             lines[#lines + 1] = trimmed
         end
     end
 
     local ok, status_type, code = handle:close()
     if not normalize_popen_close(ok, status_type, code) then
-        return nil, "Command did not complete successfully: " .. command
+        return nil, 'Command did not complete successfully: ' .. command
     end
     return lines
 end
 
 local function collect_privileged_paths_from_system()
     local mounts, mount_err = run_lines(
-        "findmnt -n -l -k -it $(awk '/nodev/ { print $2 }' /proc/filesystems | paste -sd,) " ..
-        "| grep -Pv 'noexec|nosuid' | awk '{print $1}' 2>/dev/null")
+        "findmnt -n -l -k -it $(awk '/nodev/ { print $2 }' /proc/filesystems | paste -sd,) "
+            .. "| grep -Pv 'noexec|nosuid' | awk '{print $1}' 2>/dev/null"
+    )
     if not mounts then
         return nil, mount_err
     end
@@ -871,7 +874,7 @@ local function collect_privileged_paths_from_system()
     local paths = {}
     local seen = {}
     for _, mount in ipairs(mounts) do
-        local found, find_err = run_lines("find " .. shell_escape(mount) .. " -xdev -perm /6000 -type f 2>/dev/null")
+        local found, find_err = run_lines('find ' .. shell_escape(mount) .. ' -xdev -perm /6000 -type f 2>/dev/null')
         if not found then
             return nil, find_err
         end
@@ -906,7 +909,7 @@ function M.inspect_privileged_command_coverage(params)
         paths = collected
     end
 
-    if type(paths) ~= "table" then
+    if type(paths) ~= 'table' then
         return nil, "Probe 'audit.inspect_privileged_command_coverage' requires 'paths' to be a list when provided."
     end
 
@@ -925,9 +928,9 @@ function M.inspect_privileged_command_coverage(params)
     for _, path in ipairs(paths) do
         requirements[#requirements + 1] = {
             name = path,
-            type = "path_exec",
+            type = 'path_exec',
             path = path,
-            key = params.key or "privileged",
+            key = params.key or 'privileged',
         }
     end
 
@@ -939,7 +942,7 @@ function M.inspect_privileged_command_coverage(params)
 end
 
 function M.find_syscall_rule(params)
-    if not params or type(params.syscalls) ~= "table" or #params.syscalls == 0 then
+    if not params or type(params.syscalls) ~= 'table' or #params.syscalls == 0 then
         return nil, "Probe 'audit.find_syscall_rule' requires a non-empty 'syscalls' list."
     end
 

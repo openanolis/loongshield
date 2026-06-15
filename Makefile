@@ -325,7 +325,7 @@ submodules:
 	done; \
 	if [ "$$missing_submodules" -eq 1 ]; then \
 		echo "==> Initializing git submodules"; \
-		git submodule update --init --recursive; \
+		git submodule update --init --recursive --depth=1; \
 	fi; \
 	for sentinel in $(SUBMODULE_SENTINELS); do \
 		if [ ! -f "$$sentinel" ]; then \
