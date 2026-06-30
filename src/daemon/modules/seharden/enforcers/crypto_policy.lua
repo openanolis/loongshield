@@ -87,11 +87,11 @@ local function detect_current_policy(config_path)
 end
 
 -- Merge the requested policy with the host's currently active policy.
--- Preserves the host's existing base policy and appends any missing
--- subpolicies from the requested policy, avoiding silent replacement
--- of site-local or FIPS base policies.
+-- Bare base-policy requests must be honored exactly so rules can switch
+-- away from LEGACY. DEFAULT-based subpolicy requests preserve stronger or
+-- site-local current bases, but move LEGACY hosts onto DEFAULT.
 local function build_effective_policy(requested_policy, current_policy_str)
-    local _, requested_subs = parse_policy_string(requested_policy)
+    local requested_base, requested_subs = parse_policy_string(requested_policy)
 
     if not current_policy_str or current_policy_str == '' then
         return requested_policy
@@ -100,6 +100,15 @@ local function build_effective_policy(requested_policy, current_policy_str)
     local current_base, current_subs = parse_policy_string(current_policy_str)
     if not current_base then
         return requested_policy
+    end
+
+    if #requested_subs == 0 then
+        return requested_policy
+    end
+
+    local result_base = requested_base
+    if requested_base == 'DEFAULT' and current_base ~= 'DEFAULT' and current_base ~= 'LEGACY' then
+        result_base = current_base
     end
 
     -- Collect current subpolicies into a set for deduplication.
@@ -120,7 +129,7 @@ local function build_effective_policy(requested_policy, current_policy_str)
         end
     end
 
-    local result = current_base
+    local result = result_base
     for _, sub in ipairs(merged_subs) do
         result = result .. ':' .. sub
     end
@@ -198,8 +207,12 @@ function M.set_policy(params)
     local effective_policy = build_effective_policy(policy, current_policy_str)
 
     if current_policy_str then
-        log.debug('crypto_policy.set_policy: current=%s, requested=%s, effective=%s',
-            current_policy_str, policy, effective_policy)
+        log.debug(
+            'crypto_policy.set_policy: current=%s, requested=%s, effective=%s',
+            current_policy_str,
+            policy,
+            effective_policy
+        )
     else
         log.debug('crypto_policy.set_policy: no current policy detected, using requested=%s', policy)
     end

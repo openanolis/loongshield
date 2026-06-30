@@ -160,6 +160,10 @@ local DIRECTIVE_NAMES = {
 local function comment_out_directive_in_file(file_path, directive)
     local f = _dependencies.io_open(file_path, 'r')
     if not f then
+        local attr = _dependencies.lfs_attributes and _dependencies.lfs_attributes(file_path) or nil
+        if attr then
+            return nil, string.format("ssh.remove_disallowed_algorithms: cannot read '%s'", file_path)
+        end
         return false
     end
 
@@ -185,7 +189,7 @@ local function comment_out_directive_in_file(file_path, directive)
     log.debug('ssh: commenting out %s directive in %s', directive, file_path)
     local ok, err = fsutil.write_lines_atomically(file_path, lines, 'ssh.remove_disallowed_algorithms', _dependencies)
     if not ok then
-        log.warn('ssh: failed to update %s: %s', file_path, err)
+        return nil, err
     end
     return true
 end
@@ -282,7 +286,8 @@ function M.remove_disallowed_algorithms(params)
     end
 
     log.debug('Enforcer ssh.remove_disallowed_algorithms: writing %s to %s', directive, config_path)
-    local write_ok, write_err = fsutil.write_lines_atomically(config_path, lines, 'ssh.remove_disallowed_algorithms', _dependencies)
+    local write_ok, write_err =
+        fsutil.write_lines_atomically(config_path, lines, 'ssh.remove_disallowed_algorithms', _dependencies)
     if not write_ok then
         return nil, write_err
     end
@@ -291,7 +296,14 @@ function M.remove_disallowed_algorithms(params)
     -- OpenSSH uses first-match-wins, so an earlier Ciphers/KexAlgorithms/MACs
     -- in the main sshd_config (before the Include) would shadow our drop-in.
     local sshd_config_path = params.sshd_config_path or '/etc/ssh/sshd_config'
-    comment_out_directive_in_file(sshd_config_path, directive)
+    local _, update_err = comment_out_directive_in_file(sshd_config_path, directive)
+    if update_err then
+        return nil,
+            string.format(
+                'ssh.remove_disallowed_algorithms: failed to update conflicting directive in %s',
+                sshd_config_path
+            )
+    end
 
     -- Step 5: Comment out conflicting directives in lexically earlier drop-in
     -- files within the same config directory.
@@ -302,7 +314,14 @@ function M.remove_disallowed_algorithms(params)
         for name in _dependencies.lfs_dir(sshd_config_d_path) do
             if name ~= '.' and name ~= '..' and name < config_basename and name:match('%.conf$') then
                 local drop_path = sshd_config_d_path .. '/' .. name
-                comment_out_directive_in_file(drop_path, directive)
+                local _, drop_err = comment_out_directive_in_file(drop_path, directive)
+                if drop_err then
+                    return nil,
+                        string.format(
+                            'ssh.remove_disallowed_algorithms: failed to update conflicting directive in %s',
+                            drop_path
+                        )
+                end
             end
         end
     end
