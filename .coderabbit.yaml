@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "en-US"
+enable_free_tier: true
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 5
+    ignore_title_keywords:
+      - "WIP"
+      - "DNM"
+      - "DO NOT MERGE"
+      - "no-review"
+    base_branches:
+      - "main"
+
+  path_filters:
+    - "!build/**"
+    - "!dist/rpmbuild*/**"
+    - "!**/*.rpm"
+    - "!**/*.tar.gz"
+    - "!**/*.zip"
+    - "!deps/**/build/**"
+    - "!deps/**/.git/**"
+    - "!**/*.min.js"
+    - "!**/compile_commands.json"
+
+  path_instructions:
+    - path: "src/daemon/**/*.c"
+      instructions: >
+        Review the C/Lua boundary carefully. Check Lua stack balance, userdata
+        lifetime, NULL handling, integer conversions, allocation failures,
+        ownership transfer, cleanup on every error path, and whether host-facing
+        inputs are validated before filesystem, rpm, systemd, DBus, xattr,
+        archive, curl, or kernel-module operations.
+
+    - path: "src/daemon/modules/seharden/**/*.lua"
+      instructions: >
+        SEHarden enforcers must be narrow, idempotent, strict about input
+        validation, and easy to test with injected dependencies. Preserve the
+        return contract: success is true; failure is nil, err. Prefer
+        target-state file or service mutations over fragile shell pipelines.
+
+    - path: "profiles/seharden/**/*.yml"
+      instructions: >
+        Treat bundled profiles as user-facing policy. Verify that reinforce
+        entries use the exact shape expected by the rule executor, especially
+        params nesting, and that new reinforce behavior has matching tests.
+
+    - path: "docs/reference/**"
+      instructions: >
+        Public reference docs define compatibility contracts. Check that CLI
+        options, exit behavior, machine-readable output, profile format, and
+        examples match the implementation and tests.
+
+    - path: "dist/**"
+      instructions: >
+        Packaging changes should preserve RPM metadata, source-bundle behavior,
+        version/changelog consistency, and supported RPM-based Linux workflows.
+
+    - path: ".github/workflows/**"
+      instructions: >
+        Keep workflow permissions minimal. Preserve coverage for build, format,
+        RPM, commit-title, and compatibility checks unless the PR clearly
+        justifies a change.
+
+tools:
+  shellcheck:
+    enabled: true
+  markdownlint:
+    enabled: true
+  github-checks:
+    enabled: true
+    timeout_ms: 900000
+
+chat:
+  auto_reply: true

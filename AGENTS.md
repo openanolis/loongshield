@@ -1,62 +1,76 @@
+# Agents Guidelines for Loongshield
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+Loongshield is host security tooling for RPM-based Linux systems. It combines profile-driven auditing, optional hardening actions, RPM package file verification, and Lua-LSM management in a native C/Lua runtime.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+These guidelines are for AI coding agents and reviewers. Use them together with `.github/copilot-instructions.md` and the path-specific files under `.github/instructions/`.
 
-## 1. Think Before Coding
+## Repository Layout
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+| Path | Purpose |
+|---|---|
+| `src/daemon/` | C entry point, embedded Lua runtime, Lua bindings, and first-party Lua modules |
+| `src/cli/` | Thin CLI front end |
+| `src/kmod/` | Optional kernel module; not required for normal userspace workflows |
+| `profiles/seharden/` | Bundled hardening profiles; profile semantics are user-facing behavior |
+| `profiles/lua-lsm/` | Bundled Lua-LSM policy examples and manifest |
+| `tests/` | Lua test runner, unit tests, integration tests, and process-level CLI tests |
+| `docs/reference/` | Public CLI and profile-format contracts |
+| `docs/design/` | Maintainer-facing design notes |
+| `dist/` | RPM packaging and release metadata |
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+## Development Environment
 
-## 2. Simplicity First
+Supported local development hosts are RPM-based Linux systems:
 
-**Minimum code that solves the problem. Nothing speculative.**
+- Alibaba Cloud Linux 4
+- Anolis OS 23
+- EL9-compatible hosts such as CentOS Stream 9
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+Use the Docker workflow in `docs/developer/docker-development.md` when the local host is not suitable for a native build.
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+## Build And Test
 
-## 3. Surgical Changes
+Common commands:
 
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
+```sh
+make bootstrap       # install build requirements and build
+make build           # configure and build
+make test-quick      # unit + integration tests against the current build
+make test-e2e        # process-level CLI tests
+make test            # full local test suite
+make fmt-check       # check formatting for changed first-party files
+make fmt             # format changed first-party Lua, C, header, and YAML files
+make rpm             # build RPMs locally
+make rpm-in-docker   # build RPMs in the project container
 ```
 
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+`make test` builds first and runs the full Lua suite. `make test-quick` reuses the current build and is appropriate after narrow Lua module changes. `make test-e2e` is the right check for process-level CLI behavior.
 
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+## Coding And Review Guidelines
+
+- Keep changes small and focused. Do not mix feature work, refactors, formatting, and unrelated cleanup.
+- Match existing module boundaries before adding new abstractions.
+- Treat documented CLI behavior, machine-readable output, SEHarden profile format, RPM metadata, and release workflow as compatibility contracts.
+- Update implementation, tests, and docs together when user-visible behavior changes.
+- Prefer explicit, testable helpers over broad framework-like rewrites.
+- Do not assume root privileges, systemd availability, Lua-LSM kernel support, or a specific RPM distribution unless the code checks it or documentation says so.
+
+## Security-Sensitive Areas
+
+- C/Lua bindings: check Lua stack balance, userdata lifetime, ownership, cleanup ordering, NULL checks, and integer conversions.
+- SEHarden enforcers: keep actions narrow, idempotent, strictly validated, and dependency-injectable for tests.
+- Host writes: avoid unsafe shell construction, symlink-following writes, broad recursive filesystem changes, non-atomic config writes, and non-convergent hardening actions.
+- Lua-LSM: never silently load arbitrary policies; check kernel/securityfs support before relying on it.
+- Packaging and CI: keep workflow permissions minimal and avoid exposing secrets.
+
+## Commit And PR Expectations
+
+Commit titles must use:
+
+```text
+type(scope): short subject
+```
+
+Every commit must include a signoff trailer (`git commit -s`).
+
+PR descriptions should include what changed, why, user-visible/security/packaging impact, and the exact validation commands that were actually run.
