@@ -5,14 +5,13 @@ local M = {}
 local DEFAULT_SYSCTL_CONF = "/etc/sysctl.d/99-loongshield.conf"
 local DEFAULT_PROCFS_ROOT = "/proc/sys"
 
-local SYSCTL_CONF = DEFAULT_SYSCTL_CONF
-local PROCFS_ROOT = DEFAULT_PROCFS_ROOT
-
 local _default_dependencies = {
     io_open  = io.open,
     os_rename = os.rename,
     os_remove = os.remove,
     lfs_symlinkattributes = fsutil.default_lfs_symlinkattributes,
+    sysctl_conf = DEFAULT_SYSCTL_CONF,
+    procfs_root = DEFAULT_PROCFS_ROOT,
 }
 
 local _dependencies = {}
@@ -22,8 +21,6 @@ function M._test_set_dependencies(deps)
     for key, default in pairs(_default_dependencies) do
         _dependencies[key] = deps[key] or default
     end
-    SYSCTL_CONF = deps.sysctl_conf or DEFAULT_SYSCTL_CONF
-    PROCFS_ROOT = deps.procfs_root or DEFAULT_PROCFS_ROOT
 end
 
 M._test_set_dependencies()
@@ -33,7 +30,7 @@ local function key_to_path(key)
         log.error("sysctl enforcer: invalid key '%s'", tostring(key))
         return nil
     end
-    return PROCFS_ROOT .. "/" .. key:gsub("%.", "/")
+    return _dependencies.procfs_root .. "/" .. key:gsub("%.", "/")
 end
 
 -- Write or update key=value in the persistent sysctl conf file. Idempotent.
@@ -41,12 +38,12 @@ local function persist_sysctl(key, value)
     local existing = {}
     local updated = false
 
-    if fsutil.is_symlink(SYSCTL_CONF, _dependencies) then
-        return nil, string.format("sysctl.set_value: refusing to overwrite symlink '%s'", SYSCTL_CONF)
+    if fsutil.is_symlink(_dependencies.sysctl_conf, _dependencies) then
+        return nil, string.format("sysctl.set_value: refusing to overwrite symlink '%s'", _dependencies.sysctl_conf)
     end
 
     -- Read existing lines, replacing matching key if present
-    local f_in = _dependencies.io_open(SYSCTL_CONF, "r")
+    local f_in = _dependencies.io_open(_dependencies.sysctl_conf, "r")
     if f_in then
         for line in f_in:lines() do
             local k = line:match("^%s*([%w_.]+)%s*=")
@@ -64,7 +61,7 @@ local function persist_sysctl(key, value)
         table.insert(existing, string.format("%s = %s", key, tostring(value)))
     end
 
-    return fsutil.write_lines_atomically(SYSCTL_CONF, existing, "sysctl.set_value", _dependencies)
+    return fsutil.write_lines_atomically(_dependencies.sysctl_conf, existing, "sysctl.set_value", _dependencies)
 end
 
 -- Set a sysctl key live (via /proc/sys) and persist it. Idempotent.
@@ -98,7 +95,7 @@ function M.set_value(params)
     end
 
     -- Persist
-    log.debug("Enforcer sysctl.set_value: persisting %s = %s to %s", key, value, SYSCTL_CONF)
+    log.debug("Enforcer sysctl.set_value: persisting %s = %s to %s", key, value, _dependencies.sysctl_conf)
     local ok, err = persist_sysctl(key, value)
     if not ok then
         if live_err then
