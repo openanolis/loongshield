@@ -432,7 +432,7 @@ function M.run(argv)
     end
 
     if opts.scan and opts.reinforce then
-        return emit_error(json_output, 'Options --scan and --reinforce are mutually exclusive.')
+        return emit_error(json_output, 'Options --scan and --reinforce are mutually exclusive.', argv)
     end
 
     local mode = opts.reinforce and 'reinforce' or 'scan'

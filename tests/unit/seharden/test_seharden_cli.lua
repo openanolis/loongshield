@@ -215,8 +215,10 @@ function test_json_format_reinforce_suppresses_enforcer_command_noise()
 
     packages_enforcer._test_set_dependencies({
         io_popen = function(cmd)
-            assert(cmd:find("dnf install %-y audit 2>&1", 1) ~= nil,
-                'Expected reinforce path to capture dnf output via io.popen')
+            assert(
+                cmd:find('dnf install %-y audit 2>&1', 1) ~= nil,
+                'Expected reinforce path to capture dnf output via io.popen'
+            )
             return {
                 read = function()
                     return 'Last metadata expiration check: 1:00:00 ago.\nNothing to do.\n'
@@ -285,15 +287,19 @@ function test_json_format_reinforce_suppresses_enforcer_command_noise()
             local decoded, decode_err = cjson.decode(output)
 
             assert(ret == 0, 'Expected reinforce JSON run to succeed after fix')
-            assert(decoded ~= nil, 'Expected reinforce JSON output to decode: ' .. tostring(decode_err) .. '\n' .. output)
+            assert(
+                decoded ~= nil,
+                'Expected reinforce JSON output to decode: ' .. tostring(decode_err) .. '\n' .. output
+            )
             assert(decoded.mode == 'reinforce', 'Expected reinforce mode in JSON report')
             assert(decoded.rule_count == 1, 'Expected one rule in JSON report')
             assert(decoded.rules[1].status == 'FIXED', 'Expected reinforce rule to verify as fixed')
             assert(decoded.summary.fixed == 1, 'Expected fixed summary count')
-            assert(not output:find('Last metadata expiration check', 1, true),
-                'Expected noisy enforcer stdout not to leak into JSON output')
-            assert(not output:find('Nothing to do.', 1, true),
-                'Expected enforcer chatter not to leak into JSON output')
+            assert(
+                not output:find('Last metadata expiration check', 1, true),
+                'Expected noisy enforcer stdout not to leak into JSON output'
+            )
+            assert(not output:find('Nothing to do.', 1, true), 'Expected enforcer chatter not to leak into JSON output')
         end)
     end)
 
