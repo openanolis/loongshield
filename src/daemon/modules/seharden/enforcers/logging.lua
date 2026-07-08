@@ -16,6 +16,10 @@ end
 
 M._test_set_dependencies()
 
+local function shell_escape(arg)
+    return "'" .. tostring(arg):gsub("'", "'\\''") .. "'"
+end
+
 -- Fix access permissions on log files under /var/log.
 -- Iterates the details from logging.inspect_logfile_access probe
 -- and applies chmod/chown for each non-compliant file.
@@ -46,7 +50,7 @@ function M.fix_logfile_access(params)
         -- Fix mode if needed
         if not detail.mode_ok and detail.expected_mode then
             local mode_str = string.format('%04o', detail.expected_mode)
-            local cmd = string.format("chmod %s '%s' 2>&1", mode_str, path)
+            local cmd = string.format("chmod %s %s 2>&1", mode_str, shell_escape(path))
             log.debug('logging.fix_logfile_access: %s', cmd)
             local ok, _, code = _dependencies.os_execute(cmd)
             if not ok and code ~= 0 then
@@ -60,7 +64,7 @@ function M.fix_logfile_access(params)
         if not detail.owner_ok or not detail.group_ok then
             local target_owner = detail.allowed_owners and detail.allowed_owners[1] or 'root'
             local target_group = detail.allowed_groups and detail.allowed_groups[1] or 'root'
-            local cmd = string.format("chown %s:%s '%s' 2>&1", target_owner, target_group, path)
+            local cmd = string.format("chown %s:%s %s 2>&1", target_owner, target_group, shell_escape(path))
             log.debug('logging.fix_logfile_access: %s', cmd)
             local ok, _, code = _dependencies.os_execute(cmd)
             if not ok and code ~= 0 then
