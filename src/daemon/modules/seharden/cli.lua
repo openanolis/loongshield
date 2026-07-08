@@ -312,20 +312,24 @@ local function requested_json_format(argv)
     return false
 end
 
+local function emit_error(json_output, error_message, argv)
+    if json_output or requested_json_format(argv) then
+        print_json_report({
+            exit_code = 1,
+            error = error_message,
+        })
+    else
+        log.error(error_message)
+        print('')
+        print_usage()
+    end
+    return 1
+end
+
 function M.run(argv)
     local opts, err = parse_args(argv)
     if not opts then
-        if requested_json_format(argv) then
-            print_json_report({
-                exit_code = 1,
-                error = err,
-            })
-        else
-            log.error(err)
-            print('')
-            print_usage()
-        end
-        return 1
+        return emit_error(false, err, argv)
     end
 
     if opts.help then
@@ -337,17 +341,7 @@ function M.run(argv)
     if output_format ~= 'text' and output_format ~= 'json' then
         local format_err =
             string.format("Unsupported output format '%s'. Expected 'text' or 'json'.", tostring(output_format))
-        if requested_json_format(argv) then
-            print_json_report({
-                exit_code = 1,
-                error = format_err,
-            })
-        else
-            log.error(format_err)
-            print('')
-            print_usage()
-        end
-        return 1
+        return emit_error(false, format_err, argv)
     end
     local json_output = output_format == 'json'
 
@@ -359,17 +353,7 @@ function M.run(argv)
     end
 
     if opts.scan and opts.reinforce then
-        if json_output then
-            print_json_report({
-                exit_code = 1,
-                error = 'Options --scan and --reinforce are mutually exclusive.',
-            })
-        else
-            log.error('Options --scan and --reinforce are mutually exclusive.')
-            print('')
-            print_usage()
-        end
-        return 1
+        return emit_error(json_output, 'Options --scan and --reinforce are mutually exclusive.')
     end
 
     local mode = opts.reinforce and 'reinforce' or 'scan'
