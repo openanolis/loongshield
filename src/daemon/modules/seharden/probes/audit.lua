@@ -468,7 +468,6 @@ local function find_watch_rule_in_lines(lines, params)
                             path = watched_path,
                             permissions = permissions,
                             key = extract_key(line),
-                            line = line,
                         },
                     }
                 end
@@ -657,7 +656,6 @@ local function find_path_exec_rule_in_lines(lines, params, auid_min)
                     path = watched_path,
                     permissions = extract_watch_permissions(line),
                     key = extract_key(line),
-                    line = line,
                 },
             }
         end
@@ -693,7 +691,6 @@ local function find_directive_in_lines(lines, params)
     for _, line in ipairs(lines) do
         if directive_name_matches(line, directive) then
             last = {
-                line = line,
                 value = directive_value(line, directive),
             }
         end
