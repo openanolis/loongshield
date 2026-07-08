@@ -13,6 +13,7 @@ Loongshield is developed and tested on RPM-based Linux systems:
 For a fresh checkout on a supported host:
 
 ```sh
+git config core.hooksPath .githooks
 make bootstrap
 make test
 ```
