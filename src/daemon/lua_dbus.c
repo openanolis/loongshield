@@ -466,6 +466,7 @@ static int connection_dispatch_common(lua_State *L, int dispatch)
     case DBUS_DISPATCH_DATA_REMAINS: s = "data_remains"; break;
     case DBUS_DISPATCH_COMPLETE:     s = "complete";     break;
     case DBUS_DISPATCH_NEED_MEMORY:  s = "need_memory";  break;
+    default:                         s = "unknown";      break;
     }
     lua_pushstring(L, s);
     return 1;
@@ -626,7 +627,7 @@ static int bus_unique_name(lua_State *L)
     DBusConnection *con = toconnection(L, 1);
     const char *name;
     if (lua_gettop(L) == 1) {
-        if (name = dbus_bus_get_unique_name(con))
+        if ((name = dbus_bus_get_unique_name(con)) != NULL)
             lua_pushstring(L, name);
         else
             lua_pushnil(L);
