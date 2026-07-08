@@ -71,13 +71,40 @@ static int file_list(lua_State *L) {
     if (size < 0) { return push_error(L); }
     if (size == 0) { lua_newtable(L); return 1; }
 
-    char *list = malloc(size);
-    if (!list) { return luaL_error(L, "memory allocation failed"); }
+    // Add safety margin and retry loop to handle TOCTOU race
+    // where attributes may be added between the two listxattr calls
+    int retries = 3;
+    char *list = NULL;
+    ssize_t read_size;
+    
+    while (retries > 0) {
+        // Allocate with safety margin
+        size_t alloc_size = size + 256;
+        list = malloc(alloc_size);
+        if (!list) { return luaL_error(L, "memory allocation failed"); }
 
-    ssize_t read_size = listxattr(path, list, size);
-    if (read_size < 0) {
-        free(list);
-        return push_error(L);
+        read_size = listxattr(path, list, alloc_size);
+        if (read_size >= 0) {
+            // Success
+            break;
+        }
+        
+        // If buffer was too small (ERANGE), get new size and retry
+        if (errno == ERANGE) {
+            free(list);
+            list = NULL;
+            size = listxattr(path, NULL, 0);
+            if (size < 0) { return push_error(L); }
+            retries--;
+        } else {
+            // Other error
+            free(list);
+            return push_error(L);
+        }
+    }
+    
+    if (!list) {
+        return luaL_error(L, "listxattr: too many retries due to concurrent modifications");
     }
 
     lua_newtable(L);
