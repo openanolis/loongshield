@@ -243,6 +243,15 @@ function M.validate_rule(rule, field_name, opts)
         return nil, err
     end
 
+    -- Optional reinforce_guard: a probe that is evaluated before reinforce.
+    -- When the guard returns truthy the enforce step is skipped (MANUAL).
+    if rule.reinforce_guard ~= nil then
+        ok, err = validate_probe_tasks(rule.reinforce_guard, field_name .. ".reinforce_guard")
+        if not ok then
+            return nil, err
+        end
+    end
+
     return true
 end
 

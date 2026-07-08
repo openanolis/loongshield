@@ -161,6 +161,10 @@ rules:
         key: "disabled"
         compare: is_true
         message: "The overlay kernel module is available, built in, loaded, or missing required modprobe disable policy."
+      reinforce_guard:
+        name: container_host_check
+        func: env_detect.is_container_host
+        skip_message: "Overlay module is required by Docker overlay2 storage driver. Auto-disabling would break all containers."
       reinforce:
         - action: kmod.unload
           params: {name: "overlay"}
@@ -3331,6 +3335,10 @@ rules:
         compare: equals
         expected: "0"
         message: "net.ipv4.ip_forward is not set to 0."
+      reinforce_guard:
+        name: container_host_check
+        func: env_detect.is_container_host
+        skip_message: "Docker/K8s requires ip_forward=1 for container networking. Disabling would break container communication."
       reinforce:
         - action: sysctl.set_value
           params: {key: "net.ipv4.ip_forward", value: "0"}
@@ -3349,6 +3357,10 @@ rules:
         compare: equals
         expected: "0"
         message: "net.ipv4.conf.all.forwarding is not set to 0."
+      reinforce_guard:
+        name: container_host_check
+        func: env_detect.is_container_host
+        skip_message: "Docker/K8s requires ip_forward=1 for container networking. Disabling would break container communication."
       reinforce:
         - action: sysctl.set_value
           params: {key: "net.ipv4.conf.all.forwarding", value: "0"}
@@ -3367,6 +3379,10 @@ rules:
         compare: equals
         expected: "0"
         message: "net.ipv4.conf.default.forwarding is not set to 0."
+      reinforce_guard:
+        name: container_host_check
+        func: env_detect.is_container_host
+        skip_message: "Docker/K8s requires ip_forward=1 for container networking. Disabling would break container communication."
       reinforce:
         - action: sysctl.set_value
           params: {key: "net.ipv4.conf.default.forwarding", value: "0"}
@@ -3655,6 +3671,10 @@ rules:
         compare: equals
         expected: "0"
         message: "net.ipv6.conf.all.forwarding is not set to 0."
+      reinforce_guard:
+        name: container_host_check
+        func: env_detect.is_container_host
+        skip_message: "Docker/K8s requires IPv6 forwarding for container networking. Disabling would break IPv6 container communication."
       reinforce:
         - action: sysctl.set_value
           params: {key: "net.ipv6.conf.all.forwarding", value: "0"}
@@ -3673,6 +3693,10 @@ rules:
         compare: equals
         expected: "0"
         message: "net.ipv6.conf.default.forwarding is not set to 0."
+      reinforce_guard:
+        name: container_host_check
+        func: env_detect.is_container_host
+        skip_message: "Docker/K8s requires IPv6 forwarding for container networking. Disabling would break IPv6 container communication."
       reinforce:
         - action: sysctl.set_value
           params: {key: "net.ipv6.conf.default.forwarding", value: "0"}
