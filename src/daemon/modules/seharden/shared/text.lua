@@ -4,6 +4,10 @@ function M.trim(value)
     return (tostring(value or ""):match("^%s*(.-)%s*$"))
 end
 
+function M.shell_escape(arg)
+    return "'" .. tostring(arg):gsub("'", "'\\''") .. "'"
+end
+
 function M.glob_to_pattern(glob)
     glob = tostring(glob or "")
 

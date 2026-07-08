@@ -24,9 +24,7 @@ end
 
 M._test_set_dependencies()
 
-local function shell_escape(arg)
-    return "'" .. tostring(arg):gsub("'", "'\\''") .. "'"
-end
+local shell_escape = text.shell_escape
 
 local function is_safe_mount_path(path)
     if type(path) ~= 'string' or path == '' then

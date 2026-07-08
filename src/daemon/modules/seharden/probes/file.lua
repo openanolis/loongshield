@@ -55,9 +55,7 @@ local function normalize_execute_exit_code(ok, _, code)
     return nil
 end
 
-local function shell_escape(arg)
-    return "'" .. tostring(arg):gsub("'", "'\\''") .. "'"
-end
+local shell_escape = text.shell_escape
 
 local function lua_pattern_to_ere(pattern)
     local map = {
