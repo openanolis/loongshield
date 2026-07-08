@@ -3,6 +3,10 @@ local text = require('seharden.shared.text')
 local user_defaults = require('seharden.shared.user_defaults')
 local M = {}
 
+-- Audit constants
+local AUDIT_UNSET_AUID = 4294967295  -- uint32 max, represents unset AUID
+local DEFAULT_AUID_MIN = 1000
+
 local _default_dependencies = {
     io_open = io.open,
     io_popen = io.popen,
@@ -280,7 +284,7 @@ end
 local function line_excludes_unset_auid(line)
     return line:match('%-F%s+auid!=unset') ~= nil
         or line:match('%-F%s+auid!=%-1') ~= nil
-        or line:match('%-F%s+auid!=4294967295') ~= nil
+        or line:match('%-F%s+auid!=' .. AUDIT_UNSET_AUID) ~= nil
 end
 
 local function line_has_exit(line, expected_exit)
@@ -960,7 +964,7 @@ function M.find_syscall_rule(params)
         return nil, "Probe 'audit.find_syscall_rule' requires a non-empty 'syscalls' list."
     end
 
-    local auid_min = tonumber(params.auid_min) or 1000
+    local auid_min = tonumber(params.auid_min) or DEFAULT_AUID_MIN
     if auid_min < 0 then
         return nil, "Probe 'audit.find_syscall_rule' requires a non-negative 'auid_min' parameter."
     end
