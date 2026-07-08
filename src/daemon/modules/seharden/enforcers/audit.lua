@@ -366,9 +366,8 @@ local function collect_privileged_paths()
     local paths = {}
     local seen = {}
     for _, mount in ipairs(mounts) do
-        local found, find_err = run_command_lines(
-            'find ' .. shell_escape(mount) .. ' -xdev -perm /6000 -type f 2>/dev/null'
-        )
+        local found, find_err =
+            run_command_lines('find ' .. shell_escape(mount) .. ' -xdev -perm /6000 -type f 2>/dev/null')
         if not found then
             return nil, find_err
         end
@@ -409,7 +408,7 @@ function M.ensure_privileged_command_rules(params)
 
     for _, path in ipairs(paths) do
         if not is_safe_path(path) then
-            log.warn("audit.ensure_privileged_command_rules: skipping unsafe path: %s", tostring(path))
+            log.warn('audit.ensure_privileged_command_rules: skipping unsafe path: %s', tostring(path))
             goto continue
         end
         for _, arch in ipairs({ 'b64', 'b32' }) do

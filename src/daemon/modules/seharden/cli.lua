@@ -448,7 +448,8 @@ function M.run(argv)
         return 1
     end
 
-    local rules_to_run = get_rules_for_level(profile_data, effective_level, config_name, mode, target_level, json_output, opts)
+    local rules_to_run =
+        get_rules_for_level(profile_data, effective_level, config_name, mode, target_level, json_output, opts)
     if not rules_to_run then
         return 1
     end
