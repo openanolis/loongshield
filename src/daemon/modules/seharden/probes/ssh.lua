@@ -30,8 +30,12 @@ function M._test_set_dependencies(deps)
     _effective_dump_cache = {}
 end
 
-function M._test_clear_cache()
+function M.clear_cache()
     _effective_dump_cache = {}
+end
+
+function M._test_clear_cache()
+    M.clear_cache()
 end
 
 M._test_set_dependencies()

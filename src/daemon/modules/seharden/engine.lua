@@ -126,8 +126,8 @@ function M.run(mode, rules, opts)
                 elseif enforce_status == "DONE" then
                     -- Clear SSH probe cache to force fresh sshd -T execution after config changes
                     local ssh_probe = require('seharden.probes.ssh')
-                    if type(ssh_probe._test_clear_cache) == "function" then
-                        ssh_probe._test_clear_cache()
+                    if type(ssh_probe.clear_cache) == "function" then
+                        ssh_probe.clear_cache()
                         if not quiet then
                             log.debug("Cleared SSH probe cache for fresh verification.")
                         end
