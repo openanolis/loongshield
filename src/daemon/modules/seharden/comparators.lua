@@ -39,10 +39,15 @@ local function split_permission_digits(mode)
         return nil
     end
 
+    -- Permission bit weights for octal mode digits
+    local OWNER_SHIFT = 512  -- 8^3
+    local GROUP_SHIFT = 64   -- 8^2
+    local OTHER_SHIFT = 8    -- 8^1
+
     return {
-        math.floor(numeric_mode / 512) % 8,
-        math.floor(numeric_mode / 64) % 8,
-        math.floor(numeric_mode / 8) % 8,
+        math.floor(numeric_mode / OWNER_SHIFT) % 8,
+        math.floor(numeric_mode / GROUP_SHIFT) % 8,
+        math.floor(numeric_mode / OTHER_SHIFT) % 8,
         numeric_mode % 8,
     }
 end
