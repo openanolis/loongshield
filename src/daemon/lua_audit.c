@@ -8,6 +8,8 @@
 #include "luauxlib.h"
 
 #include <libaudit.h>
+#include <errno.h>
+#include <string.h>
 
 #define METH_AUDIT_FD       "meth_audit_fd"
 #define METH_AUDIT_RULE     "meth_audit_rule"
@@ -34,6 +36,13 @@ static struct audit_fd *newafd(lua_State *L)
 #define torulp(L, idx)  \
     (struct audit_rule_data **)luaL_checkudata((L), (idx), METH_AUDIT_RULE)
 #define torule(L, idx)   (*torulp(L, idx))
+
+static int push_error(lua_State *L)
+{
+    lua_pushnil(L);
+    lua_pushstring(L, strerror(errno));
+    return 2;
+}
 
 /******************************** audit_fd ********************************/
 
@@ -403,7 +412,7 @@ static int l_open(lua_State *L)
     struct audit_fd *afd = newafd(L);
     afd->fd = audit_open();
     if (afd->fd == -1)
-        return 0;
+        return push_error(L);
     return 1;
 }
 
@@ -412,8 +421,11 @@ static int l_rule_create(lua_State *L)
     struct audit_rule_data **rulp = newrulp(L);
 
     *rulp = audit_rule_create_data();
-    if (*rulp == NULL)
-        return 0;
+    if (*rulp == NULL) {
+        lua_pushnil(L);
+        lua_pushstring(L, "failed to create audit rule data");
+        return 2;
+    }
 
     audit_rule_init_data(*rulp);
     return 1;
