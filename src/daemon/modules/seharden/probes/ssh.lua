@@ -85,7 +85,7 @@ local function read_effective_dump(cmd)
     local handle = _dependencies.io_popen(cmd, "r")
     if not handle then
         local result = {
-            available = true,
+            available = false,
             error = "Failed to execute sshd config dump command.",
         }
         _effective_dump_cache[cmd] = result

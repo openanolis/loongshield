@@ -274,7 +274,7 @@ function test_handles_failed_popen()
     })
 
     assert(err == nil, "Expected operational popen failures to stay within probe results.")
-    assert(result.available == true, "Expected sshd path discovery to succeed before io.popen.")
+    assert(result.available == false, "Expected available to be false when popen fails.")
     assert(result.value == nil, "Expected io.popen failure to return no effective value.")
     assert(result.error == "Failed to execute sshd config dump command.",
         "Expected io.popen failure to return a descriptive error.")
