@@ -27,15 +27,15 @@ static struct audit_fd *newafd(lua_State *L)
     return afd;
 }
 
-#define toafd(L, idx)   \
-    ((struct audit_fd *)luaL_checkudata((L), (idx), METH_AUDIT_FD))
+DEFINE_LUA_UDATA_PTR(audit_fd, struct audit_fd, METH_AUDIT_FD)
+#define toafd(L, idx)   (toaudit_fdp(L, idx))
 #define tofd(L, idx)    (toafd((L), (idx))->fd)
 
 
 #define newrulp(L) (struct audit_rule_data **)newcptr((L), METH_AUDIT_RULE)
-#define torulp(L, idx)  \
-    (struct audit_rule_data **)luaL_checkudata((L), (idx), METH_AUDIT_RULE)
-#define torule(L, idx)   (*torulp(L, idx))
+DEFINE_LUA_UDATA(audit_rule, struct audit_rule_data *, METH_AUDIT_RULE)
+#define torulp(L, idx)  (toaudit_rulep(L, idx))
+#define torule(L, idx)  (toaudit_rule(L, idx))
 
 static int push_error(lua_State *L)
 {

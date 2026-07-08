@@ -15,16 +15,9 @@
 #define newmessage(L)     (DBusMessage **)newcptr((L), METH_DBUS_MESSAGE)
 #define newpending(L)     (DBusPendingCall **)newcptr((L), METH_DBUS_PENDING)
 
-#define toconnectionp(L, idx)   \
-    (DBusConnection **)luaL_checkudata((L), (idx), METH_DBUS_CONNECTION)
-#define tomessagep(L, idx)      \
-    (DBusMessage **)luaL_checkudata((L), (idx), METH_DBUS_MESSAGE)
-#define topendingp(L, idx)      \
-    (DBusPendingCall **)luaL_checkudata((L), (idx), METH_DBUS_PENDING)
-
-#define toconnection(L, idx)    (*toconnectionp(L, idx))
-#define tomessage(L, idx)       (*tomessagep(L, idx))
-#define topending(L, idx)       (*topendingp(L, idx))
+DEFINE_LUA_UDATA(connection, DBusConnection *, METH_DBUS_CONNECTION)
+DEFINE_LUA_UDATA(message, DBusMessage *, METH_DBUS_MESSAGE)
+DEFINE_LUA_UDATA(pending, DBusPendingCall *, METH_DBUS_PENDING)
 
 static int dbus_result(lua_State *L, DBusError *error, int nres)
 {

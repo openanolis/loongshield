@@ -29,17 +29,10 @@
 #define newrpmheader(L)     (Header *)newcptr((L), METH_RPM_HEADER)
 #define newrpmmi(L)         (rpmdbMatchIterator *)newcptr((L), METH_RPM_MI)
 
-#define torpmtsp(L, idx)    (rpmts *)luaL_checkudata((L), (idx), METH_RPM_TS)
-#define torpmfip(L, idx)    (rpmfi *)luaL_checkudata((L), (idx), METH_RPM_FI)
-#define torpmheaderp(L, idx)    \
-    (Header *)luaL_checkudata((L), (idx), METH_RPM_HEADER)
-#define torpmmip(L, idx)        \
-    (rpmdbMatchIterator *)luaL_checkudata((L), (idx), METH_RPM_MI)
-
-#define torpmts(L, idx)         (*torpmtsp(L, idx))
-#define torpmfi(L, idx)         (*torpmfip(L, idx))
-#define torpmheader(L, idx)     (*torpmheaderp(L, idx))
-#define torpmmi(L, idx)         (*torpmmip(L, idx))
+DEFINE_LUA_UDATA(rpmts, rpmts, METH_RPM_TS)
+DEFINE_LUA_UDATA(rpmfi, rpmfi, METH_RPM_FI)
+DEFINE_LUA_UDATA(rpmheader, Header, METH_RPM_HEADER)
+DEFINE_LUA_UDATA(rpmmi, rpmdbMatchIterator, METH_RPM_MI)
 
 /********************************** mi ***********************************/
 

@@ -23,16 +23,13 @@
 #define newpwrite(L) (struct archive **)newcptr((L), METH_ARCHIVE_WRITE)
 #define newpentry(L) (struct archive_entry **)newcptr((L), METH_ARCHIVE_ENTRY)
 
-#define topread(L, idx)     \
-    (struct archive **)luaL_checkudata((L), (idx), METH_ARCHIVE_READ)
-#define topwrite(L, idx)    \
-    (struct archive **)luaL_checkudata((L), (idx), METH_ARCHIVE_WRITE)
-#define topentry(L, idx)    \
-    (struct archive_entry **)luaL_checkudata((L), (idx), METH_ARCHIVE_ENTRY)
+DEFINE_LUA_UDATA(read, struct archive *, METH_ARCHIVE_READ)
+DEFINE_LUA_UDATA(write, struct archive *, METH_ARCHIVE_WRITE)
+DEFINE_LUA_UDATA(entry, struct archive_entry *, METH_ARCHIVE_ENTRY)
 
-#define toread(L, idx)      (*topread(L, idx))
-#define towrite(L, idx)     (*topwrite(L, idx))
-#define toentry(L, idx)     (*topentry(L, idx))
+#define topread   toreadp
+#define topwrite  towritep
+#define topentry  toentryp
 
 
 static int archive_error(lua_State *L, struct archive *a, const char *err)

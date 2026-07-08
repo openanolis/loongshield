@@ -13,7 +13,7 @@
 #include "luauxlib.h"
 
 #define META_STAT "meta_fs_stat"
-#define tostatp(L, idx) (struct stat *)luaL_checkudata(L, idx, META_STAT)
+DEFINE_LUA_UDATA_PTR(stat, struct stat, META_STAT)
 
 static int stat_gc(lua_State *L) {
     return 0;

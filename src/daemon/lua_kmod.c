@@ -52,12 +52,9 @@ static struct list *newlist(lua_State *L, const char *metatable)
 #define newconfig(L) (struct kmod_config_iter **)newcptr((L), METH_KMOD_CONFIG)
 #define newmodule(L) (struct kmod_module **)newcptr((L), METH_KMOD_MODULE)
 
-#define toctx(L, idx)       \
-    (*(struct kmod_ctx **)luaL_checkudata((L), (idx), METH_KMOD_CTX))
-#define toconfig(L, idx)    \
-    (*(struct kmod_config_iter **)luaL_checkudata((L), (idx), METH_KMOD_CONFIG))
-#define tomodule(L, idx)    \
-    (*(struct kmod_module **)luaL_checkudata((L), (idx), METH_KMOD_MODULE))
+DEFINE_LUA_UDATA(ctx, struct kmod_ctx *, METH_KMOD_CTX)
+DEFINE_LUA_UDATA(config, struct kmod_config_iter *, METH_KMOD_CONFIG)
+DEFINE_LUA_UDATA(module, struct kmod_module *, METH_KMOD_MODULE)
 
 
 /*

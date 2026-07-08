@@ -17,11 +17,8 @@
 #define newcapcap(L)    (cap_t *)newcptr((L), METH_CAP_CAP)
 #define newcapiab(L)    (cap_iab_t *)newcptr((L), METH_CAP_IAB)
 
-#define tocapcapp(L, idx) (cap_t *)luaL_checkudata((L), (idx), METH_CAP_CAP)
-#define tocapiabp(L, idx) (cap_iab_t *)luaL_checkudata((L), (idx), METH_CAP_IAB)
-
-#define tocapcap(L, idx)  (*tocapcapp(L, idx))
-#define tocapiab(L, idx)  (*tocapiabp(L, idx))
+DEFINE_LUA_UDATA(capcap, cap_t, METH_CAP_CAP)
+DEFINE_LUA_UDATA(capiab, cap_iab_t, METH_CAP_IAB)
 
 
 static int cap_result(lua_State *L, int err)

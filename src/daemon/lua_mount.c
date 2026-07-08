@@ -25,22 +25,11 @@
 #define newmntcache(L)   (struct libmnt_cache **)newcptr((L), METH_MOUNT_MNT_CACHE)
 #define newmntiter(L)    (struct libmnt_iter **)newcptr((L), METH_MOUNT_MNT_ITER)
 
-#define tomntfsp(L, idx)        \
-    (struct libmnt_fs **)luaL_checkudata((L), (idx), METH_MOUNT_MNT_FS)
-#define tomnttablep(L, idx)     \
-    (struct libmnt_table **)luaL_checkudata((L), (idx), METH_MOUNT_MNT_TABLE)
-#define tomntcontextp(L, idx)   \
-    (struct libmnt_context **)luaL_checkudata((L), (idx), METH_MOUNT_MNT_CONTEXT)
-#define tomntcachep(L, idx)     \
-    (struct libmnt_cache **)luaL_checkudata((L), (idx), METH_MOUNT_MNT_CACHE)
-#define tomntiterp(L, idx)      \
-    (struct libmnt_iter **)luaL_checkudata((L), (idx), METH_MOUNT_MNT_ITER)
-
-#define tomntfs(L, idx)         (*tomntfsp(L, idx))
-#define tomnttable(L, idx)      (*tomnttablep(L, idx))
-#define tomntcontext(L, idx)    (*tomntcontextp(L, idx))
-#define tomntcache(L, idx)      (*tomntcachep(L, idx))
-#define tomntiter(L, idx)       (*tomntiterp(L, idx))
+DEFINE_LUA_UDATA(mntfs, struct libmnt_fs *, METH_MOUNT_MNT_FS)
+DEFINE_LUA_UDATA(mnttable, struct libmnt_table *, METH_MOUNT_MNT_TABLE)
+DEFINE_LUA_UDATA(mntcontext, struct libmnt_context *, METH_MOUNT_MNT_CONTEXT)
+DEFINE_LUA_UDATA(mntcache, struct libmnt_cache *, METH_MOUNT_MNT_CACHE)
+DEFINE_LUA_UDATA(mntiter, struct libmnt_iter *, METH_MOUNT_MNT_ITER)
 
 
 static int mnt_result(lua_State *L, int err)
