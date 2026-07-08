@@ -405,6 +405,10 @@ function M.ensure_privileged_command_rules(params)
     end
 
     for _, path in ipairs(paths) do
+        if not is_safe_path(path) then
+            log.warn("audit.ensure_privileged_command_rules: skipping unsafe path: %s", tostring(path))
+            goto continue
+        end
         for _, arch in ipairs({ 'b64', 'b32' }) do
             local rule_line = string.format(
                 '-a always,exit -F arch=%s -F path=%s -F perm=x -F auid>=1000 -F auid!=unset -k %s',
@@ -418,6 +422,7 @@ function M.ensure_privileged_command_rules(params)
                 return nil, err
             end
         end
+        ::continue::
     end
 
     return true
