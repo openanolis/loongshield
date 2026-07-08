@@ -326,6 +326,86 @@ local function emit_error(json_output, error_message, argv)
     return 1
 end
 
+local function validate_output_format(format)
+    if format ~= 'text' and format ~= 'json' then
+        return nil, string.format("Unsupported output format '%s'. Expected 'text' or 'json'.", tostring(format))
+    end
+    return true
+end
+
+local function load_profile_data(config_name, target_level, mode, json_output, opts)
+    local profile_data = with_silent_logs(json_output, function()
+        return profile.load(config_name)
+    end)
+    if not profile_data then
+        if json_output then
+            print_json_report({
+                exit_code = 1,
+                mode = mode,
+                config = config_name,
+                profile = config_name,
+                level = target_level or 'all',
+                requested_level = target_level,
+                dry_run = opts['dry-run'] or false,
+                error = string.format("Failed to load profile '%s'.", config_name),
+            })
+        end
+        return nil
+    end
+
+    local effective_level = target_level
+    if type(profile.resolve_target_level) == 'function' then
+        local resolved_level, level_err = with_silent_logs(json_output, function()
+            return profile.resolve_target_level(profile_data, target_level)
+        end)
+        if resolved_level == nil and level_err ~= nil then
+            if json_output then
+                print_json_report({
+                    exit_code = 1,
+                    mode = mode,
+                    config = config_name,
+                    profile = profile_data.id or config_name,
+                    level = target_level or 'all',
+                    requested_level = target_level,
+                    dry_run = opts['dry-run'] or false,
+                    error = tostring(level_err),
+                })
+            end
+            return nil
+        end
+        effective_level = resolved_level
+    end
+
+    return profile_data, effective_level
+end
+
+local function get_rules_for_level(profile_data, effective_level, config_name, mode, target_level, json_output, opts)
+    local rules_to_run, rules_err = with_silent_logs(json_output, function()
+        return profile.get_rules_for_level(profile_data, effective_level)
+    end)
+    if not rules_to_run then
+        local available_levels = format_level_ids(profile_data)
+        if json_output then
+            print_json_report({
+                exit_code = 1,
+                mode = mode,
+                config = config_name,
+                profile = profile_data.id or config_name,
+                level = effective_level or 'all',
+                requested_level = target_level,
+                dry_run = opts['dry-run'] or false,
+                available_levels = get_level_ids(profile_data),
+                error = rules_err
+                    or string.format("No rules available for level '%s'.", tostring(effective_level or 'all')),
+            })
+        elseif target_level and available_levels then
+            log.info("Available levels for profile '%s': %s", profile_data.id or config_name, available_levels)
+        end
+        return nil
+    end
+    return rules_to_run
+end
+
 function M.run(argv)
     local opts, err = parse_args(argv)
     if not opts then
@@ -338,9 +418,8 @@ function M.run(argv)
     end
 
     local output_format = opts.format or 'text'
-    if output_format ~= 'text' and output_format ~= 'json' then
-        local format_err =
-            string.format("Unsupported output format '%s'. Expected 'text' or 'json'.", tostring(output_format))
+    local format_ok, format_err = validate_output_format(output_format)
+    if not format_ok then
         return emit_error(false, format_err, argv)
     end
     local json_output = output_format == 'json'
@@ -364,69 +443,13 @@ function M.run(argv)
     local config_name = opts.config or DEFAULT_CONFIG
     local target_level = opts.level
 
-    local profile_data = with_silent_logs(json_output, function()
-        return profile.load(config_name)
-    end)
+    local profile_data, effective_level = load_profile_data(config_name, target_level, mode, json_output, opts)
     if not profile_data then
-        if json_output then
-            print_json_report({
-                exit_code = 1,
-                mode = mode,
-                config = config_name,
-                profile = config_name,
-                level = target_level or 'all',
-                requested_level = target_level,
-                dry_run = opts['dry-run'] or false,
-                error = string.format("Failed to load profile '%s'.", config_name),
-            })
-        end
         return 1
     end
 
-    local effective_level = target_level
-    if type(profile.resolve_target_level) == 'function' then
-        local resolved_level, level_err = with_silent_logs(json_output, function()
-            return profile.resolve_target_level(profile_data, target_level)
-        end)
-        if resolved_level == nil and level_err ~= nil then
-            if json_output then
-                print_json_report({
-                    exit_code = 1,
-                    mode = mode,
-                    config = config_name,
-                    profile = profile_data.id or config_name,
-                    level = target_level or 'all',
-                    requested_level = target_level,
-                    dry_run = opts['dry-run'] or false,
-                    error = tostring(level_err),
-                })
-            end
-            return 1
-        end
-        effective_level = resolved_level
-    end
-
-    local rules_to_run, rules_err = with_silent_logs(json_output, function()
-        return profile.get_rules_for_level(profile_data, effective_level)
-    end)
+    local rules_to_run = get_rules_for_level(profile_data, effective_level, config_name, mode, target_level, json_output, opts)
     if not rules_to_run then
-        local available_levels = format_level_ids(profile_data)
-        if json_output then
-            print_json_report({
-                exit_code = 1,
-                mode = mode,
-                config = config_name,
-                profile = profile_data.id or config_name,
-                level = effective_level or 'all',
-                requested_level = target_level,
-                dry_run = opts['dry-run'] or false,
-                available_levels = get_level_ids(profile_data),
-                error = rules_err
-                    or string.format("No rules available for level '%s'.", tostring(effective_level or 'all')),
-            })
-        elseif target_level and available_levels then
-            log.info("Available levels for profile '%s': %s", profile_data.id or config_name, available_levels)
-        end
         return 1
     end
 
