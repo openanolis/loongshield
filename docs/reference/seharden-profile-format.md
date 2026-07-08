@@ -30,6 +30,7 @@ Each rule typically includes:
 - `probes`: one or more probe calls with `name`, `func`, and `params`.
 - `assertion`: comparison tree using `all_of`, `any_of`, or `compare`.
 - `reinforce`: optional list of actions with `action` and `params`.
+- `reinforce_guard`: optional conditional skip evaluated **before** `reinforce` actions. Uses probe task format (`name`, `func`, `params`) plus an optional `skip_message`. When the guard probe returns truthy, reinforce is skipped and the rule is reported as `MANUAL` with the skip reason. When the guard probe is unavailable or errors, reinforce is also skipped (fail-close) to prevent executing potentially dangerous actions without safety checks.
 
 ## Manual Review Shape
 
@@ -84,7 +85,10 @@ rules:
 
 ## Current Probe And Enforcer Namespaces
 
-- Probes: `file`, `kmod`, `meta`, `mounts`, `network`, `packages`, `permissions`, `services`, `ssh`, `sysctl`, `users`
+- Probes: `env_detect`, `file`, `kmod`, `meta`, `mounts`, `network`, `packages`, `permissions`, `services`, `ssh`, `sysctl`, `users`
 - Enforcers: `file`, `kmod`, `mounts`, `packages`, `permissions`, `services`, `sysctl`
+
+`env_detect` provides runtime environment detection for guard probes:
+- `env_detect.is_container_host`: returns truthy when Docker socket, containerd socket, kubelet process, or `/.dockerenv` is detected.
 
 Keep new profile docs caller-focused. Probe implementation details belong in design docs, not here.

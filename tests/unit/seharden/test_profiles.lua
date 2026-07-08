@@ -323,6 +323,16 @@ function test_bundled_profile_selected_probe_and_enforcer_paths_resolve()
                             case.path, level, rule.id, tostring(task.action))
                     end
                 end
+                if rule.reinforce_guard then
+                    for _, task in ipairs(rule_schema.normalize_probe_tasks(rule.reinforce_guard)) do
+                        local guard_func = loader.get_probe(task.func)
+                        if type(guard_func) ~= "function" then
+                            offenders[#offenders + 1] = string.format(
+                                "%s:%s:%s reinforce_guard %s",
+                                case.path, level, rule.id, tostring(task.func))
+                        end
+                    end
+                end
             end
         end
     end

@@ -106,3 +106,30 @@ function test_rule_schema_rejects_non_assertion_for_all_expected()
     assert(err:find("rules[1].assertion.expected must be an assertion table when compare is 'for_all'.", 1, true),
         "Expected schema error to point at the nested for_all assertion")
 end
+
+function test_rule_schema_accepts_reinforce_guard_with_name()
+    local ok = rule_schema.validate_rule(make_rule({
+        reinforce_guard = {
+            name = "container_host_check",
+            func = "env_detect.is_container_host",
+            skip_message = "Container host detected.",
+        },
+        reinforce = {
+            { action = "sysctl.set_value", params = { key = "net.ipv4.ip_forward", value = "0" } },
+        },
+    }), "rules[1]")
+
+    assert(ok == true, "Expected rule with well-formed reinforce_guard to validate")
+end
+
+function test_rule_schema_rejects_reinforce_guard_without_name()
+    local ok, err = rule_schema.validate_rule(make_rule({
+        reinforce_guard = {
+            func = "env_detect.is_container_host",
+        },
+    }), "rules[1]")
+
+    assert(ok == nil, "Expected guard without name to be rejected")
+    assert(err:find("reinforce_guard") and err:find("name must be a non%-empty string"),
+        "Expected schema error to point at reinforce_guard.name, got: " .. tostring(err))
+end
