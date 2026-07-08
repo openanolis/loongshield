@@ -1,34 +1,12 @@
 local comparators = require('seharden.comparators')
+local utils = require('seharden.shared.util')
 
 local M = {}
 
 local MODULE_FUNCTION_PATTERN = "^[%w_]+%.[%w_]+$"
 
-local function is_non_empty_string(value)
-    return type(value) == "string" and value ~= ""
-end
-
-local function is_list(value)
-    if type(value) ~= "table" then
-        return false
-    end
-
-    local count = 0
-    for key, _ in pairs(value) do
-        if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
-            return false
-        end
-        count = count + 1
-    end
-
-    for index = 1, count do
-        if value[index] == nil then
-            return false
-        end
-    end
-
-    return true
-end
+local is_non_empty_string = utils.is_non_empty_string
+local is_list = utils.is_list
 
 local function validate_module_function_path(value, field_name)
     if not is_non_empty_string(value) then

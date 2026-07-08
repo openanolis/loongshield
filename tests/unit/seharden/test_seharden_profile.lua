@@ -118,6 +118,12 @@ function test_load_allows_inactive_rules_to_use_unknown_comparators()
         util = {
             read_file_content = function()
                 return "stub"
+            end,
+            is_non_empty_string = function(value)
+                return type(value) == "string" and value ~= ""
+            end,
+            is_list = function(value)
+                return type(value) == "table"
             end
         },
         lyaml = {
@@ -338,6 +344,12 @@ function test_load_rejects_invalid_schema_before_runtime()
         util = {
             read_file_content = function()
                 return "stub"
+            end,
+            is_non_empty_string = function(value)
+                return type(value) == "string" and value ~= ""
+            end,
+            is_list = function(value)
+                return type(value) == "table"
             end
         },
         lyaml = {
@@ -371,6 +383,12 @@ function test_load_rejects_invalid_rule_schema_before_runtime()
         util = {
             read_file_content = function()
                 return "stub"
+            end,
+            is_non_empty_string = function(value)
+                return type(value) == "string" and value ~= ""
+            end,
+            is_list = function(value)
+                return type(value) == "table"
             end
         },
         lyaml = {

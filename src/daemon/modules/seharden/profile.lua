@@ -9,31 +9,8 @@ local RULES_BASE_PATH =
     os.getenv("LOONGSHIELD_SEHARDEN_RULES_PATH")
     or "/etc/loongshield/seharden"
 
-local function is_non_empty_string(value)
-    return type(value) == "string" and value ~= ""
-end
-
-local function is_list(value)
-    if type(value) ~= "table" then
-        return false
-    end
-
-    local count = 0
-    for key, _ in pairs(value) do
-        if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
-            return false
-        end
-        count = count + 1
-    end
-
-    for i = 1, count do
-        if value[i] == nil then
-            return false
-        end
-    end
-
-    return true
-end
+local is_non_empty_string = utils.is_non_empty_string
+local is_list = utils.is_list
 
 local function validate_string_list(values, field_name)
     if not is_list(values) then
