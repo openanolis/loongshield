@@ -135,8 +135,9 @@ function M.enforce(rule, probed_data, dry_run)
             if not pcall_ok then
                 return "ERROR", string.format("Enforcer '%s' raised: %s", tostring(path), tostring(result))
             end
-            if result == nil then
-                return "ERROR", string.format("Enforcer '%s' failed: %s", tostring(path), tostring(err))
+            if result == nil or result == false then
+                local msg = err or "enforcer returned false"
+                return "ERROR", string.format("Enforcer '%s' failed: %s", tostring(path), tostring(msg))
             end
         end
     end
