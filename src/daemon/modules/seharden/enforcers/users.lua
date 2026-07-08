@@ -47,6 +47,62 @@ end
 
 M._test_set_dependencies()
 
+local function apply_chage_policy(entries, flag, threshold, compare_fn, log_ctx, field_name)
+    if entries and #entries > 0 then
+        local fixed_count = 0
+        for _, entry in ipairs(entries) do
+            if not is_safe_username(entry.user) then
+                return nil,
+                    string.format(
+                        "users.%s: refusing to process unsafe username '%s'",
+                        log_ctx,
+                        tostring(entry.user)
+                    )
+            end
+            local current = entry[field_name]
+            if compare_fn(current, threshold) then
+                local cmd = string.format('chage %s %d %s', flag, threshold, entry.user)
+                local ok, _, code = _dependencies.os_execute(cmd)
+                if not ok and code ~= 0 then
+                    return nil,
+                        string.format(
+                            "users.%s: chage failed (exit %s) for user '%s': %s",
+                            log_ctx,
+                            tostring(code),
+                            entry.user,
+                            cmd
+                        )
+                end
+                fixed_count = fixed_count + 1
+                log.info(
+                    "users.%s: set %s=%d for user '%s'",
+                    log_ctx,
+                    flag:upper():gsub('--', ''),
+                    threshold,
+                    entry.user
+                )
+            end
+        end
+        log.info(
+            'users.%s: fixed %d account(s)',
+            log_ctx,
+            fixed_count
+        )
+        return true
+    end
+
+    -- Fallback: fix only root (original behavior, kept for backward compatibility)
+    local cmd = string.format('chage %s %d root', flag, threshold)
+    local ok, _, code = _dependencies.os_execute(cmd)
+    if not ok and code ~= 0 then
+        return nil,
+            string.format('users.%s: command failed (exit %s): %s', log_ctx, tostring(code), cmd)
+    end
+    log.info('users.%s: set %s=%d for root', log_ctx, flag:upper():gsub('--', ''), threshold)
+
+    return true
+end
+
 -- Lock all accounts with empty passwords by prepending '!' to the password field.
 -- This is idempotent: accounts that are already locked (! prefix) are skipped.
 -- params: { shadow_path (optional, default "/etc/shadow") }
@@ -110,58 +166,14 @@ end
 -- params: { max_days (default 90), entries (optional, from shadow_entries probe) }
 function M.set_password_max_days_for_root(params)
     local max_days = params.max_days or 90
-    local entries = params.entries
-
-    if entries and #entries > 0 then
-        -- Fix ALL non-compliant login-capable accounts, not just root
-        local fixed_count = 0
-        for _, entry in ipairs(entries) do
-            if not is_safe_username(entry.user) then
-                return nil,
-                    string.format(
-                        "users.set_password_max_days_for_root: refusing to process unsafe username '%s'",
-                        tostring(entry.user)
-                    )
-            end
-            local current = entry.pass_max_days
-            if current == nil or current > max_days then
-                local cmd = string.format('chage --maxdays %d %s', max_days, entry.user)
-                local ok, _, code = _dependencies.os_execute(cmd)
-                if not ok and code ~= 0 then
-                    return nil,
-                        string.format(
-                            "users.set_password_max_days_for_root: chage failed (exit %s) for user '%s': %s",
-                            tostring(code),
-                            entry.user,
-                            cmd
-                        )
-                end
-                fixed_count = fixed_count + 1
-                log.info(
-                    "users.set_password_max_days_for_root: set PASS_MAX_DAYS=%d for user '%s'",
-                    max_days,
-                    entry.user
-                )
-            end
-        end
-        log.info(
-            'users.set_password_max_days_for_root: fixed %d account(s) with PASS_MAX_DAYS > %d',
-            fixed_count,
-            max_days
-        )
-        return true
-    end
-
-    -- Fallback: fix only root (original behavior, kept for backward compatibility)
-    local cmd = string.format('chage --maxdays %d root', max_days)
-    local ok, _, code = _dependencies.os_execute(cmd)
-    if not ok and code ~= 0 then
-        return nil,
-            string.format('users.set_password_max_days_for_root: command failed (exit %s): %s', tostring(code), cmd)
-    end
-    log.info('users.set_password_max_days_for_root: set PASS_MAX_DAYS=%d for root', max_days)
-
-    return true
+    return apply_chage_policy(
+        params.entries,
+        '--maxdays',
+        max_days,
+        function(current, threshold) return current == nil or current > threshold end,
+        'set_password_max_days_for_root',
+        'pass_max_days'
+    )
 end
 
 -- Set password min days for root account using chage command.
@@ -172,58 +184,14 @@ end
 -- params: { min_days (default 7), entries (optional, from shadow_entries probe) }
 function M.set_password_min_days_for_root(params)
     local min_days = params.min_days or 7
-    local entries = params.entries
-
-    if entries and #entries > 0 then
-        -- Fix ALL non-compliant login-capable accounts, not just root
-        local fixed_count = 0
-        for _, entry in ipairs(entries) do
-            if not is_safe_username(entry.user) then
-                return nil,
-                    string.format(
-                        "users.set_password_min_days_for_root: refusing to process unsafe username '%s'",
-                        tostring(entry.user)
-                    )
-            end
-            local current = entry.pass_min_days
-            if current == nil or current < min_days then
-                local cmd = string.format('chage --mindays %d %s', min_days, entry.user)
-                local ok, _, code = _dependencies.os_execute(cmd)
-                if not ok and code ~= 0 then
-                    return nil,
-                        string.format(
-                            "users.set_password_min_days_for_root: chage failed (exit %s) for user '%s': %s",
-                            tostring(code),
-                            entry.user,
-                            cmd
-                        )
-                end
-                fixed_count = fixed_count + 1
-                log.info(
-                    "users.set_password_min_days_for_root: set PASS_MIN_DAYS=%d for user '%s'",
-                    min_days,
-                    entry.user
-                )
-            end
-        end
-        log.info(
-            'users.set_password_min_days_for_root: fixed %d account(s) with PASS_MIN_DAYS < %d',
-            fixed_count,
-            min_days
-        )
-        return true
-    end
-
-    -- Fallback: fix only root (original behavior, kept for backward compatibility)
-    local cmd = string.format('chage --mindays %d root', min_days)
-    local ok, _, code = _dependencies.os_execute(cmd)
-    if not ok and code ~= 0 then
-        return nil,
-            string.format('users.set_password_min_days_for_root: command failed (exit %s): %s', tostring(code), cmd)
-    end
-    log.info('users.set_password_min_days_for_root: set PASS_MIN_DAYS=%d for root', min_days)
-
-    return true
+    return apply_chage_policy(
+        params.entries,
+        '--mindays',
+        min_days,
+        function(current, threshold) return current == nil or current < threshold end,
+        'set_password_min_days_for_root',
+        'pass_min_days'
+    )
 end
 
 -- Lock shutdown and halt system accounts to prevent unauthorized system shutdown.
