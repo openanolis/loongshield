@@ -3,6 +3,7 @@ local fs = require('fs')
 local lfs = require('lfs')
 local log = require('runtime.log')
 local path_list = require('seharden.shared.path_list')
+local text = require('seharden.shared.text')
 local M = {}
 
 local _default_dependencies = {
@@ -35,9 +36,7 @@ end
 
 M._test_set_dependencies()
 
-local function trim(value)
-    return (tostring(value or ""):match("^%s*(.-)%s*$"))
-end
+local trim = text.trim
 
 local MODE_0600 = tonumber("600", 8)
 local MODE_0640 = tonumber("640", 8)

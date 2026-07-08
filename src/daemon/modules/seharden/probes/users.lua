@@ -3,6 +3,7 @@ local fs = require('fs')
 local account_files = require('seharden.shared.account_files')
 local comparators = require('seharden.comparators')
 local user_defaults = require('seharden.shared.user_defaults')
+local text = require('seharden.shared.text')
 
 local M = {}
 
@@ -91,9 +92,7 @@ local function _get_real_users()
     return real_users
 end
 
-local function trim(value)
-    return (tostring(value or ""):match("^%s*(.-)%s*$"))
-end
+local trim = text.trim
 
 local function read_group_entries()
     local group_entries, err = account_files.read_group(_dependencies.io_open, _dependencies.group_path)
