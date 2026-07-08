@@ -187,6 +187,15 @@ function M.parse_integer(value)
     return number
 end
 
+function M.flag_is_enabled(value)
+    if value == true then
+        return true
+    end
+
+    local normalized = tostring(value or ""):lower()
+    return normalized == "1" or normalized == "yes" or normalized == "true"
+end
+
 function M.load_pam_entries(path)
     local file = dependencies.io_open(path, "r")
     if not file then

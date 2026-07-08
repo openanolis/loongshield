@@ -28,15 +28,6 @@ local function is_password_history_module(module_name)
     return module_name == "pam_pwhistory.so" or module_name == "pam_unix.so"
 end
 
-local function flag_is_enabled(value)
-    if value == true then
-        return true
-    end
-
-    local normalized = tostring(value or ""):lower()
-    return normalized == "1" or normalized == "yes" or normalized == "true"
-end
-
 local function inspect_remember_arguments(params, details)
     local count = 0
     local min_remember = tonumber(params.min_remember) or 24
@@ -200,7 +191,7 @@ function M.inspect_setting(params)
             })
         end
     elseif params.option == "enforce_for_root" then
-        config_ok = flag_is_enabled(config_value)
+        config_ok = common.flag_is_enabled(config_value)
         if not config_ok then
             common.add_detail(details, config_path, "config_enforce_for_root_missing")
         end

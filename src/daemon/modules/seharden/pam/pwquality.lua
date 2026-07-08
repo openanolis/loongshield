@@ -86,17 +86,8 @@ local function value_is_disallowed(value, disallowed_values)
     return false
 end
 
-local function flag_is_enabled(value)
-    if value == true then
-        return true
-    end
-
-    local normalized = tostring(value or ""):lower()
-    return normalized == "1" or normalized == "yes" or normalized == "true"
-end
-
 local function setting_is_compliant(value, params)
-    if params.require_flag and not flag_is_enabled(value) then
+    if params.require_flag and not common.flag_is_enabled(value) then
         return false, "flag_missing_or_disabled"
     end
 
