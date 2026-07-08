@@ -35,6 +35,15 @@ end
 
 M._test_set_dependencies()
 
+local function open_or_error(path, context)
+    local file, err = _dependencies.io_open(path, "r")
+    if not file then
+        log.warn("Could not open file '%s' while %s: %s", path, context, tostring(err))
+        return nil, string.format("Could not open file '%s': %s", path, tostring(err))
+    end
+    return file
+end
+
 local function expand_paths(paths_table)
     return path_list.expand_files(paths_table)
 end
@@ -378,11 +387,9 @@ function M.find_key_value_outside_allowed(params)
     local details = {}
 
     for _, file_path in ipairs(files_to_check) do
-        local file, err = _dependencies.io_open(file_path, "r")
+        local file, err = open_or_error(file_path, "checking key values")
         if not file then
-            log.warn("Could not open file '%s' while checking key values: %s",
-                file_path, tostring(err))
-            return nil, string.format("Could not open file '%s': %s", file_path, tostring(err))
+            return nil, err
         end
 
         for _, entry in ipairs(key_value_file.parse_entries(file)) do
@@ -415,11 +422,9 @@ function M.find_key_value(params)
     local details = {}
 
     for _, file_path in ipairs(files_to_check) do
-        local file, err = _dependencies.io_open(file_path, "r")
+        local file, err = open_or_error(file_path, "checking key values")
         if not file then
-            log.warn("Could not open file '%s' while checking key values: %s",
-                file_path, tostring(err))
-            return nil, string.format("Could not open file '%s': %s", file_path, tostring(err))
+            return nil, err
         end
 
         for _, entry in ipairs(key_value_file.parse_entries(file, {
@@ -450,11 +455,9 @@ function M.get_effective_key_value(params)
 
     local effective
     for _, file_path in ipairs(files_to_check) do
-        local file, err = _dependencies.io_open(file_path, "r")
+        local file, err = open_or_error(file_path, "checking effective key values")
         if not file then
-            log.warn("Could not open file '%s' while checking effective key values: %s",
-                file_path, tostring(err))
-            return nil, string.format("Could not open file '%s': %s", file_path, tostring(err))
+            return nil, err
         end
 
         for _, entry in ipairs(key_value_file.parse_entries(file, {
