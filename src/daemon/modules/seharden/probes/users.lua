@@ -7,6 +7,8 @@ local text = require('seharden.shared.text')
 
 local M = {}
 
+local NOBODY_UID = 65534
+
 local _default_dependencies = {
     io_open = io.open,
     io_popen = io.popen,
@@ -507,7 +509,7 @@ function M.inspect_system_account_shells(params)
         local uid = tonumber(parts[3])
         local shell = parts[7]
         if uid and not SYSTEM_SHELL_EXCLUDED_USERS[user]
-            and (uid < uid_min or uid == 65534)
+            and (uid < uid_min or uid == NOBODY_UID)
             and valid_shells[shell] then
             details[#details + 1] = {
                 user = user,
