@@ -64,6 +64,7 @@ local function get_faillock_unlock_time(entry, params, default_config)
         return nil, "unlock_time_invalid"
     end
 
+    -- Default unlock time: 600 seconds (10 minutes)
     return tonumber(params.default_unlock_time) or 600
 end
 
