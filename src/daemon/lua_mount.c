@@ -270,7 +270,8 @@ static int mnttable_find_devno(lua_State *L)
     *fsp = mnt_table_find_devno(tb, devno, d);
     if (*fsp == NULL)
         lua_pushnil(L);
-    mnt_ref_fs(*fsp);
+    else
+        mnt_ref_fs(*fsp);
     return 1;
 }
 
@@ -282,7 +283,8 @@ static int mnttable_cache(lua_State *L)
         *cachep = mnt_table_get_cache(tb);
         if (*cachep == NULL)
             lua_pushnil(L);
-        mnt_ref_cache(*cachep);
+        else
+            mnt_ref_cache(*cachep);
         return 1;
     } else {
         struct libmnt_cache *cache = tomntcache(L, 2);
@@ -324,7 +326,8 @@ static int mnttable_child_fs_next(lua_State *L)
     int err = mnt_table_next_child_fs(tb, iter, parent, fsp);
     if (err)
         lua_pushnil(L);
-    mnt_ref_fs(*fsp);
+    else
+        mnt_ref_fs(*fsp);
     return 1;
 }
 
@@ -352,7 +355,8 @@ static int mnttable_fs_next(lua_State *L)
     int err = mnt_table_next_fs(tb, iter, fsp);
     if (err)
         lua_pushnil(L);
-    mnt_ref_fs(*fsp);
+    else
+        mnt_ref_fs(*fsp);
     return 1;
 }
 
@@ -441,7 +445,8 @@ static int mnttable_over_fs(lua_State *L)
         *fsp = mnt_ ## c ## _ ## name(p, s, d);                         \
         if (*fsp == NULL)                                               \
             lua_pushnil(L);                                             \
-        mnt_ref_fs(*fsp);                                               \
+        else                                                            \
+            mnt_ref_fs(*fsp);                                           \
         return 1;                                                       \
     }
 
@@ -456,7 +461,8 @@ static int mnttable_over_fs(lua_State *L)
         *fsp = mnt_ ## c ## _ ## name(p, s1, s2, d);                    \
         if (*fsp == NULL)                                               \
             lua_pushnil(L);                                             \
-        mnt_ref_fs(*fsp);                                               \
+        else                                                            \
+            mnt_ref_fs(*fsp);                                           \
         return 1;                                                       \
     }
 
@@ -472,7 +478,8 @@ static int mnttable_over_fs(lua_State *L)
         *fsp = mnt_ ## c ## _ ## name(p, s1, s2, s3, d);                \
         if (*fsp == NULL)                                               \
             lua_pushnil(L);                                             \
-        mnt_ref_fs(*fsp);                                               \
+        else                                                            \
+            mnt_ref_fs(*fsp);                                           \
         return 1;                                                       \
     }
 
@@ -484,7 +491,8 @@ static int mnttable_over_fs(lua_State *L)
         int err = mnt_ ## c ## _ ## name(p, fsp);                       \
         if (err)                                                        \
             lua_pushnil(L);                                             \
-        mnt_ref_fs(*fsp);                                               \
+        else                                                            \
+            mnt_ref_fs(*fsp);                                           \
         return 1;                                                       \
     }
 
