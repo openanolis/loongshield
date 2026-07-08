@@ -18,41 +18,47 @@ end
 M._test_set_dependencies()
 
 local function sanitize_package_name(name)
-    if type(name) ~= "string" then return nil end
+    if type(name) ~= 'string' then
+        return nil
+    end
     -- Reject wildcards and shell metacharacters; allow typical package name chars
-    if name:match("[%*%?%;%|%&%$%(%)%`%!%<%>]") then return nil end
-    if not name:match("^[%w%.%-_+]+$") then return nil end
+    if name:match('[%*%?%;%|%&%$%(%)%`%!%<%>]') then
+        return nil
+    end
+    if not name:match('^[%w%.%-_+]+$') then
+        return nil
+    end
     return name
 end
 
 local function sanitize_package_pattern(pattern)
-    if type(pattern) ~= "string" or pattern == "" then
+    if type(pattern) ~= 'string' or pattern == '' then
         return nil
     end
-    if pattern:match("[%s%c%;%|%&%$%(%)%`%!%<%>]") then
+    if pattern:match('[%s%c%;%|%&%$%(%)%`%!%<%>]') then
         return nil
     end
-    if not pattern:match("^[%w%.%-%_+%*%?%[%]]+$") then
+    if not pattern:match('^[%w%.%-%_+%*%?%[%]]+$') then
         return nil
     end
     return pattern
 end
 
 local function run(cmd)
-    local handle = _dependencies.io_popen(cmd .. " 2>&1", "r")
+    local handle = _dependencies.io_popen(cmd .. ' 2>&1', 'r')
     if not handle then
-        return nil, string.format("failed to run command: %s", cmd)
+        return nil, string.format('failed to run command: %s', cmd)
     end
 
-    local output = ""
-    if type(handle.read) == "function" then
-        output = handle:read("*a") or ""
-    elseif type(handle.lines) == "function" then
+    local output = ''
+    if type(handle.read) == 'function' then
+        output = handle:read('*a') or ''
+    elseif type(handle.lines) == 'function' then
         local parts = {}
         for line in handle:lines() do
             parts[#parts + 1] = line
         end
-        output = table.concat(parts, "\n")
+        output = table.concat(parts, '\n')
     end
 
     local ok, _, code = handle:close()
@@ -60,19 +66,19 @@ local function run(cmd)
         return true
     end
 
-    local trimmed = output:match("^%s*(.-)%s*$")
-    if trimmed == "" then
-        trimmed = string.format("command failed (exit %s): %s", tostring(code), cmd)
+    local trimmed = output:match('^%s*(.-)%s*$')
+    if trimmed == '' then
+        trimmed = string.format('command failed (exit %s): %s', tostring(code), cmd)
     end
     return nil, trimmed
 end
 
 local function get_all_packages()
-    return package_inventory.read_installed_names(_dependencies, "packages.remove_matching")
+    return package_inventory.read_installed_names(_dependencies, 'packages.remove_matching')
 end
 
 local function find_matching_packages(pattern)
-    local matcher, matcher_err = package_inventory.compile_glob(pattern, "packages.remove_matching")
+    local matcher, matcher_err = package_inventory.compile_glob(pattern, 'packages.remove_matching')
     if not matcher then
         return nil, matcher_err
     end
@@ -88,9 +94,11 @@ local function find_matching_packages(pattern)
     for _, pkg in ipairs(matched_names) do
         local safe_name = sanitize_package_name(pkg)
         if not safe_name then
-            return nil, string.format(
-                "packages.remove_matching: installed package name '%s' is not safe to pass to dnf",
-                tostring(pkg))
+            return nil,
+                string.format(
+                    "packages.remove_matching: installed package name '%s' is not safe to pass to dnf",
+                    tostring(pkg)
+                )
         end
         matches[#matches + 1] = safe_name
     end
@@ -109,9 +117,11 @@ function M.install(params)
         return nil, string.format("packages.install: invalid package name '%s'", tostring(params.name))
     end
 
-    log.debug("Enforcer packages.install: dnf install -y %s", name)
-    local ok, err = run(string.format("dnf install -y %s", name))
-    if not ok then return nil, err end
+    log.debug('Enforcer packages.install: dnf install -y %s', name)
+    local ok, err = run(string.format('dnf install -y %s', name))
+    if not ok then
+        return nil, err
+    end
     return true
 end
 
@@ -164,9 +174,11 @@ function M.remove(params)
         return nil, string.format("packages.remove: invalid package name '%s'", tostring(params.name))
     end
 
-    log.debug("Enforcer packages.remove: dnf remove -y %s", name)
-    local ok, err = run(string.format("dnf remove -y %s", name))
-    if not ok then return nil, err end
+    log.debug('Enforcer packages.remove: dnf remove -y %s', name)
+    local ok, err = run(string.format('dnf remove -y %s', name))
+    if not ok then
+        return nil, err
+    end
     return true
 end
 
@@ -193,8 +205,8 @@ function M.remove_matching(params)
         return true
     end
 
-    log.debug("Enforcer packages.remove_matching: dnf remove -y %s", table.concat(matches, " "))
-    local ok, run_err = run(string.format("dnf remove -y %s", table.concat(matches, " ")))
+    log.debug('Enforcer packages.remove_matching: dnf remove -y %s', table.concat(matches, ' '))
+    local ok, run_err = run(string.format('dnf remove -y %s', table.concat(matches, ' ')))
     if not ok then
         return nil, run_err
     end

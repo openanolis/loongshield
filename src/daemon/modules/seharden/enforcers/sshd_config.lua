@@ -1,5 +1,6 @@
 local log = require('runtime.log')
 local fsutil = require('seharden.enforcers.fsutil')
+local text = require('seharden.shared.text')
 local M = {}
 
 local _default_dependencies = {
@@ -36,10 +37,6 @@ function M._test_set_dependencies(deps)
 end
 
 M._test_set_dependencies()
-
-local function trim(s)
-    return s:match('^%s*(.-)%s*$')
-end
 
 local function strip_comment(line)
     local pos = line:find('#')
@@ -102,7 +99,7 @@ local function discover_include_files(path, base_dir, io_open)
     end
     local includes = {}
     for line in file:lines() do
-        local active = trim(strip_comment(line))
+        local active = text.trim(strip_comment(line))
         local directive, value = active:match('^(%S+)%s+(.+)$')
         if directive and directive:lower() == 'include' then
             for spec in tostring(value or ''):gmatch('%S+') do
