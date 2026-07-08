@@ -45,10 +45,11 @@ static inline void __rwlock_lock_write(struct rw_lock *l)
 
 static inline void __rwlock_unlock(struct rw_lock *l)
 {
-    if (l->state == LS_read) {
+    typeof(l->state) state = READ_ONCE(l->state);
+    if (state == LS_read) {
         read_unlock(&l->lock);
-    } else if (l->state == LS_write) {
-        l->state = LS_free;
+    } else if (state == LS_write) {
+        WRITE_ONCE(l->state, LS_free);
         write_unlock(&l->lock);
     }
 }
