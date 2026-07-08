@@ -99,6 +99,31 @@ loongshield seharden --reinforce --config agentos_baseline --dry-run
 loongshield seharden --reinforce --config /etc/loongshield/seharden/dengbao_3.yml
 ```
 
+## External Cross-Verification
+
+Use `--format json` as the SEHarden side of any independent verification workflow. For OpenSCAP, run the matching external profile separately, save the XCCDF or ARF result, then compare the two outputs with an explicit rule mapping:
+
+```sh
+loongshield seharden --config cis_alinux_3 --level l1_server --format json > seharden.json
+oscap xccdf eval --profile <profile-id> --results oscap-results.xml <xccdf-content.xml>
+python3 tools/seharden/cross_verify.py \
+  --seharden-json seharden.json \
+  --external-xccdf oscap-results.xml \
+  --mapping cis-alinux3-oscap-map.json
+```
+
+For reinforce validation, run the same comparison after `loongshield seharden --reinforce ...` and a fresh external scan. The verifier treats SEHarden `PASS` and `FIXED` as pass, hard failures and `DRY-RUN` as fail, and manual checks as non-automated. Use a real reinforce run plus a fresh external scan when checking whether remediation changed the host; comparing SEHarden dry-run output to a live OpenSCAP scan will usually report mismatches because dry-run intentionally leaves the host unchanged.
+
+The mapping file must be a JSON object from SEHarden rule ID to the external XCCDF rule ID:
+
+```json
+{
+  "1.1.1.1": "xccdf_org.ssgproject.content_rule_kernel_module_cramfs_disabled"
+}
+```
+
+Do not rely on automatic ID matching between CIS section IDs and OpenSCAP rule IDs. The two projects use different identifiers, and an explicit mapping prevents false matches. Add `--require-all-mapped` when unmapped SEHarden rules should fail the verification, and `--format json` when another tool needs the comparison report. If an external XCCDF or ARF file contains multiple `TestResult` elements, pass `--test-result-id <id>` to select the run to compare. Mismatches are reported only when both sides have a definitive pass/fail result; OpenSCAP results such as `notchecked`, `notapplicable`, or `notselected` are reported as inconclusive.
+
 ## Related Docs
 
 - AgentOS baseline Skill workflow: [../skill/agent-sec-seharden.md](../skill/agent-sec-seharden.md)

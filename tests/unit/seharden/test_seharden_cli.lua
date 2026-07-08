@@ -205,6 +205,106 @@ function test_json_format_outputs_machine_readable_report()
     end)
 end
 
+function test_json_format_reinforce_suppresses_enforcer_command_noise()
+    local cjson = require('cjson.safe')
+    local loader = require('seharden.loader')
+    local packages_enforcer = require('seharden.enforcers.packages')
+    local saved_dependencies = packages_enforcer._test_set_dependencies
+    local saved_get_probe = loader.get_probe
+    local package_installed = false
+
+    packages_enforcer._test_set_dependencies({
+        io_popen = function(cmd)
+            assert(cmd:find("dnf install %-y audit 2>&1", 1) ~= nil,
+                'Expected reinforce path to capture dnf output via io.popen')
+            return {
+                read = function()
+                    return 'Last metadata expiration check: 1:00:00 ago.\nNothing to do.\n'
+                end,
+                close = function()
+                    package_installed = true
+                    return true, nil, 0
+                end,
+            }
+        end,
+    })
+
+    loader.get_probe = function(path)
+        if path == 'meta.package_installed' then
+            return function()
+                return package_installed
+            end, path
+        end
+        return saved_get_probe(path)
+    end
+
+    local ok, err = pcall(function()
+        with_stubbed_cli({
+            profile = {
+                load = function()
+                    return {
+                        id = 'agentos_baseline',
+                        default_level = 'baseline',
+                        levels = {
+                            { id = 'baseline' },
+                        },
+                    }
+                end,
+                resolve_target_level = function(profile_data)
+                    return profile_data.default_level
+                end,
+                get_rules_for_level = function()
+                    return {
+                        {
+                            id = 'rule.install',
+                            desc = 'Install a package through reinforce',
+                            probes = {
+                                { name = 'pkg', func = 'meta.package_installed', params = {} },
+                            },
+                            assertion = {
+                                compare = 'is_true',
+                                actual = '%{probe.pkg}',
+                                message = 'package missing',
+                            },
+                            reinforce = {
+                                { action = 'packages.install', params = { name = 'audit' } },
+                            },
+                        },
+                    }
+                end,
+                get_manual_review_items_for_level = function()
+                    return {}
+                end,
+            },
+            engine = package.loaded['seharden.engine'] or require('seharden.engine'),
+        }, function(cli)
+            local lines, ret = capture_print(function()
+                return cli.run({ '--reinforce', '--config', 'agentos_baseline', '--format=json' })
+            end)
+            local output = table.concat(lines, '\n')
+            local decoded, decode_err = cjson.decode(output)
+
+            assert(ret == 0, 'Expected reinforce JSON run to succeed after fix')
+            assert(decoded ~= nil, 'Expected reinforce JSON output to decode: ' .. tostring(decode_err) .. '\n' .. output)
+            assert(decoded.mode == 'reinforce', 'Expected reinforce mode in JSON report')
+            assert(decoded.rule_count == 1, 'Expected one rule in JSON report')
+            assert(decoded.rules[1].status == 'FIXED', 'Expected reinforce rule to verify as fixed')
+            assert(decoded.summary.fixed == 1, 'Expected fixed summary count')
+            assert(not output:find('Last metadata expiration check', 1, true),
+                'Expected noisy enforcer stdout not to leak into JSON output')
+            assert(not output:find('Nothing to do.', 1, true),
+                'Expected enforcer chatter not to leak into JSON output')
+        end)
+    end)
+
+    packages_enforcer._test_set_dependencies()
+    loader.get_probe = saved_get_probe
+
+    if not ok then
+        error(err, 0)
+    end
+end
+
 function test_json_format_parse_error_is_json()
     local cjson = require('cjson.safe')
 
