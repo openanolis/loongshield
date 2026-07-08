@@ -12,6 +12,8 @@
 #define METH_CAP_CAP            "meth_cap_cap"
 #define METH_CAP_IAB            "meth_cap_iab"
 
+#define MAX_CAPABILITIES        64
+
 #define newcapcap(L)    (cap_t *)newcptr((L), METH_CAP_CAP)
 #define newcapiab(L)    (cap_iab_t *)newcptr((L), METH_CAP_IAB)
 
@@ -114,7 +116,7 @@ static int lcap_flag(lua_State *L)
         return 1;
     } else {
         int b = lua_toboolean(L, 3);
-        cap_value_t values[64];
+        cap_value_t values[MAX_CAPABILITIES];
         int idx, k, n = 0;
 
         for (idx = 4; idx <= top; idx++) {
