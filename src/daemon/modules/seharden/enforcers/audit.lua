@@ -347,6 +347,7 @@ end
 
 -- List eligible mount points (same logic as the audit probe).
 -- Excludes filesystems with noexec or nosuid mount options.
+-- Intentionally uses a static command; no user input is interpolated.
 local function list_eligible_mount_points()
     return run_command_lines(
         [[findmnt -n -l -k -it $(awk '/nodev/ { print $2 }' /proc/filesystems | paste -sd,) ]]

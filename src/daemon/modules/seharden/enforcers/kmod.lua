@@ -33,7 +33,6 @@ local function sanitize_module_name(name)
     return name
 end
 
--- Run a shell command, returning true/nil, err
 local function run(cmd)
     local ok, _, code = _dependencies.os_execute(cmd)
     if ok == true or code == 0 then
