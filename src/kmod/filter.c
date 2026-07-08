@@ -13,6 +13,8 @@
 #include "securityfs.h"
 #include "filter.h"
 
+#define FILTER_TIMEOUT_MS (30 * 1000)
+
 static int switch_on = 1;
 static s64 lasttime;        /* ms */
 
@@ -32,8 +34,7 @@ void filter_lasttime_update(void)
 
 static int filter_timeout(void)
 {
-    /* XXX: timeout: 30 s */
-    return lasttime && ktime_to_ms(ktime_get()) - lasttime > 30 * 1000;
+    return lasttime && ktime_to_ms(ktime_get()) - lasttime > FILTER_TIMEOUT_MS;
 }
 
 int filter_disabled(void)
