@@ -13,6 +13,7 @@ local _default_dependencies = {
     lfs_symlinkattributes = fsutil.default_lfs_symlinkattributes,
     rules_dir = '/etc/audit/rules.d',
     fallback_rules_path = '/etc/audit/audit.rules',
+    login_defs_path = '/etc/login.defs',
 }
 
 local _dependencies = {}
@@ -387,6 +388,7 @@ end
 -- params: { key: "privileged" (optional) }
 function M.ensure_privileged_command_rules(params)
     local key = (params and params.key) or 'privileged'
+    local auid_min = user_defaults.read_uid_min(_dependencies.io_open, _dependencies.login_defs_path)
 
     if not is_safe_key(key) then
         return nil, string.format("audit.ensure_privileged_command_rules: invalid key '%s'", tostring(key))
@@ -411,9 +413,10 @@ function M.ensure_privileged_command_rules(params)
         end
         for _, arch in ipairs({ 'b64', 'b32' }) do
             local rule_line = string.format(
-                '-a always,exit -F arch=%s -F path=%s -F perm=x -F auid>=1000 -F auid!=unset -k %s',
+                '-a always,exit -F arch=%s -F path=%s -F perm=x -F auid>=%d -F auid!=unset -k %s',
                 arch,
                 path,
+                auid_min,
                 key
             )
             local ok, err =
