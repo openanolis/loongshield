@@ -28,7 +28,7 @@ function M.normalize_unit_name(unit_name)
     return safe_name .. ".service"
 end
 
-function M.resolve_path(deps)
+local function resolve_path(deps)
     for _, path in ipairs(SYSTEMCTL_CANDIDATES) do
         local attr = deps.lfs_attributes(path)
         if attr and attr.mode == "file" then
@@ -42,7 +42,7 @@ end
 function M.capture(args, deps, opts)
     opts = opts or {}
 
-    local cmd = M.resolve_path(deps) .. " " .. args
+    local cmd = resolve_path(deps) .. " " .. args
     local stderr_redirect = opts.stderr_redirect
     if stderr_redirect == nil then
         stderr_redirect = "2>/dev/null"
