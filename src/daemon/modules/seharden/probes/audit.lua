@@ -53,6 +53,23 @@ local function normalize_path(path)
     return normalized
 end
 
+local function list_rules_in_directory(dir_path)
+    local files = {}
+    local dir_attr = _dependencies.lfs_attributes(dir_path)
+    if dir_attr and dir_attr.mode == 'directory' then
+        for name in _dependencies.lfs_dir(dir_path) do
+            if name ~= '.' and name ~= '..' and name:match('%.rules$') then
+                local path = dir_path .. '/' .. name
+                local attr = _dependencies.lfs_attributes(path)
+                if attr and attr.mode == 'file' then
+                    files[#files + 1] = path
+                end
+            end
+        end
+    end
+    return files
+end
+
 local function list_rule_files()
     local files = {}
     local audit_rules_attr = _dependencies.lfs_attributes(_dependencies.audit_rules_path)
@@ -60,17 +77,9 @@ local function list_rule_files()
         files[#files + 1] = _dependencies.audit_rules_path
     end
 
-    local rules_d_attr = _dependencies.lfs_attributes(_dependencies.audit_rules_d_path)
-    if rules_d_attr and rules_d_attr.mode == 'directory' then
-        for name in _dependencies.lfs_dir(_dependencies.audit_rules_d_path) do
-            if name ~= '.' and name ~= '..' and name:match('%.rules$') then
-                local path = _dependencies.audit_rules_d_path .. '/' .. name
-                local attr = _dependencies.lfs_attributes(path)
-                if attr and attr.mode == 'file' then
-                    files[#files + 1] = path
-                end
-            end
-        end
+    local rules_d_files = list_rules_in_directory(_dependencies.audit_rules_d_path)
+    for _, path in ipairs(rules_d_files) do
+        files[#files + 1] = path
     end
 
     table.sort(files)
@@ -78,20 +87,7 @@ local function list_rule_files()
 end
 
 local function list_rules_d_files()
-    local files = {}
-    local rules_d_attr = _dependencies.lfs_attributes(_dependencies.audit_rules_d_path)
-    if rules_d_attr and rules_d_attr.mode == 'directory' then
-        for name in _dependencies.lfs_dir(_dependencies.audit_rules_d_path) do
-            if name ~= '.' and name ~= '..' and name:match('%.rules$') then
-                local path = _dependencies.audit_rules_d_path .. '/' .. name
-                local attr = _dependencies.lfs_attributes(path)
-                if attr and attr.mode == 'file' then
-                    files[#files + 1] = path
-                end
-            end
-        end
-    end
-
+    local files = list_rules_in_directory(_dependencies.audit_rules_d_path)
     table.sort(files)
     return files
 end
