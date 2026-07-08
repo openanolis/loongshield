@@ -125,6 +125,7 @@ static int ctx_validate_resources(lua_State *L)
     case KMOD_RESOURCES_OK:            s = "ok";       break;
     case KMOD_RESOURCES_MUST_RELOAD:   s = "reload";   break;
     case KMOD_RESOURCES_MUST_RECREATE: s = "recreate"; break;
+    default:                           s = "unknown";  break;
     }
     lua_pushstring(L, s);
     return 1;
