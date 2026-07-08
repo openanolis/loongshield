@@ -376,6 +376,7 @@ function M.remove_nopasswd(params)
 
         local new_lines = {}
         local file_changed = false
+        local file_changed_lines = 0
 
         for _, line in ipairs(original_lines) do
             -- Strip comments for analysis
@@ -402,6 +403,7 @@ function M.remove_nopasswd(params)
                 new_lines[#new_lines + 1] = new_line
                 file_changed = true
                 changed_lines = changed_lines + 1
+                file_changed_lines = file_changed_lines + 1
 
                 log.debug("sudo.remove_nopasswd: removed NOPASSWD from line: %s -> %s",
                     trim(line), trim(new_line))
@@ -431,6 +433,7 @@ function M.remove_nopasswd(params)
                         end
                         file_changed = true
                         changed_lines = changed_lines + 1
+                        file_changed_lines = file_changed_lines + 1
                     else
                         new_lines[#new_lines + 1] = line
                     end
@@ -455,7 +458,7 @@ function M.remove_nopasswd(params)
                 return nil, write_err
             end
             changed_files = changed_files + 1
-            log.info("sudo.remove_nopasswd: modified %s (%d lines changed)", path, changed_lines)
+            log.info("sudo.remove_nopasswd: modified %s (%d lines changed)", path, file_changed_lines)
         end
 
         ::continue::
