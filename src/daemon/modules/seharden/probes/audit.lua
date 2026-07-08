@@ -28,6 +28,21 @@ local function shell_escape(arg)
     return "'" .. tostring(arg):gsub("'", "'\\''") .. "'"
 end
 
+local function is_safe_mount_path(path)
+    if type(path) ~= 'string' or path == '' then
+        return false
+    end
+    -- Must start with /
+    if path:sub(1, 1) ~= '/' then
+        return false
+    end
+    -- Must not contain control characters or newlines
+    if path:find('[%c\n\r]') then
+        return false
+    end
+    return true
+end
+
 local function normalize_path(path)
     if path == '/' then
         return path
@@ -874,6 +889,10 @@ local function collect_privileged_paths_from_system()
     local paths = {}
     local seen = {}
     for _, mount in ipairs(mounts) do
+        if not is_safe_mount_path(mount) then
+            -- Skip unsafe mount paths
+            goto continue
+        end
         local found, find_err = run_lines('find ' .. shell_escape(mount) .. ' -xdev -perm /6000 -type f 2>/dev/null')
         if not found then
             return nil, find_err
@@ -884,6 +903,7 @@ local function collect_privileged_paths_from_system()
                 seen[path] = true
             end
         end
+        ::continue::
     end
     table.sort(paths)
     return paths
