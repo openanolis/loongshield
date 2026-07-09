@@ -598,6 +598,47 @@ function test_permissions_set_attributes_for_all_requires_mode()
     assert(err ~= nil, 'Expected error message')
 end
 
+function test_permissions_set_attributes_for_all_rejects_invalid_uid_and_gid()
+    local chown_called = false
+    local chmod_called = false
+
+    permissions_enforcer._test_set_dependencies({
+        fs_stat = function()
+            return make_fs_attr(1000, 1000, tonumber('644', 8))
+        end,
+        fs_chown = function()
+            chown_called = true
+            return true
+        end,
+        fs_chmod = function()
+            chmod_called = true
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+    })
+
+    local ok, err = permissions_enforcer.set_attributes_for_all({
+        list = { details = { { path = '/tmp/test' } } },
+        mode = tonumber('700', 8),
+        uid = 'root',
+    })
+    assert(ok == nil, 'Expected invalid uid to be rejected')
+    assert(err:find('invalid uid', 1, true), 'Expected uid validation error')
+
+    ok, err = permissions_enforcer.set_attributes_for_all({
+        list = { details = { { path = '/tmp/test' } } },
+        mode = tonumber('700', 8),
+        gid = -1,
+    })
+    assert(ok == nil, 'Expected invalid gid to be rejected')
+    assert(err:find('invalid gid', 1, true), 'Expected gid validation error')
+
+    assert(chown_called == false, 'Expected chown not to run on invalid input')
+    assert(chmod_called == false, 'Expected chmod not to run on invalid input')
+end
+
 function test_permissions_set_attributes_for_all_skips_symlinks()
     local chmod_called = false
     permissions_enforcer._test_set_dependencies({
@@ -1567,6 +1608,51 @@ end
 
 local mounts_enforcer = require('seharden.enforcers.mounts')
 
+local function mount_remount_with_fstab_line(line, add_options)
+    local written = {}
+    local fake_out = {
+        write = function(_, s)
+            table.insert(written, s)
+        end,
+        close = function()
+            return true
+        end,
+    }
+
+    mounts_enforcer._test_set_dependencies({
+        os_execute = function()
+            return true, 'exit', 0
+        end,
+        io_open = function(_, mode)
+            if mode == 'r' then
+                local lines = { line }
+                local i = 0
+                return {
+                    lines = function()
+                        return function()
+                            i = i + 1
+                            return lines[i]
+                        end
+                    end,
+                    close = function()
+                        return true
+                    end,
+                }
+            end
+            return fake_out
+        end,
+        os_rename = function()
+            return true
+        end,
+        os_remove = function()
+            return true
+        end,
+    })
+
+    local ok, err = mounts_enforcer.remount({ path = '/dev/shm', add_options = add_options })
+    return ok, err, table.concat(written)
+end
+
 function test_mounts_remount_returns_error_when_live_remount_fails()
     local written = {}
     local fake_out = {
@@ -1617,6 +1703,15 @@ function test_mounts_remount_returns_error_when_live_remount_fails()
         table.concat(written):find('defaults,noexec', 1, true),
         'Expected fstab update to still persist the requested option'
     )
+end
+
+function test_mounts_remount_appends_missing_options_without_duplicates()
+    local ok, err, content =
+        mount_remount_with_fstab_line('tmpfs /dev/shm tmpfs defaults,noexec 0 0', { 'noexec', 'nodev' })
+
+    assert(ok == true, 'Expected remount to succeed, got: ' .. tostring(err))
+    assert(content:find('defaults,noexec,nodev', 1, true), 'Expected missing option to be appended once')
+    assert(not content:find('defaults,noexec,noexec', 1, true), 'Expected existing option not to be duplicated')
 end
 
 function test_mounts_remount_rejects_invalid_option_tokens()

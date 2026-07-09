@@ -92,6 +92,62 @@ function test_crypto_policy_set_policy_idempotent_module()
     assert(write_called == false, 'Expected no write when module content already matches')
 end
 
+function test_crypto_policy_set_policy_returns_error_when_module_write_open_fails()
+    crypto_policy_enforcer._test_set_dependencies({
+        os_execute = function()
+            error('update-crypto-policies should not run after module write failure')
+        end,
+        io_open = function(path, mode)
+            if mode == 'r' then
+                return nil
+            end
+            if mode == 'w' then
+                assert(path:find('NO%-SHA1%.pmod'), 'Expected module file path to be opened for writing')
+                return nil
+            end
+            return nil
+        end,
+    })
+
+    local ok, err = crypto_policy_enforcer.set_policy({
+        policy = 'DEFAULT',
+        modules = { { name = 'NO-SHA1', content = 'hash = SHA256' } },
+    })
+
+    assert(ok == nil, 'Expected module write open failure to abort set_policy')
+    assert(err:find('cannot write', 1, true), 'Expected cannot write error')
+end
+
+function test_crypto_policy_set_policy_returns_error_when_module_close_fails()
+    crypto_policy_enforcer._test_set_dependencies({
+        os_execute = function()
+            error('update-crypto-policies should not run after module close failure')
+        end,
+        io_open = function(_, mode)
+            if mode == 'r' then
+                return nil
+            end
+            if mode == 'w' then
+                return {
+                    write = function() end,
+                    close = function()
+                        return nil
+                    end,
+                }
+            end
+            return nil
+        end,
+    })
+
+    local ok, err = crypto_policy_enforcer.set_policy({
+        policy = 'DEFAULT',
+        modules = { { name = 'NO-SHA1', content = 'hash = SHA256' } },
+    })
+
+    assert(ok == nil, 'Expected module close failure to abort set_policy')
+    assert(err:find('cannot close', 1, true), 'Expected cannot close error')
+end
+
 function test_crypto_policy_set_policy_rejects_missing_policy()
     crypto_policy_enforcer._test_set_dependencies({})
     local ok, err = crypto_policy_enforcer.set_policy({})
