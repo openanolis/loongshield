@@ -1,5 +1,6 @@
 local log = require('runtime.log')
 local lfs = require('lfs')
+local text = require('seharden.shared.text')
 
 local M = {}
 
@@ -44,9 +45,7 @@ end
 
 M._test_set_dependencies()
 
-local function shell_escape(arg)
-    return "'" .. tostring(arg):gsub("'", "'\\''") .. "'"
-end
+local shell_escape = text.shell_escape
 
 local function path_mode(path)
     local attr = _dependencies.lfs_attributes(path)
@@ -60,11 +59,11 @@ local function sorted_dir_entries(path)
         return nil, tostring(iter)
     end
     if not iter then
-        return nil, tostring(dir_obj or "directory unavailable")
+        return nil, tostring(dir_obj or 'directory unavailable')
     end
 
     for name in iter, dir_obj do
-        if name ~= "." and name ~= ".." then
+        if name ~= '.' and name ~= '..' then
             entries[#entries + 1] = name
         end
     end
@@ -72,14 +71,12 @@ local function sorted_dir_entries(path)
     return entries
 end
 
-local function trim(value)
-    return tostring(value or ""):match("^%s*(.-)%s*$")
-end
+local trim = text.trim
 
 local function run_command_lines(cmd)
-    local handle = _dependencies.io_popen(cmd, "r")
+    local handle = _dependencies.io_popen(cmd, 'r')
     if not handle then
-        return nil, "Failed to execute command."
+        return nil, 'Failed to execute command.'
     end
 
     local lines = {}
@@ -89,7 +86,7 @@ local function run_command_lines(cmd)
 
     local ok, _, code = handle:close()
     if ok ~= true or (code ~= nil and code ~= 0) then
-        return nil, string.format("command failed with exit code: %s", tostring(code))
+        return nil, string.format('command failed with exit code: %s', tostring(code))
     end
 
     return lines
@@ -99,52 +96,74 @@ local function parse_local_port(local_address)
     if not local_address then
         return nil
     end
-    if local_address:sub(-1) == "*" then
+    if local_address:sub(-1) == '*' then
         return nil
     end
-    return local_address:match(":([0-9]+)$")
+    return local_address:match(':([0-9]+)$')
 end
 
 local function local_address_host(local_address, port)
-    local suffix = ":" .. tostring(port)
-    local host = tostring(local_address or "")
+    local suffix = ':' .. tostring(port)
+    local host = tostring(local_address or '')
     if host:sub(-#suffix) == suffix then
         host = host:sub(1, #host - #suffix)
     end
-    return host:gsub("^%[", ""):gsub("%]$", "")
+    return host:gsub('^%[', ''):gsub('%]$', '')
 end
 
 local function is_loopback_host(host)
-    host = tostring(host or ""):lower()
-    return host == "localhost"
-        or host == "::1"
-        or host == "0:0:0:0:0:0:0:1"
-        or host:match("^127%.") ~= nil
+    host = tostring(host or ''):lower()
+    return host == 'localhost' or host == '::1' or host == '0:0:0:0:0:0:0:1' or host:match('^127%.') ~= nil
+end
+
+local function socket_detail_from_ss_line(line)
+    local fields = {}
+    for token in tostring(line or ''):gmatch('%S+') do
+        fields[#fields + 1] = token
+    end
+
+    if #fields < 5 then
+        return nil
+    end
+
+    local local_address = fields[5]
+    local port = parse_local_port(local_address)
+    if not port then
+        return nil
+    end
+
+    local host = local_address_host(local_address, port)
+    return {
+        proto = fields[1],
+        local_address = local_address,
+        port = tonumber(port),
+        host = host,
+        loopback = is_loopback_host(host),
+    }
 end
 
 local function mta_config_is_local_only(output)
     output = trim(output):lower()
-    if output == "" then
+    if output == '' then
         return true
     end
 
     local checked = 0
-    for line in output:gmatch("[^\n]+") do
-        local value = line:match("=%s*(.+)$") or line
-        value = value:gsub("addr%s*=", "")
-            :gsub("[\"']", "")
-            :gsub("<", " ")
+    for line in output:gmatch('[^\n]+') do
+        local value = line:match('=%s*(.+)$') or line
+        value = value:gsub('addr%s*=', ''):gsub('["\']', ''):gsub('<', ' ')
 
-        for token in value:gmatch("[^,;%s]+") do
+        for token in value:gmatch('[^,;%s]+') do
             token = trim(token):lower()
-            if token ~= "" then
+            if token ~= '' then
                 checked = checked + 1
-                if token == "all"
-                    or token == "0.0.0.0"
-                    or token == "::"
-                    or token == "*"
-                    or not is_loopback_host(token)
-                        and token ~= "loopback-only" then
+                if
+                    token == 'all'
+                    or token == '0.0.0.0'
+                    or token == '::'
+                    or token == '*'
+                    or not is_loopback_host(token) and token ~= 'loopback-only'
+                then
                     return false
                 end
             end
@@ -156,10 +175,10 @@ end
 
 local function read_mta_configs()
     local commands = {
-        { name = "postfix", cmd = "postconf -n inet_interfaces 2>/dev/null" },
-        { name = "exim", cmd = "exim -bP local_interfaces 2>/dev/null" },
+        { name = 'postfix', cmd = 'postconf -n inet_interfaces 2>/dev/null' },
+        { name = 'exim', cmd = 'exim -bP local_interfaces 2>/dev/null' },
         {
-            name = "sendmail",
+            name = 'sendmail',
             cmd = "grep -i 'O DaemonPortOptions=' /etc/mail/sendmail.cf 2>/dev/null | grep -o 'Addr=[^,]*'",
         },
     }
@@ -169,7 +188,7 @@ local function read_mta_configs()
     for _, command in ipairs(commands) do
         local lines = run_command_lines(command.cmd)
         if lines and #lines > 0 then
-            local output = table.concat(lines, "\n")
+            local output = table.concat(lines, '\n')
             configs[#configs + 1] = {
                 detected = true,
                 source = command.name,
@@ -194,10 +213,10 @@ local function _get_client()
         return _client
     end
 
-    log.debug("Connecting to NetworkManager for the first time...")
+    log.debug('Connecting to NetworkManager for the first time...')
     local client, err = _dependencies.client_new()
     if not client then
-        log.error("Could not connect to NetworkManager: %s", tostring(err))
+        log.error('Could not connect to NetworkManager: %s', tostring(err))
         return nil
     end
 
@@ -231,14 +250,14 @@ function M.get_wireless_radio_states()
 
     local states = {
         wifi_enabled = client:wireless_enabled(),
-        wwan_enabled = client:wwan_enabled()
+        wwan_enabled = client:wwan_enabled(),
     }
 
     return states
 end
 
 function M.find_listening_ports(params)
-    if not params or type(params.ports) ~= "table" or #params.ports == 0 then
+    if not params or type(params.ports) ~= 'table' or #params.ports == 0 then
         return nil, "Probe 'network.find_listening_ports' requires a non-empty 'ports' list."
     end
 
@@ -246,39 +265,26 @@ function M.find_listening_ports(params)
     for i, port in ipairs(params.ports) do
         local num = tonumber(port)
         if not num or num < 1 or num > 65535 then
-            return nil, string.format("Probe 'network.find_listening_ports' requires valid port numbers in ports[%d].", i)
+            return nil,
+                string.format("Probe 'network.find_listening_ports' requires valid port numbers in ports[%d].", i)
         end
         wanted_ports[tostring(num)] = true
     end
 
-    local handle = _dependencies.io_popen("ss -lntuH 2>/dev/null", "r")
+    local handle = _dependencies.io_popen('ss -lntuH 2>/dev/null', 'r')
     if not handle then
         return {
             available = false,
-            error = "Failed to execute ss command.",
-            details = {}
+            error = 'Failed to execute ss command.',
+            details = {},
         }
     end
 
     local details = {}
     for line in handle:lines() do
-        local fields = {}
-        for token in line:gmatch("%S+") do
-            fields[#fields + 1] = token
-        end
-
-        if #fields >= 5 then
-            local proto = fields[1]
-            local local_address = fields[5]
-            local port = local_address and local_address:match(":([0-9]+)$")
-
-            if port and wanted_ports[port] then
-                details[#details + 1] = {
-                    proto = proto,
-                    local_address = local_address,
-                    port = tonumber(port)
-                }
-            end
+        local detail = socket_detail_from_ss_line(line)
+        if detail and wanted_ports[tostring(detail.port)] then
+            details[#details + 1] = detail
         end
     end
 
@@ -286,15 +292,15 @@ function M.find_listening_ports(params)
     if ok ~= true or (code ~= nil and code ~= 0) then
         return {
             available = false,
-            error = string.format("ss command failed with exit code: %s", tostring(code)),
-            details = {}
+            error = string.format('ss command failed with exit code: %s', tostring(code)),
+            details = {},
         }
     end
 
     return {
         available = true,
         count = #details,
-        details = details
+        details = details,
     }
 end
 
@@ -318,10 +324,6 @@ function M.inspect_mta_local_only(params)
 
     local non_loopback = {}
     for _, detail in ipairs(listening.details or {}) do
-        local port = detail.port or parse_local_port(detail.local_address)
-        local host = local_address_host(detail.local_address, port)
-        detail.host = host
-        detail.loopback = is_loopback_host(host)
         if not detail.loopback then
             non_loopback[#non_loopback + 1] = detail
         end
@@ -350,16 +352,16 @@ function M.inspect_mta_local_only(params)
 end
 
 local function readlink_basename(path)
-    local lines = run_command_lines("readlink -f " .. shell_escape(path) .. " 2>/dev/null")
+    local lines = run_command_lines('readlink -f ' .. shell_escape(path) .. ' 2>/dev/null')
     if not lines or #lines == 0 then
         return nil
     end
-    return trim(lines[1]):match("([^/]+)$")
+    return trim(lines[1]):match('([^/]+)$')
 end
 
 function M.inspect_wireless_modules(params)
     params = params or {}
-    local sys_class_net = params.sys_class_net or "/sys/class/net"
+    local sys_class_net = params.sys_class_net or '/sys/class/net'
     local details = {}
     local modules = {}
     local seen_modules = {}
@@ -382,9 +384,9 @@ function M.inspect_wireless_modules(params)
     end
 
     for _, iface in ipairs(interfaces) do
-        local iface_path = sys_class_net .. "/" .. iface
-        if path_mode(iface_path .. "/wireless") == "directory" then
-            local module_name = readlink_basename(iface_path .. "/device/driver/module")
+        local iface_path = sys_class_net .. '/' .. iface
+        if path_mode(iface_path .. '/wireless') == 'directory' then
+            local module_name = readlink_basename(iface_path .. '/device/driver/module')
             local detail = {
                 interface = iface,
                 wireless = true,
@@ -392,7 +394,7 @@ function M.inspect_wireless_modules(params)
             }
             details[#details + 1] = detail
 
-            if module_name == nil or module_name == "" then
+            if module_name == nil or module_name == '' then
                 unresolved_count = unresolved_count + 1
             elseif not seen_modules[module_name] then
                 modules[#modules + 1] = module_name
@@ -428,7 +430,7 @@ end
 
 function M.disconnect()
     if _client then
-        log.debug("Closing shared NetworkManager client.")
+        log.debug('Closing shared NetworkManager client.')
         _client:close()
         _client = nil
     end
