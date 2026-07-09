@@ -37,7 +37,7 @@ local function strip_inline_comment(line)
             in_single_quote = not in_single_quote
         elseif char == '"' and not in_single_quote then
             in_double_quote = not in_double_quote
-        elseif char == "#" and not in_single_quote and not in_double_quote then
+        elseif char == '#' and not in_single_quote and not in_double_quote then
             return line:sub(1, index - 1)
         end
     end
@@ -47,15 +47,15 @@ end
 
 local function expand_config_paths(paths)
     local files = path_list.expand_files(paths or {
-        "/etc/rsyslog.conf",
-        "/etc/rsyslog.d/*.conf",
+        '/etc/rsyslog.conf',
+        '/etc/rsyslog.d/*.conf',
     })
     table.sort(files)
     return files
 end
 
 local function parse_octal_mode(value)
-    local digits = tostring(value or ""):match("^0?([0-7][0-7][0-7][0-7]?)$")
+    local digits = tostring(value or ''):match('^0?([0-7][0-7][0-7][0-7]?)$')
     if not digits then
         return nil
     end
@@ -65,41 +65,56 @@ end
 local function parse_named_arg(line, name)
     local value = line:match(name .. '%s*=%s*"([^"]+)"')
         or line:match(name .. "%s*=%s*'([^']+)'")
-        or line:match(name .. "%s*=%s*([^,%s%)]+)")
+        or line:match(name .. '%s*=%s*([^,%s%)]+)')
     return value and value:lower() or nil
+end
+
+local function unavailable_result(err, checked_count)
+    return {
+        available = false,
+        error = err,
+        checked_count = checked_count or 0,
+        file_create_mode_found = false,
+        file_create_mode_ok = false,
+        file_create_mode_violation_count = 0,
+        remote_input_enabled = false,
+        remote_input_count = 0,
+        all_configured = false,
+        details = {},
+    }
 end
 
 local function inspect_line(line)
     local trimmed = text.trim(strip_inline_comment(line))
     local lower = trimmed:lower()
-    if lower == "" then
+    if lower == '' then
         return {}
     end
 
     local evidence = {}
-    local file_create_mode = lower:match("^%$filecreatemode%s+([^%s]+)")
+    local file_create_mode = lower:match('^%$filecreatemode%s+([^%s]+)')
     if file_create_mode then
         evidence.file_create_mode = file_create_mode
     end
 
-    local module_load = parse_named_arg(lower, "load")
-    if lower:match("^module%s*%(") and module_load == "imtcp" then
+    local module_load = parse_named_arg(lower, 'load')
+    if lower:match('^module%s*%(') and module_load == 'imtcp' then
         evidence.remote_input = true
-        evidence.remote_input_type = "module(load=\"imtcp\")"
+        evidence.remote_input_type = 'module(load="imtcp")'
     end
 
-    local input_type = parse_named_arg(lower, "type")
-    if lower:match("^input%s*%(") and input_type == "imtcp" then
+    local input_type = parse_named_arg(lower, 'type')
+    if lower:match('^input%s*%(') and input_type == 'imtcp' then
         evidence.remote_input = true
-        evidence.remote_input_type = "input(type=\"imtcp\")"
+        evidence.remote_input_type = 'input(type="imtcp")'
     end
 
-    if lower:match("^%$modload%s+imtcp%s*$") then
+    if lower:match('^%$modload%s+imtcp%s*$') then
         evidence.remote_input = true
-        evidence.remote_input_type = "$ModLoad imtcp"
-    elseif lower:match("^%$inputtcpserverrun%s+%S+") then
+        evidence.remote_input_type = '$ModLoad imtcp'
+    elseif lower:match('^%$inputtcpserverrun%s+%S+') then
         evidence.remote_input = true
-        evidence.remote_input_type = "$InputTCPServerRun"
+        evidence.remote_input_type = '$InputTCPServerRun'
     end
 
     return evidence
@@ -113,7 +128,7 @@ local function inspect_files(files, params)
     local max_file_mode = parse_octal_mode(params.require_file_create_mode_max)
 
     for _, path in ipairs(files) do
-        local file, err = _dependencies.io_open(path, "r")
+        local file, err = _dependencies.io_open(path, 'r')
         if not file then
             log.warn("Could not open rsyslog config '%s': %s", path, tostring(err))
             return nil, string.format("Could not open rsyslog config '%s': %s", path, tostring(err))
@@ -164,34 +179,12 @@ function M.inspect_rsyslog_effective_config(params)
     local files = expand_config_paths(params.paths)
 
     if #files == 0 then
-        return {
-            available = false,
-            error = "No rsyslog configuration files were available.",
-            checked_count = 0,
-            file_create_mode_found = false,
-            file_create_mode_ok = false,
-            file_create_mode_violation_count = 0,
-            remote_input_enabled = false,
-            remote_input_count = 0,
-            all_configured = false,
-            details = {},
-        }
+        return unavailable_result('No rsyslog configuration files were available.')
     end
 
     local evidence, err = inspect_files(files, params)
     if not evidence then
-        return {
-            available = false,
-            error = err,
-            checked_count = #files,
-            file_create_mode_found = false,
-            file_create_mode_ok = false,
-            file_create_mode_violation_count = 0,
-            remote_input_enabled = false,
-            remote_input_count = 0,
-            all_configured = false,
-            details = {},
-        }
+        return unavailable_result(err, #files)
     end
 
     local checks = {}
@@ -200,16 +193,15 @@ function M.inspect_rsyslog_effective_config(params)
     local file_create_mode_ok = true
 
     if params.require_file_create_mode_max ~= nil then
-        file_create_mode_ok = file_create_mode_found
-            and evidence.file_create_mode_violation_count == 0
+        file_create_mode_ok = file_create_mode_found and evidence.file_create_mode_violation_count == 0
         all_configured = all_configured and file_create_mode_ok
-        checks[#checks + 1] = "file_create_mode"
+        checks[#checks + 1] = 'file_create_mode'
     end
 
     local remote_input_enabled = #evidence.remote_input_details > 0
     if params.disallow_remote_input then
         all_configured = all_configured and not remote_input_enabled
-        checks[#checks + 1] = "remote_input"
+        checks[#checks + 1] = 'remote_input'
     end
 
     return {
