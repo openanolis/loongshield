@@ -3,6 +3,7 @@ local fsutil = require('seharden.enforcers.fsutil')
 local account_files = require('seharden.shared.account_files')
 local user_defaults = require('seharden.shared.user_defaults')
 local comparators = require('seharden.comparators')
+local dotfiles = require('seharden.shared.dotfiles')
 local M = {}
 
 -- Validate username against strict safe-token pattern.
@@ -53,11 +54,7 @@ local function apply_chage_policy(entries, flag, threshold, compare_fn, log_ctx,
         for _, entry in ipairs(entries) do
             if not is_safe_username(entry.user) then
                 return nil,
-                    string.format(
-                        "users.%s: refusing to process unsafe username '%s'",
-                        log_ctx,
-                        tostring(entry.user)
-                    )
+                    string.format("users.%s: refusing to process unsafe username '%s'", log_ctx, tostring(entry.user))
             end
             local current = entry[field_name]
             if compare_fn(current, threshold) then
@@ -83,11 +80,7 @@ local function apply_chage_policy(entries, flag, threshold, compare_fn, log_ctx,
                 )
             end
         end
-        log.info(
-            'users.%s: fixed %d account(s)',
-            log_ctx,
-            fixed_count
-        )
+        log.info('users.%s: fixed %d account(s)', log_ctx, fixed_count)
         return true
     end
 
@@ -95,12 +88,48 @@ local function apply_chage_policy(entries, flag, threshold, compare_fn, log_ctx,
     local cmd = string.format('chage %s %d root', flag, threshold)
     local ok, _, code = _dependencies.os_execute(cmd)
     if not ok and code ~= 0 then
-        return nil,
-            string.format('users.%s: command failed (exit %s): %s', log_ctx, tostring(code), cmd)
+        return nil, string.format('users.%s: command failed (exit %s): %s', log_ctx, tostring(code), cmd)
     end
     log.info('users.%s: set %s=%d for root', log_ctx, flag:upper():gsub('--', ''), threshold)
 
     return true
+end
+
+local function require_details(params, context)
+    if not params or not params.details or type(params.details) ~= 'table' then
+        return nil, string.format("users.%s: requires 'details' from probe", context)
+    end
+    return params.details
+end
+
+local function execute_user_commands(details, context, command_for_user, failure_label)
+    local fixed_count = 0
+    local errors = {}
+
+    for _, detail in ipairs(details) do
+        local user = detail.user
+        if user then
+            if not is_safe_username(user) then
+                return nil, string.format("users.%s: refusing to process unsafe username '%s'", context, tostring(user))
+            end
+
+            local cmd = command_for_user(user)
+            log.debug('users.%s: %s', context, cmd)
+            local ok, _, code = _dependencies.os_execute(cmd)
+            if not ok and code ~= 0 then
+                errors[#errors + 1] =
+                    string.format("%s failed (exit %s) for user '%s'", failure_label, tostring(code), user)
+            else
+                fixed_count = fixed_count + 1
+            end
+        end
+    end
+
+    if #errors > 0 then
+        return nil, string.format('users.%s: %d error(s): %s', context, #errors, table.concat(errors, '; '))
+    end
+
+    return true, fixed_count
 end
 
 -- Lock all accounts with empty passwords by prepending '!' to the password field.
@@ -166,14 +195,9 @@ end
 -- params: { max_days (default 90), entries (optional, from shadow_entries probe) }
 function M.set_password_max_days_for_root(params)
     local max_days = params.max_days or 90
-    return apply_chage_policy(
-        params.entries,
-        '--maxdays',
-        max_days,
-        function(current, threshold) return current == nil or current > threshold end,
-        'set_password_max_days_for_root',
-        'pass_max_days'
-    )
+    return apply_chage_policy(params.entries, '--maxdays', max_days, function(current, threshold)
+        return current == nil or current > threshold
+    end, 'set_password_max_days_for_root', 'pass_max_days')
 end
 
 -- Set password min days for root account using chage command.
@@ -184,14 +208,9 @@ end
 -- params: { min_days (default 7), entries (optional, from shadow_entries probe) }
 function M.set_password_min_days_for_root(params)
     local min_days = params.min_days or 7
-    return apply_chage_policy(
-        params.entries,
-        '--mindays',
-        min_days,
-        function(current, threshold) return current == nil or current < threshold end,
-        'set_password_min_days_for_root',
-        'pass_min_days'
-    )
+    return apply_chage_policy(params.entries, '--mindays', min_days, function(current, threshold)
+        return current == nil or current < threshold
+    end, 'set_password_min_days_for_root', 'pass_min_days')
 end
 
 -- Lock shutdown and halt system accounts to prevent unauthorized system shutdown.
@@ -280,10 +299,7 @@ function M.set_password_defaults(params)
         local user = entry.user
         if not is_safe_username(user) then
             return nil,
-                string.format(
-                    "users.set_password_defaults: refusing to process unsafe username '%s'",
-                    tostring(user)
-                )
+                string.format("users.set_password_defaults: refusing to process unsafe username '%s'", tostring(user))
         end
         local chage_args = {}
 
@@ -335,41 +351,20 @@ end
 -- Sets their last password change date to today using chage --lastday.
 -- params: { details (required): list from users.inspect_future_password_changes probe }
 function M.fix_future_password_changes(params)
-    if not params or not params.details or type(params.details) ~= 'table' then
-        return nil, "users.fix_future_password_changes: requires 'details' from probe"
+    local details, details_err = require_details(params, 'fix_future_password_changes')
+    if not details then
+        return nil, details_err
     end
 
     local today = os.date('%Y-%m-%d')
-    local fixed_count = 0
-    local errors = {}
-
-    for _, detail in ipairs(params.details) do
-        local user = detail.user
-        if user then
-            if not is_safe_username(user) then
-                return nil,
-                    string.format(
-                        "users.fix_future_password_changes: refusing to process unsafe username '%s'",
-                        tostring(user)
-                    )
-            end
-            local cmd = string.format('chage --lastday %s %s', today, user)
-            log.debug('users.fix_future_password_changes: %s', cmd)
-            local ok, _, code = _dependencies.os_execute(cmd)
-            if not ok and code ~= 0 then
-                errors[#errors + 1] = string.format("chage failed (exit %s) for user '%s'", tostring(code), user)
-            else
-                fixed_count = fixed_count + 1
-            end
-        end
+    local ok, fixed_count_or_err = execute_user_commands(details, 'fix_future_password_changes', function(user)
+        return string.format('chage --lastday %s %s', today, user)
+    end, 'chage')
+    if not ok then
+        return nil, fixed_count_or_err
     end
 
-    if #errors > 0 then
-        return nil,
-            string.format('users.fix_future_password_changes: %d error(s): %s', #errors, table.concat(errors, '; '))
-    end
-
-    log.debug('users.fix_future_password_changes: fixed %d account(s)', fixed_count)
+    log.debug('users.fix_future_password_changes: fixed %d account(s)', fixed_count_or_err)
     return true
 end
 
@@ -378,39 +373,19 @@ end
 -- and runs passwd -l for each non-compliant user.
 -- params: { details (required): list from probe }
 function M.lock_nologin_accounts(params)
-    if not params or not params.details or type(params.details) ~= 'table' then
-        return nil, "users.lock_nologin_accounts: requires 'details' from probe"
+    local details, details_err = require_details(params, 'lock_nologin_accounts')
+    if not details then
+        return nil, details_err
     end
 
-    local fixed_count = 0
-    local errors = {}
-
-    for _, detail in ipairs(params.details) do
-        local user = detail.user
-        if user then
-            if not is_safe_username(user) then
-                return nil,
-                    string.format(
-                        "users.lock_nologin_accounts: refusing to process unsafe username '%s'",
-                        tostring(user)
-                    )
-            end
-            local cmd = string.format('passwd -l %s 2>&1', user)
-            log.debug('users.lock_nologin_accounts: %s', cmd)
-            local ok, _, code = _dependencies.os_execute(cmd)
-            if not ok and code ~= 0 then
-                errors[#errors + 1] = string.format("passwd -l failed (exit %s) for user '%s'", tostring(code), user)
-            else
-                fixed_count = fixed_count + 1
-            end
-        end
+    local ok, fixed_count_or_err = execute_user_commands(details, 'lock_nologin_accounts', function(user)
+        return string.format('passwd -l %s 2>&1', user)
+    end, 'passwd -l')
+    if not ok then
+        return nil, fixed_count_or_err
     end
 
-    if #errors > 0 then
-        return nil, string.format('users.lock_nologin_accounts: %d error(s): %s', #errors, table.concat(errors, '; '))
-    end
-
-    log.debug('users.lock_nologin_accounts: locked %d account(s)', fixed_count)
+    log.debug('users.lock_nologin_accounts: locked %d account(s)', fixed_count_or_err)
     return true
 end
 
@@ -434,40 +409,19 @@ end
 -- and runs usermod -s /usr/sbin/nologin for each non-compliant account.
 -- params: { details (required): list from probe }
 function M.disable_system_account_shells(params)
-    if not params or not params.details or type(params.details) ~= 'table' then
-        return nil, "users.disable_system_account_shells: requires 'details' from probe"
+    local details, details_err = require_details(params, 'disable_system_account_shells')
+    if not details then
+        return nil, details_err
     end
 
-    local fixed_count = 0
-    local errors = {}
-
-    for _, detail in ipairs(params.details) do
-        local user = detail.user
-        if user then
-            if not is_safe_username(user) then
-                return nil,
-                    string.format(
-                        "users.disable_system_account_shells: refusing to process unsafe username '%s'",
-                        tostring(user)
-                    )
-            end
-            local cmd = string.format('usermod -s /usr/sbin/nologin %s 2>&1', user)
-            log.debug('users.disable_system_account_shells: %s', cmd)
-            local ok, _, code = _dependencies.os_execute(cmd)
-            if not ok and code ~= 0 then
-                errors[#errors + 1] = string.format("usermod failed (exit %s) for user '%s'", tostring(code), user)
-            else
-                fixed_count = fixed_count + 1
-            end
-        end
+    local ok, fixed_count_or_err = execute_user_commands(details, 'disable_system_account_shells', function(user)
+        return string.format('usermod -s /usr/sbin/nologin %s 2>&1', user)
+    end, 'usermod')
+    if not ok then
+        return nil, fixed_count_or_err
     end
 
-    if #errors > 0 then
-        return nil,
-            string.format('users.disable_system_account_shells: %d error(s): %s', #errors, table.concat(errors, '; '))
-    end
-
-    log.debug('users.disable_system_account_shells: disabled shell for %d account(s)', fixed_count)
+    log.debug('users.disable_system_account_shells: disabled shell for %d account(s)', fixed_count_or_err)
     return true
 end
 
@@ -475,27 +429,15 @@ end
 -- Dotfile access fix helpers
 --------------------------------------------------------------------------------
 
-local FORBIDDEN_DOTFILES = {
-    ['.forward'] = true,
-    ['.rhosts'] = true,
-}
-
-local DEFAULT_DOTFILE_MAX_MODE = tonumber('644', 8)
-local STRICT_DOTFILE_MAX_MODES = {
-    ['.bash_history'] = tonumber('600', 8),
-    ['.netrc'] = tonumber('600', 8),
-}
-
 local function fix_dotfile(path, user, fixed_count_ref, deps)
-    local filename = path:match('([^/]+)$') or path
+    local filename = dotfiles.basename(path)
 
     -- Remove forbidden files
-    if FORBIDDEN_DOTFILES[filename] then
+    if dotfiles.is_forbidden(filename) then
         log.info("users.fix_dotfiles: removing forbidden file '%s' (user %s)", path, user.user)
         local ok, err = deps.os_remove(path)
         if not ok then
-            return nil,
-                string.format("users.fix_dotfiles: failed to remove '%s': %s", path, tostring(err))
+            return nil, string.format("users.fix_dotfiles: failed to remove '%s': %s", path, tostring(err))
         end
         fixed_count_ref[1] = fixed_count_ref[1] + 1
         return true
@@ -512,7 +454,7 @@ local function fix_dotfile(path, user, fixed_count_ref, deps)
         return true
     end
 
-    local max_mode = STRICT_DOTFILE_MAX_MODES[filename] or DEFAULT_DOTFILE_MAX_MODE
+    local max_mode = dotfiles.max_mode_for(filename)
     local fixed = false
 
     -- Fix permissions if too permissive
@@ -520,8 +462,7 @@ local function fix_dotfile(path, user, fixed_count_ref, deps)
         log.debug("users.fix_dotfiles: chmod %o '%s' (user %s)", max_mode, path, user.user)
         local ok, err = deps.fs_chmod(path, max_mode)
         if not ok then
-            return nil,
-                string.format("users.fix_dotfiles: failed to chmod '%s': %s", path, tostring(err))
+            return nil, string.format("users.fix_dotfiles: failed to chmod '%s': %s", path, tostring(err))
         end
         fixed = true
     end
@@ -531,8 +472,7 @@ local function fix_dotfile(path, user, fixed_count_ref, deps)
         log.debug("users.fix_dotfiles: chown %d:%d '%s' (user %s)", user.user_uid, user.user_gid, path, user.user)
         local ok, err = deps.fs_chown(path, user.user_uid, user.user_gid)
         if not ok then
-            return nil,
-                string.format("users.fix_dotfiles: failed to chown '%s': %s", path, tostring(err))
+            return nil, string.format("users.fix_dotfiles: failed to chown '%s': %s", path, tostring(err))
         end
         fixed = true
     end
@@ -552,8 +492,8 @@ local function scan_and_fix_dotfiles(fixed_count_ref, user, dir_path, root_dev, 
         if name ~= '.' and name ~= '..' then
             local path = dir_path .. '/' .. name
             local attr = deps.lfs_symlinkattributes(path)
-            if attr and (root_dev == nil or attr.dev == nil or attr.dev == root_dev) then
-                if name:match('^%.') then
+            if dotfiles.same_device_or_unknown(attr, root_dev) then
+                if dotfiles.is_dot_entry(name) then
                     local ok, err = fix_dotfile(path, user, fixed_count_ref, deps)
                     if not ok then
                         return nil, err
