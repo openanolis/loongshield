@@ -16,6 +16,23 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - None yet.
 
+## [1.2.2] - 2026-07-09
+
+### Added
+- Machine-readable SEHarden JSON output with sec-core compatibility validation.
+- Container-safe reinforce guards for remediation flows.
+- Expanded remediation and probe coverage for crypto policy, logging, SSH, sudo, sysctl, users, packages, network, mounts, services, firewalld, chrony, authselect, AIDE, and audit rules.
+- Local git hooks for commit-title and staged format checks, plus a repo-local LoongShield code review skill.
+
+### Changed
+- SEHarden internals now share helpers for audit rules, mount options, shell syntax, sshd config discovery, sysctl keys, PAM parsing, sudoers parsing, package inventory, file key-value scanning, profile validation, and user command handling.
+- Profile execution now exposes normalized probe tasks and invalidates cached probe state before reinforcement verification.
+- Developer build setup now exports compile commands for clangd.
+
+### Fixed
+- Security and correctness issues in Lua/C bindings and hardening modules, including audit/logging path handling, xattr list retries, libmount null checks, kmod state handling, rpm/package edge cases, and fanotify syscall headers.
+- SEHarden JSON contracts, process exit behavior, rule schema validation, and enforcer edge cases now have broader regression coverage.
+
 ## [1.2.1] - 2026-06-10
 
 ### Added

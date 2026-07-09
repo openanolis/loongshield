@@ -3,7 +3,7 @@
 %global debug_package %{nil}
 
 Name: loongshield
-Version: %{!?pkg_version:1.2.1}%{?pkg_version}
+Version: %{!?pkg_version:1.2.2}%{?pkg_version}
 Release: %{anolis_release}%{?dist}
 Summary: security shield framework for alinux/anolis
 Group: Development/Tools
@@ -172,6 +172,14 @@ install -m 0644 deps/luasocket/luasocket/LICENSE %{buildroot}%{_licensedir}/%{na
 %license %{_licensedir}/%{name}/third-party/*
 
 %changelog
+* Thu Jul  9 2026 Zongyao Chen - 1.2.2-1
+- Add machine-readable SEHarden JSON output and sec-core compatibility validation.
+- Add container-safe reinforce guards and expand crypto policy, logging, SSH, sudo, sysctl, users, and package remediation coverage.
+- Normalize SEHarden probes and shared helpers for audit rules, mount options, shell syntax, sshd configs, sysctl keys, PAM, sudoers, package inventory, and profile validation.
+- Add local git hooks for commit-title and staged format checks plus repo-local review tooling.
+- Fix security and correctness issues in Lua/C bindings and hardening modules, including fanotify syscall header detection.
+- Expand SEHarden unit, integration, and e2e coverage across probes, enforcers, profiles, and CLI behavior.
+
 * Wed Jun 10 2026 Zongyao Chen - 1.2.1-1
 - Add Lua-LSM policy management commands, example policy assets, and documentation.
 - Update the CIS Alibaba Cloud Linux 3 SEHarden profile to v2.0.0 with expanded structured probe coverage.
