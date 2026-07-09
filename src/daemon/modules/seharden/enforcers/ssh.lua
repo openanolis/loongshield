@@ -1,6 +1,7 @@
 local lfs = require('lfs')
 local log = require('runtime.log')
 local fsutil = require('seharden.enforcers.fsutil')
+local text = require('seharden.shared.text')
 local M = {}
 
 local _default_dependencies = {
@@ -24,9 +25,7 @@ end
 
 M._test_set_dependencies()
 
-local function trim(s)
-    return (tostring(s or ''):match('^%s*(.-)%s*$'))
-end
+local trim = text.trim
 
 local SAFE_SHELL_ARG_PATTERN = '^[a-zA-Z0-9%._-]+$'
 local SAFE_SHELL_ADDR_PATTERN = '^[a-zA-Z0-9%._:-]+$'
