@@ -2,8 +2,9 @@ local lfs = require('lfs')
 local fs = require('fs')
 local account_files = require('seharden.shared.account_files')
 local comparators = require('seharden.comparators')
+local dotfiles = require('seharden.shared.dotfiles')
+local shell_syntax = require('seharden.shared.shell_syntax')
 local user_defaults = require('seharden.shared.user_defaults')
-local text = require('seharden.shared.text')
 
 local M = {}
 
@@ -16,12 +17,12 @@ local _default_dependencies = {
     lfs_symlinkattributes = lfs.symlinkattributes,
     lfs_dir = lfs.dir,
     fs_stat = fs.stat,
-    passwd_path = "/etc/passwd",
-    shadow_path = "/etc/shadow",
-    group_path = "/etc/group",
-    shells_path = "/etc/shells",
-    login_defs_path = "/etc/login.defs",
-    useradd_defaults_path = "/etc/default/useradd",
+    passwd_path = '/etc/passwd',
+    shadow_path = '/etc/shadow',
+    group_path = '/etc/group',
+    shells_path = '/etc/shells',
+    login_defs_path = '/etc/login.defs',
+    useradd_defaults_path = '/etc/default/useradd',
     os_time = os.time,
 }
 
@@ -31,15 +32,6 @@ local function octal(value)
     return tonumber(value, 8)
 end
 
-local DEFAULT_DOTFILE_MAX_MODE = octal("644")
-local STRICT_DOTFILE_MAX_MODES = {
-    [".bash_history"] = octal("600"),
-    [".netrc"] = octal("600"),
-}
-local FORBIDDEN_DOTFILES = {
-    [".forward"] = true,
-    [".rhosts"] = true,
-}
 local GID_ZERO_EXCLUDED_USERS = {
     sync = true,
     shutdown = true,
@@ -57,18 +49,18 @@ local SYSTEM_SHELL_EXCLUDED_USERS = {
 -- System paths that should never be treated as user home directories.
 -- These are typically symlinks or critical system directories.
 local SYSTEM_PATH_BLACKLIST = {
-    ["/sbin"] = true,
-    ["/bin"] = true,
-    ["/usr/sbin"] = true,
-    ["/usr/bin"] = true,
-    ["/dev"] = true,
-    ["/dev/null"] = true,
-    ["/etc"] = true,
-    ["/var"] = true,
-    ["/tmp"] = true,
-    ["/run"] = true,
-    ["/proc"] = true,
-    ["/sys"] = true,
+    ['/sbin'] = true,
+    ['/bin'] = true,
+    ['/usr/sbin'] = true,
+    ['/usr/bin'] = true,
+    ['/dev'] = true,
+    ['/dev/null'] = true,
+    ['/etc'] = true,
+    ['/var'] = true,
+    ['/tmp'] = true,
+    ['/run'] = true,
+    ['/proc'] = true,
+    ['/sys'] = true,
 }
 
 function M._test_set_dependencies(deps)
@@ -82,7 +74,9 @@ M._test_set_dependencies()
 
 local function _get_real_users()
     local user_entries, err = account_files.read_passwd(_dependencies.io_open, _dependencies.passwd_path)
-    if not user_entries then return nil, err end
+    if not user_entries then
+        return nil, err
+    end
 
     local real_users = {}
     for _, parts in ipairs(user_entries) do
@@ -93,8 +87,6 @@ local function _get_real_users()
     end
     return real_users
 end
-
-local trim = text.trim
 
 local function read_group_entries()
     local group_entries, err = account_files.read_group(_dependencies.io_open, _dependencies.group_path)
@@ -113,10 +105,10 @@ local function unavailable_result(check, path, err)
         details = {
             {
                 path = path,
-                reason = "evidence_unavailable",
+                reason = 'evidence_unavailable',
                 error = err,
-            }
-        }
+            },
+        },
     }
 end
 
@@ -129,29 +121,29 @@ local function shadow_password_by_user(shadow_entries)
 end
 
 local function password_is_locked(password)
-    return type(password) == "string" and password:match("^[!*]") ~= nil
+    return type(password) == 'string' and password:match('^[!*]') ~= nil
 end
 
 local function password_is_set_or_locked(password)
-    if type(password) ~= "string" or password == "" then
+    if type(password) ~= 'string' or password == '' then
         return false
     end
-    return password_is_locked(password) or password:match("^%$.*%$") ~= nil
+    return password_is_locked(password) or password:match('^%$.*%$') ~= nil
 end
 
 local function load_valid_shells()
-    local file = _dependencies.io_open(_dependencies.shells_path, "r")
+    local file = _dependencies.io_open(_dependencies.shells_path, 'r')
     if not file then
-        return nil, string.format("Could not open %s for reading.", _dependencies.shells_path)
+        return nil, string.format('Could not open %s for reading.', _dependencies.shells_path)
     end
 
     local shells = {}
     local nologin_entries = {}
     for line in file:lines() do
-        local active = trim(line:gsub("%s+#.*$", ""))
-        if active ~= "" and not active:match("^#") and active:sub(1, 1) == "/" then
-            local basename = active:match("([^/]+)$") or active
-            if basename == "nologin" then
+        local active = shell_syntax.strip_comment(line)
+        if active ~= '' and not active:match('^#') and active:sub(1, 1) == '/' then
+            local basename = active:match('([^/]+)$') or active
+            if basename == 'nologin' then
                 nologin_entries[#nologin_entries + 1] = active
             else
                 shells[active] = true
@@ -164,14 +156,14 @@ local function load_valid_shells()
 end
 
 local function path_from_root_env()
-    local handle = _dependencies.io_popen("sudo -Hiu root env 2>/dev/null", "r")
+    local handle = _dependencies.io_popen('sudo -Hiu root env 2>/dev/null', 'r')
     if not handle then
-        return nil, "Failed to execute root environment probe."
+        return nil, 'Failed to execute root environment probe.'
     end
 
     local root_path
     for line in handle:lines() do
-        local value = line:match("^PATH=(.*)$")
+        local value = line:match('^PATH=(.*)$')
         if value then
             root_path = value
         end
@@ -179,11 +171,11 @@ local function path_from_root_env()
 
     local ok, _, code = handle:close()
     if ok ~= true or (code ~= nil and code ~= 0) then
-        return nil, string.format("Root environment probe failed with exit %s.", tostring(code))
+        return nil, string.format('Root environment probe failed with exit %s.', tostring(code))
     end
 
     if not root_path then
-        return nil, "Root PATH was not present in the root environment."
+        return nil, 'Root PATH was not present in the root environment.'
     end
     return root_path
 end
@@ -193,12 +185,12 @@ function M.find_files(params)
         return nil, "Probe 'users.find_files' requires a 'filename' parameter."
     end
 
-    local sane_filename = ""
-    for part in params.filename:gmatch("([^/]+)") do
+    local sane_filename = ''
+    for part in params.filename:gmatch('([^/]+)') do
         sane_filename = part
     end
 
-    if sane_filename == "" or sane_filename:match("%.%.") then
+    if sane_filename == '' or sane_filename:match('%.%.') then
         return nil, string.format("Invalid 'filename' parameter: '%s'", params.filename)
     end
 
@@ -209,7 +201,7 @@ function M.find_files(params)
 
     local found_list = {}
     for _, u in ipairs(real_users) do
-        local path = u.home .. "/" .. sane_filename
+        local path = u.home .. '/' .. sane_filename
         local attr = _dependencies.lfs_attributes(path)
         if attr and attr.mode == 'file' then
             table.insert(found_list, { user = u.user, path = path })
@@ -220,12 +212,14 @@ end
 
 function M.get_shadow_entries()
     local shadow_parts, err = account_files.read_shadow(_dependencies.io_open, _dependencies.shadow_path)
-    if not shadow_parts then return nil, err end
+    if not shadow_parts then
+        return nil, err
+    end
 
     local shadow_entries = {}
     for _, parts in ipairs(shadow_parts) do
         -- Filter out locked accounts (password field starts with ! or *)
-        if not parts[2]:match("^[!*]") then
+        if not parts[2]:match('^[!*]') then
             table.insert(shadow_entries, account_files.build_shadow_entry(parts))
         end
     end
@@ -236,21 +230,21 @@ function M.inspect_future_password_changes(params)
     params = params or {}
     local shadow_parts, err = account_files.read_shadow(_dependencies.io_open, _dependencies.shadow_path)
     if not shadow_parts then
-        return unavailable_result("future_password_changes", _dependencies.shadow_path, err)
+        return unavailable_result('future_password_changes', _dependencies.shadow_path, err)
     end
 
     local now_days = math.floor((tonumber(params.now) or _dependencies.os_time()) / 86400)
     local details = {}
 
     for _, parts in ipairs(shadow_parts) do
-        local password = parts[2] or ""
+        local password = parts[2] or ''
         local last_change_days = tonumber(parts[3])
-        if password:match("^%$.*%$") and last_change_days and last_change_days > now_days then
+        if password:match('^%$.*%$') and last_change_days and last_change_days > now_days then
             details[#details + 1] = {
                 user = parts[1],
                 last_change_days = last_change_days,
                 now_days = now_days,
-                reason = "last_change_in_future",
+                reason = 'last_change_in_future',
             }
         end
     end
@@ -265,16 +259,20 @@ end
 
 function M.get_login_shadow_entries()
     local shadow_parts, err = account_files.read_shadow(_dependencies.io_open, _dependencies.shadow_path)
-    if not shadow_parts then return nil, err end
+    if not shadow_parts then
+        return nil, err
+    end
 
     local passwd_parts, passwd_err = account_files.read_passwd(_dependencies.io_open, _dependencies.passwd_path)
-    if not passwd_parts then return nil, passwd_err end
+    if not passwd_parts then
+        return nil, passwd_err
+    end
 
     local login_shell_users = account_files.index_login_shell_users(passwd_parts)
 
     local shadow_entries = {}
     for _, parts in ipairs(shadow_parts) do
-        if login_shell_users[parts[1]] and not parts[2]:match("^[!*]") then
+        if login_shell_users[parts[1]] and not parts[2]:match('^[!*]') then
             table.insert(shadow_entries, account_files.build_shadow_entry(parts))
         end
     end
@@ -286,19 +284,21 @@ function M.get_defaults()
     return user_defaults.get_useradd_defaults(
         _dependencies.io_popen,
         _dependencies.io_open,
-        _dependencies.useradd_defaults_path)
+        _dependencies.useradd_defaults_path
+    )
 end
 
 function M.inspect_identity(params)
     params = params or {}
     local check = params.check
-    if check ~= "uid_zero" and check ~= "gid_zero_users" and check ~= "gid_zero_groups" then
-        return nil, "Probe 'users.inspect_identity' requires check to be one of: uid_zero, gid_zero_users, gid_zero_groups."
+    if check ~= 'uid_zero' and check ~= 'gid_zero_users' and check ~= 'gid_zero_groups' then
+        return nil,
+            "Probe 'users.inspect_identity' requires check to be one of: uid_zero, gid_zero_users, gid_zero_groups."
     end
 
     local details = {}
 
-    if check == "gid_zero_groups" then
+    if check == 'gid_zero_groups' then
         local group_entries, group_err = read_group_entries()
         if not group_entries then
             return unavailable_result(check, _dependencies.group_path, group_err)
@@ -309,15 +309,15 @@ function M.inspect_identity(params)
         for _, parts in ipairs(group_entries) do
             local name = parts[1]
             local gid = tonumber(parts[3])
-            if name == "root" and gid == 0 then
+            if name == 'root' and gid == 0 then
                 root_group_gid_zero = true
             elseif gid == 0 then
                 non_root_gid_zero_group_count = non_root_gid_zero_group_count + 1
-                details[#details + 1] = { group = name, gid = gid, reason = "non_root_gid_zero_group" }
+                details[#details + 1] = { group = name, gid = gid, reason = 'non_root_gid_zero_group' }
             end
         end
         if not root_group_gid_zero then
-            details[#details + 1] = { group = "root", reason = "root_group_gid_not_zero" }
+            details[#details + 1] = { group = 'root', reason = 'root_group_gid_not_zero' }
         end
 
         return {
@@ -346,30 +346,28 @@ function M.inspect_identity(params)
         local uid = tonumber(parts[3])
         local gid = tonumber(parts[4])
 
-        if user == "root" then
+        if user == 'root' then
             root_uid_zero = uid == 0
             root_gid_zero = gid == 0
         elseif uid == 0 then
             non_root_uid_zero_count = non_root_uid_zero_count + 1
-            details[#details + 1] = { user = user, uid = uid, reason = "non_root_uid_zero" }
+            details[#details + 1] = { user = user, uid = uid, reason = 'non_root_uid_zero' }
         elseif gid == 0 and not GID_ZERO_EXCLUDED_USERS[user] then
             non_root_gid_zero_count = non_root_gid_zero_count + 1
-            details[#details + 1] = { user = user, gid = gid, reason = "non_root_gid_zero" }
+            details[#details + 1] = { user = user, gid = gid, reason = 'non_root_gid_zero' }
         end
     end
 
-    if check == "uid_zero" and not root_uid_zero then
-        details[#details + 1] = { user = "root", reason = "root_uid_not_zero" }
-    elseif check == "gid_zero_users" and not root_gid_zero then
-        details[#details + 1] = { user = "root", reason = "root_gid_not_zero" }
+    if check == 'uid_zero' and not root_uid_zero then
+        details[#details + 1] = { user = 'root', reason = 'root_uid_not_zero' }
+    elseif check == 'gid_zero_users' and not root_gid_zero then
+        details[#details + 1] = { user = 'root', reason = 'root_gid_not_zero' }
     end
 
     return {
         available = true,
-        compliant = check == "uid_zero"
-            and root_uid_zero and non_root_uid_zero_count == 0
-            or check == "gid_zero_users"
-            and root_gid_zero and non_root_gid_zero_count == 0,
+        compliant = check == 'uid_zero' and root_uid_zero and non_root_uid_zero_count == 0
+            or check == 'gid_zero_users' and root_gid_zero and non_root_gid_zero_count == 0,
         check = check,
         root_uid_zero = root_uid_zero,
         root_gid_zero = root_gid_zero,
@@ -383,12 +381,12 @@ end
 function M.inspect_root_access()
     local shadow_parts, err = account_files.read_shadow(_dependencies.io_open, _dependencies.shadow_path)
     if not shadow_parts then
-        return unavailable_result("root_access", _dependencies.shadow_path, err)
+        return unavailable_result('root_access', _dependencies.shadow_path, err)
     end
 
     local root_password
     for _, parts in ipairs(shadow_parts) do
-        if parts[1] == "root" then
+        if parts[1] == 'root' then
             root_password = parts[2]
             break
         end
@@ -398,11 +396,14 @@ function M.inspect_root_access()
     return {
         available = true,
         controlled = controlled,
-        password_set = type(root_password) == "string" and root_password:match("^%$.*%$") ~= nil,
+        password_set = type(root_password) == 'string' and root_password:match('^%$.*%$') ~= nil,
         locked = password_is_locked(root_password),
         count = controlled and 0 or 1,
         details = controlled and {} or {
-            { user = "root", reason = root_password == nil and "root_missing" or "root_password_not_set_or_locked" }
+            {
+                user = 'root',
+                reason = root_password == nil and 'root_missing' or 'root_password_not_set_or_locked',
+            },
         },
     }
 end
@@ -414,38 +415,38 @@ function M.inspect_root_path(params)
         local err
         root_path, err = path_from_root_env()
         if not root_path then
-            return unavailable_result("root_path", "root_environment", err)
+            return unavailable_result('root_path', 'root_environment', err)
         end
     end
 
     local details = {}
-    for segment in (root_path .. ":"):gmatch("(.-):") do
-        if segment == "" then
-            details[#details + 1] = { path = segment, reason = "empty_path_segment" }
-        elseif segment == "." then
-            details[#details + 1] = { path = segment, reason = "current_directory" }
-        elseif segment:sub(1, 1) ~= "/" then
-            details[#details + 1] = { path = segment, reason = "relative_path" }
+    for segment in (root_path .. ':'):gmatch('(.-):') do
+        if segment == '' then
+            details[#details + 1] = { path = segment, reason = 'empty_path_segment' }
+        elseif segment == '.' then
+            details[#details + 1] = { path = segment, reason = 'current_directory' }
+        elseif segment:sub(1, 1) ~= '/' then
+            details[#details + 1] = { path = segment, reason = 'relative_path' }
         else
             local attr = _dependencies.lfs_attributes(segment)
-            if not attr or attr.mode ~= "directory" then
-                details[#details + 1] = { path = segment, reason = "not_directory" }
+            if not attr or attr.mode ~= 'directory' then
+                details[#details + 1] = { path = segment, reason = 'not_directory' }
             else
                 local stat = _dependencies.fs_stat(segment)
                 if not stat then
-                    details[#details + 1] = { path = segment, reason = "stat_failed" }
+                    details[#details + 1] = { path = segment, reason = 'stat_failed' }
                 else
                     local uid = stat:uid()
                     local mode = stat:mode()
                     if uid ~= 0 then
-                        details[#details + 1] = { path = segment, reason = "not_root_owned", uid = uid }
+                        details[#details + 1] = { path = segment, reason = 'not_root_owned', uid = uid }
                     end
-                    if not comparators.mode_is_no_more_permissive(mode, octal("755")) then
+                    if not comparators.mode_is_no_more_permissive(mode, octal('755')) then
                         details[#details + 1] = {
                             path = segment,
-                            reason = "mode_too_permissive",
+                            reason = 'mode_too_permissive',
                             mode = mode,
-                            expected = octal("755"),
+                            expected = octal('755'),
                         }
                     end
                 end
@@ -466,16 +467,16 @@ function M.inspect_shells(params)
     params = params or {}
     local valid_shells, err, nologin_entries = load_valid_shells()
     if not valid_shells then
-        return unavailable_result(params.check or "shells", _dependencies.shells_path, err)
+        return unavailable_result(params.check or 'shells', _dependencies.shells_path, err)
     end
 
-    if params.check == "nologin_absent" then
+    if params.check == 'nologin_absent' then
         local details = {}
         for _, shell_path in ipairs(nologin_entries or {}) do
             details[#details + 1] = {
                 path = _dependencies.shells_path,
                 shell = shell_path,
-                reason = "nologin_listed",
+                reason = 'nologin_listed',
             }
         end
         return {
@@ -494,13 +495,14 @@ function M.inspect_system_account_shells(params)
     params = params or {}
     local valid_shells, shell_err = load_valid_shells()
     if not valid_shells then
-        return unavailable_result("system_account_shells", _dependencies.shells_path, shell_err)
+        return unavailable_result('system_account_shells', _dependencies.shells_path, shell_err)
     end
 
-    local uid_min = tonumber(params.uid_min) or user_defaults.read_uid_min(_dependencies.io_open, _dependencies.login_defs_path)
+    local uid_min = tonumber(params.uid_min)
+        or user_defaults.read_uid_min(_dependencies.io_open, _dependencies.login_defs_path)
     local passwd_entries, passwd_err = account_files.read_passwd(_dependencies.io_open, _dependencies.passwd_path)
     if not passwd_entries then
-        return unavailable_result("system_account_shells", _dependencies.passwd_path, passwd_err)
+        return unavailable_result('system_account_shells', _dependencies.passwd_path, passwd_err)
     end
 
     local details = {}
@@ -508,14 +510,17 @@ function M.inspect_system_account_shells(params)
         local user = parts[1]
         local uid = tonumber(parts[3])
         local shell = parts[7]
-        if uid and not SYSTEM_SHELL_EXCLUDED_USERS[user]
+        if
+            uid
+            and not SYSTEM_SHELL_EXCLUDED_USERS[user]
             and (uid < uid_min or uid == NOBODY_UID)
-            and valid_shells[shell] then
+            and valid_shells[shell]
+        then
             details[#details + 1] = {
                 user = user,
                 uid = uid,
                 shell = shell,
-                reason = "system_account_has_valid_shell",
+                reason = 'system_account_has_valid_shell',
             }
         end
     end
@@ -532,17 +537,17 @@ end
 function M.inspect_nonlogin_accounts_locked()
     local valid_shells, shell_err = load_valid_shells()
     if not valid_shells then
-        return unavailable_result("nonlogin_accounts_locked", _dependencies.shells_path, shell_err)
+        return unavailable_result('nonlogin_accounts_locked', _dependencies.shells_path, shell_err)
     end
 
     local passwd_entries, passwd_err = account_files.read_passwd(_dependencies.io_open, _dependencies.passwd_path)
     if not passwd_entries then
-        return unavailable_result("nonlogin_accounts_locked", _dependencies.passwd_path, passwd_err)
+        return unavailable_result('nonlogin_accounts_locked', _dependencies.passwd_path, passwd_err)
     end
 
     local shadow_entries, shadow_err = account_files.read_shadow(_dependencies.io_open, _dependencies.shadow_path)
     if not shadow_entries then
-        return unavailable_result("nonlogin_accounts_locked", _dependencies.shadow_path, shadow_err)
+        return unavailable_result('nonlogin_accounts_locked', _dependencies.shadow_path, shadow_err)
     end
 
     local shadow_passwords = shadow_password_by_user(shadow_entries)
@@ -551,13 +556,13 @@ function M.inspect_nonlogin_accounts_locked()
     for _, parts in ipairs(passwd_entries) do
         local user = parts[1]
         local shell = parts[7]
-        if user ~= "root" and not valid_shells[shell] then
+        if user ~= 'root' and not valid_shells[shell] then
             local password = shadow_passwords[user]
             if not password_is_locked(password) then
                 details[#details + 1] = {
                     user = user,
                     shell = shell,
-                    reason = password == nil and "shadow_entry_missing" or "account_not_locked",
+                    reason = password == nil and 'shadow_entry_missing' or 'account_not_locked',
                 }
             end
         end
@@ -583,14 +588,14 @@ function M.get_existing_home_directories()
 
     local details = {}
     for _, user in ipairs(real_users) do
-        if type(user.home) == "string" and user.home ~= "" and user.home:sub(1, 1) == "/" then
+        if type(user.home) == 'string' and user.home ~= '' and user.home:sub(1, 1) == '/' then
             -- Skip known system paths that should never be treated as home directories
             if SYSTEM_PATH_BLACKLIST[user.home] then
                 goto continue
             end
 
             local attr = _dependencies.lfs_attributes(user.home)
-            if attr and attr.mode == "directory" then
+            if attr and attr.mode == 'directory' then
                 details[#details + 1] = {
                     user = user.user,
                     path = user.home,
@@ -603,7 +608,7 @@ function M.get_existing_home_directories()
 
     return {
         count = #details,
-        details = details
+        details = details,
     }
 end
 
@@ -636,14 +641,14 @@ function M.find_interactive_system_accounts(params)
             details[#details + 1] = {
                 user = user,
                 uid = uid,
-                shell = shell
+                shell = shell,
             }
         end
     end
 
     return {
         count = #details,
-        details = details
+        details = details,
     }
 end
 
@@ -658,45 +663,45 @@ local function append_dotfile_failure(details, user, path, reason, actual, expec
 end
 
 local function inspect_dotfile(details, warnings, user, path, attr)
-    local filename = path:match("([^/]+)$") or path
+    local filename = dotfiles.basename(path)
 
-    if FORBIDDEN_DOTFILES[filename] then
-        append_dotfile_failure(details, user, path, "forbidden_file")
+    if dotfiles.is_forbidden(filename) then
+        append_dotfile_failure(details, user, path, 'forbidden_file')
         return
     end
 
-    if attr and attr.mode ~= "file" then
+    if attr and attr.mode ~= 'file' then
         return
     end
 
     local stat = _dependencies.fs_stat(path)
     if not stat then
-        append_dotfile_failure(details, user, path, "stat_failed")
+        append_dotfile_failure(details, user, path, 'stat_failed')
         return
     end
 
-    local max_mode = STRICT_DOTFILE_MAX_MODES[filename] or DEFAULT_DOTFILE_MAX_MODE
+    local max_mode = dotfiles.max_mode_for(filename)
 
     local mode = stat:mode()
     if not comparators.mode_is_no_more_permissive(mode, max_mode) then
-        append_dotfile_failure(details, user, path, "mode", mode, max_mode)
+        append_dotfile_failure(details, user, path, 'mode', mode, max_mode)
     end
 
     local uid = stat:uid()
     if uid ~= user.user_uid then
-        append_dotfile_failure(details, user, path, "owner", uid, user.user_uid)
+        append_dotfile_failure(details, user, path, 'owner', uid, user.user_uid)
     end
 
     local gid = stat:gid()
     if gid ~= user.user_gid then
-        append_dotfile_failure(details, user, path, "group", gid, user.user_gid)
+        append_dotfile_failure(details, user, path, 'group', gid, user.user_gid)
     end
 
-    if filename == ".netrc" then
+    if filename == '.netrc' then
         warnings[#warnings + 1] = {
             user = user.user,
             path = path,
-            reason = "netrc_exists",
+            reason = 'netrc_exists',
         }
     end
 end
@@ -704,18 +709,18 @@ end
 local function scan_dotfiles(details, warnings, user, dir_path, root_dev)
     local iter, dir_obj = _dependencies.lfs_dir(dir_path)
     if not iter then
-        append_dotfile_failure(details, user, dir_path, "read_dir_failed")
+        append_dotfile_failure(details, user, dir_path, 'read_dir_failed')
         return
     end
 
     for name in iter, dir_obj do
-        if name ~= "." and name ~= ".." then
-            local path = dir_path .. "/" .. name
+        if name ~= '.' and name ~= '..' then
+            local path = dir_path .. '/' .. name
             local attr = _dependencies.lfs_symlinkattributes(path)
-            if attr and (root_dev == nil or attr.dev == nil or attr.dev == root_dev) then
-                if name:match("^%.") then
+            if dotfiles.same_device_or_unknown(attr, root_dev) then
+                if dotfiles.is_dot_entry(name) then
                     inspect_dotfile(details, warnings, user, path, attr)
-                elseif attr.mode == "directory" then
+                elseif attr.mode == 'directory' then
                     scan_dotfiles(details, warnings, user, path, root_dev)
                 end
             end
@@ -736,15 +741,18 @@ function M.inspect_dotfiles(params)
     local max_users = tonumber(params.max_users) or 1000
 
     if #real_users > max_users then
-        return nil, string.format(
-            "Probe 'users.inspect_dotfiles' found %d local interactive users, exceeding max_users=%d.",
-            #real_users, max_users)
+        return nil,
+            string.format(
+                "Probe 'users.inspect_dotfiles' found %d local interactive users, exceeding max_users=%d.",
+                #real_users,
+                max_users
+            )
     end
 
     for _, user in ipairs(real_users) do
-        if type(user.home) == "string" and user.home ~= "" and user.home:sub(1, 1) == "/" then
+        if type(user.home) == 'string' and user.home ~= '' and user.home:sub(1, 1) == '/' then
             local home_attr = _dependencies.lfs_symlinkattributes(user.home)
-            if home_attr and home_attr.mode == "directory" then
+            if home_attr and home_attr.mode == 'directory' then
                 scan_dotfiles(details, warnings, user, user.home, home_attr.dev)
             end
         end
