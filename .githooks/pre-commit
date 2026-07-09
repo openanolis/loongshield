@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+mapfile -d '' staged_files < <(
+    git diff --cached --name-only -z --diff-filter=ACMR
+)
+
+if ((${#staged_files[@]} == 0)); then
+    echo "No staged files to format-check."
+    exit 0
+fi
+
+printf -v files '%q ' "${staged_files[@]}"
+echo "Running local format check..."
+FILES="${files% }" make fmt-check

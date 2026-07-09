@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+commit_msg_file="${1:?commit message file is required}"
+
+if [[ -f "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
+    exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+title="$(sed -n -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' -e 'p' -e 'q' "$commit_msg_file")"
+
+tools/ci/check-commit-title.sh --title "$title" --body-file "$commit_msg_file"
