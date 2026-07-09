@@ -23,36 +23,27 @@ end
 
 M._test_set_dependencies()
 
-local function normalize_unit_name(unit_name)
-    return systemctl.normalize_unit_name(unit_name)
-end
-
-local function run_systemctl_command(args)
-    return systemctl.capture(args, _dependencies)
-end
-
 local function get_systemctl_enabled_state(unit_name)
-    local normalized_name = normalize_unit_name(unit_name)
+    local normalized_name = systemctl.normalize_unit_name(unit_name)
     if not normalized_name then
-        log.warn("Invalid unit name for systemctl: %s", tostring(unit_name))
+        log.warn('Invalid unit name for systemctl: %s', tostring(unit_name))
         return nil
     end
 
-    local out = run_systemctl_command(string.format("--root=/ is-enabled %s", normalized_name))
+    local out = systemctl.capture(string.format('--root=/ is-enabled %s', normalized_name), _dependencies)
     if not out then
         log.debug("Failed to run systemctl --root=/ is-enabled for unit '%s'.", normalized_name)
         return nil
     end
 
-    local state = out:match("^%s*(.-)%s*$")
-    if state == "" then
+    local state = out:match('^%s*(.-)%s*$')
+    if state == '' then
         log.debug("Could not parse systemctl --root=/ is-enabled output for unit '%s'.", normalized_name)
         return nil
     end
 
-    if not state:match("^[%w%-]+$") then
-        log.debug("Unexpected systemctl --root=/ is-enabled output for unit '%s': %s",
-            normalized_name, state)
+    if not state:match('^[%w%-]+$') then
+        log.debug("Unexpected systemctl --root=/ is-enabled output for unit '%s': %s", normalized_name, state)
         return nil
     end
 
@@ -60,18 +51,18 @@ local function get_systemctl_enabled_state(unit_name)
 end
 
 local function get_systemctl_properties(unit_name)
-    local normalized_name = normalize_unit_name(unit_name)
+    local normalized_name = systemctl.normalize_unit_name(unit_name)
     if not normalized_name then
-        log.warn("Invalid unit name for systemctl: %s", tostring(unit_name))
+        log.warn('Invalid unit name for systemctl: %s', tostring(unit_name))
         return nil
     end
 
-    local out = run_systemctl_command(string.format(
-        "show -p LoadState -p UnitFileState -p ActiveState %s",
-        normalized_name
-    ))
+    local out = systemctl.capture(
+        string.format('show -p LoadState -p UnitFileState -p ActiveState %s', normalized_name),
+        _dependencies
+    )
     if not out then
-        log.debug("Failed to run systemctl show for unit properties.")
+        log.debug('Failed to run systemctl show for unit properties.')
         local offline_state = get_systemctl_enabled_state(unit_name)
         if offline_state then
             return { UnitFileState = offline_state }
@@ -81,12 +72,11 @@ local function get_systemctl_properties(unit_name)
 
     local properties = systemctl.parse_show_properties(out)
 
-    if properties.LoadState == "not-found" and
-        (properties.UnitFileState == nil or properties.UnitFileState == "") then
-        properties.UnitFileState = "not-found"
+    if properties.LoadState == 'not-found' and (properties.UnitFileState == nil or properties.UnitFileState == '') then
+        properties.UnitFileState = 'not-found'
     end
 
-    if properties.UnitFileState == nil or properties.UnitFileState == "" then
+    if properties.UnitFileState == nil or properties.UnitFileState == '' then
         local offline_state = get_systemctl_enabled_state(unit_name)
         if offline_state then
             properties.UnitFileState = offline_state
@@ -98,7 +88,7 @@ local function get_systemctl_properties(unit_name)
         return nil
     end
 
-    if properties.UnitFileState == nil or properties.UnitFileState == "" then
+    if properties.UnitFileState == nil or properties.UnitFileState == '' then
         log.debug("Could not determine unit file state for unit '%s'.", normalized_name)
         return nil
     end
@@ -106,35 +96,50 @@ local function get_systemctl_properties(unit_name)
     return properties
 end
 
+local function get_property_if_present(properties, key)
+    if properties and properties[key] and properties[key] ~= '' then
+        return properties[key]
+    end
+    return nil
+end
+
+local function get_fallback_property(get_fallback_props, key)
+    if not get_fallback_props then
+        return nil
+    end
+
+    return get_property_if_present(get_fallback_props(), key)
+end
+
 local function get_file_state(unit_name, get_fallback_props)
-    log.debug("Connecting to system D-Bus for unit file state query...")
+    log.debug('Connecting to system D-Bus for unit file state query...')
     local bus, err = _dependencies.bus_default_system()
     if not bus then
-        log.debug("D-Bus unavailable for unit file state query: %s", tostring(err))
-        local fallback_props = get_fallback_props and get_fallback_props() or nil
-        if fallback_props and fallback_props.UnitFileState and fallback_props.UnitFileState ~= "" then
-            return fallback_props.UnitFileState
+        log.debug('D-Bus unavailable for unit file state query: %s', tostring(err))
+        local fallback_state = get_fallback_property(get_fallback_props, 'UnitFileState')
+        if fallback_state then
+            return fallback_state
         end
-        return "unknown"
+        return 'unknown'
     end
 
     local reply = bus:unit_filestate(unit_name)
     if not reply then
-        local fallback_props = get_fallback_props and get_fallback_props() or nil
-        if fallback_props and fallback_props.UnitFileState and fallback_props.UnitFileState ~= "" then
-            return fallback_props.UnitFileState
+        local fallback_state = get_fallback_property(get_fallback_props, 'UnitFileState')
+        if fallback_state then
+            return fallback_state
         end
-        return "not-found"
+        return 'not-found'
     end
 
     local state, read_err = reply:read('s')
     if not state then
-        log.debug("Could not read D-Bus reply for unit file state: %s", tostring(read_err))
-        local fallback_props = get_fallback_props and get_fallback_props() or nil
-        if fallback_props and fallback_props.UnitFileState and fallback_props.UnitFileState ~= "" then
-            return fallback_props.UnitFileState
+        log.debug('Could not read D-Bus reply for unit file state: %s', tostring(read_err))
+        local fallback_state = get_fallback_property(get_fallback_props, 'UnitFileState')
+        if fallback_state then
+            return fallback_state
         end
-        return "unknown"
+        return 'unknown'
     end
 
     return state
@@ -143,29 +148,30 @@ end
 -- ToDo: enhance to use D-Bus for checking active state as well.
 -- The shell fallback is still less ideal than D-Bus, but the unit name is sanitized.
 local function get_active_state(unit_name, fallback_props)
-    if fallback_props and fallback_props.ActiveState and fallback_props.ActiveState ~= "" then
-        return fallback_props.ActiveState
+    local fallback_state = get_property_if_present(fallback_props, 'ActiveState')
+    if fallback_state then
+        return fallback_state
     end
 
-    local normalized_name = normalize_unit_name(unit_name)
+    local normalized_name = systemctl.normalize_unit_name(unit_name)
     if not normalized_name then
-        log.warn("Invalid unit name for systemctl: %s", tostring(unit_name))
-        return "unknown"
+        log.warn('Invalid unit name for systemctl: %s', tostring(unit_name))
+        return 'unknown'
     end
-    local out = run_systemctl_command(string.format("is-active %s", normalized_name))
+    local out = systemctl.capture(string.format('is-active %s', normalized_name), _dependencies)
     if not out then
-        log.debug("Failed to run systemctl command for active state.")
-        return "unknown"
+        log.debug('Failed to run systemctl command for active state.')
+        return 'unknown'
     end
-    local state = out:match("^%s*(.-)%s*$")
-    if state == "" then
-        return "unknown"
+    local state = out:match('^%s*(.-)%s*$')
+    if state == '' then
+        return 'unknown'
     end
     return state
 end
 
 local function unit_file_state_is_enabled(state)
-    return state == "enabled" or state == "enabled-runtime"
+    return state == 'enabled' or state == 'enabled-runtime'
 end
 
 local function unit_file_state_is_known_not_enabled(state)
@@ -175,9 +181,9 @@ local function unit_file_state_is_known_not_enabled(state)
         generated = true,
         indirect = true,
         linked = true,
-        ["linked-runtime"] = true,
+        ['linked-runtime'] = true,
         masked = true,
-        ["masked-runtime"] = true,
+        ['masked-runtime'] = true,
         static = true,
         transient = true,
     }
@@ -186,15 +192,15 @@ local function unit_file_state_is_known_not_enabled(state)
 end
 
 local function active_state_is_not_active(state)
-    return state ~= nil and state ~= "" and state ~= "active"
+    return state ~= nil and state ~= '' and state ~= 'active'
 end
 
 local function unit_not_in_use(properties)
-    if properties.UnitFileState == "not-found" then
+    if properties.UnitFileState == 'not-found' then
         return true
     end
-    return unit_file_state_is_known_not_enabled(properties.UnitFileState) and
-        active_state_is_not_active(properties.ActiveState)
+    return unit_file_state_is_known_not_enabled(properties.UnitFileState)
+        and active_state_is_not_active(properties.ActiveState)
 end
 
 function M.get_unit_properties(params)
@@ -216,7 +222,7 @@ function M.get_unit_properties(params)
 
     return {
         UnitFileState = unit_file_state,
-        ActiveState = get_active_state(unit_name, fallback_loaded and fallback_props or nil)
+        ActiveState = get_active_state(unit_name, fallback_loaded and fallback_props or nil),
     }
 end
 
@@ -226,7 +232,7 @@ function M.get_not_in_use_state(params)
     end
 
     local names = params.names or { params.name }
-    if type(names) ~= "table" then
+    if type(names) ~= 'table' then
         return nil, "Probe 'services.get_not_in_use_state' parameter 'names' must be a list."
     end
 
