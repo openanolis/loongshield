@@ -3,11 +3,11 @@ local M = {}
 
 function M.parse_line(line)
     local trimmed = text.trim(line)
-    if trimmed == "" or trimmed:match("^#") then
+    if trimmed == '' or trimmed:match('^#') then
         return nil
     end
 
-    local kind, remainder = trimmed:match("^(%S+)%s+(.+)$")
+    local kind, remainder = trimmed:match('^(%S+)%s+(.+)$')
     if not kind or not remainder then
         return nil
     end
@@ -16,10 +16,10 @@ function M.parse_line(line)
     local module_name
     local args_text
 
-    if remainder:sub(1, 1) == "[" then
-        control, module_name, args_text = remainder:match("^(%b[])%s+(%S+)%s*(.*)$")
+    if remainder:sub(1, 1) == '[' then
+        control, module_name, args_text = remainder:match('^(%b[])%s+(%S+)%s*(.*)$')
     else
-        control, module_name, args_text = remainder:match("^(%S+)%s+(%S+)%s*(.*)$")
+        control, module_name, args_text = remainder:match('^(%S+)%s+(%S+)%s*(.*)$')
     end
 
     if not control or not module_name then
@@ -27,7 +27,7 @@ function M.parse_line(line)
     end
 
     local args = {}
-    for token in tostring(args_text or ""):gmatch("%S+") do
+    for token in args_text:gmatch('%S+') do
         args[#args + 1] = token
     end
 

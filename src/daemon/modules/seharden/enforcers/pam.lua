@@ -10,9 +10,15 @@ local _default_dependencies = {
     os_remove = os.remove,
     lfs_attributes = lfs.attributes,
     lfs_symlinkattributes = fsutil.default_lfs_symlinkattributes,
-    fs_stat = function(path) return require('fs').stat(path) end,
-    fs_chmod = function(path, mode) return require('fs').chmod(path, mode) end,
-    fs_chown = function(path, uid, gid) return require('fs').chown(path, uid, gid) end,
+    fs_stat = function(path)
+        return require('fs').stat(path)
+    end,
+    fs_chmod = function(path, mode)
+        return require('fs').chmod(path, mode)
+    end,
+    fs_chown = function(path, uid, gid)
+        return require('fs').chown(path, uid, gid)
+    end,
 }
 
 local _dependencies = {}
@@ -35,18 +41,18 @@ M._test_set_dependencies()
 local trim = text.trim
 
 local function is_safe_path(path)
-    return type(path) == "string" and path ~= "" and not path:find("[%c\n\r]")
+    return type(path) == 'string' and path ~= '' and not path:find('[%c\n\r]')
 end
 
 local function is_safe_token(token)
-    return type(token) == "string" and token ~= "" and not token:find("[%s%c]")
+    return type(token) == 'string' and token ~= '' and not token:find('[%s%c]')
 end
 
 local function normalize_tokens(values, field_name)
     if values == nil then
         return {}
     end
-    if type(values) ~= "table" then
+    if type(values) ~= 'table' then
         return nil, string.format("pam.ensure_entry: '%s' must be a list when provided", field_name)
     end
 
@@ -62,7 +68,7 @@ local function normalize_tokens(values, field_name)
 end
 
 local function entry_has_args(args, required_args)
-    if type(required_args) ~= "table" or #required_args == 0 then
+    if type(required_args) ~= 'table' or #required_args == 0 then
         return true
     end
 
@@ -80,42 +86,6 @@ local function entry_has_args(args, required_args)
     return true
 end
 
-local function read_lines(path)
-    local attr = _dependencies.lfs_attributes(path)
-    if attr and attr.mode ~= "file" then
-        return nil, string.format("pam.ensure_entry: path '%s' is a %s, not a file", path, tostring(attr.mode))
-    end
-
-    local file, err = _dependencies.io_open(path, "r")
-    if not file then
-        if attr then
-            return nil, string.format("pam.ensure_entry: could not open '%s': %s", path, tostring(err))
-        end
-        return {}
-    end
-
-    local lines = {}
-    for line in file:lines() do
-        lines[#lines + 1] = line
-    end
-    file:close()
-    return lines
-end
-
-local function lines_equal(left, right)
-    if #left ~= #right then
-        return false
-    end
-
-    for index = 1, #left do
-        if left[index] ~= right[index] then
-            return false
-        end
-    end
-
-    return true
-end
-
 function M.ensure_entry(params)
     if not params or not is_safe_path(params.path) then
         return nil, "pam.ensure_entry: requires a safe 'path' parameter"
@@ -126,19 +96,19 @@ function M.ensure_entry(params)
     if not is_safe_token(params.module) then
         return nil, string.format("pam.ensure_entry: invalid module '%s'", tostring(params and params.module))
     end
-    if type(params.control) ~= "string" or params.control == "" or params.control:find("[%c\n\r]") then
+    if type(params.control) ~= 'string' or params.control == '' or params.control:find('[%c\n\r]') then
         return nil, string.format("pam.ensure_entry: invalid control '%s'", tostring(params and params.control))
     end
 
-    local args, args_err = normalize_tokens(params.args, "args")
+    local args, args_err = normalize_tokens(params.args, 'args')
     if not args then
         return nil, args_err
     end
-    local match_args, match_err = normalize_tokens(params.match_args, "match_args")
+    local match_args, match_err = normalize_tokens(params.match_args, 'match_args')
     if not match_args then
         return nil, match_err
     end
-    local anchor_args, anchor_err = normalize_tokens(params.anchor_args, "anchor_args")
+    local anchor_args, anchor_err = normalize_tokens(params.anchor_args, 'anchor_args')
     if not anchor_args then
         return nil, anchor_err
     end
@@ -156,12 +126,14 @@ function M.ensure_entry(params)
         return nil, string.format("pam.ensure_entry: refusing to overwrite symlink '%s'", params.path)
     end
 
-    local desired_line = string.format("%s %s %s", params.kind, params.control, params.module)
+    local desired_line = string.format('%s %s %s', params.kind, params.control, params.module)
     if #args > 0 then
-        desired_line = desired_line .. " " .. table.concat(args, " ")
+        desired_line = desired_line .. ' ' .. table.concat(args, ' ')
     end
 
-    local original_lines, read_err = read_lines(params.path)
+    local original_lines, read_err = fsutil.read_lines(params.path, 'pam.ensure_entry', _dependencies, {
+        missing_as_empty = true,
+    })
     if not original_lines then
         return nil, read_err
     end
@@ -203,16 +175,11 @@ function M.ensure_entry(params)
         new_lines[#new_lines + 1] = desired_line
     end
 
-    if lines_equal(original_lines, new_lines) then
+    if fsutil.lines_equal(original_lines, new_lines) then
         return true
     end
 
-    return fsutil.write_lines_atomically_preserving_attrs(
-        params.path,
-        new_lines,
-        "pam.ensure_entry",
-        _dependencies
-    )
+    return fsutil.write_lines_atomically_preserving_attrs(params.path, new_lines, 'pam.ensure_entry', _dependencies)
 end
 
 return M
