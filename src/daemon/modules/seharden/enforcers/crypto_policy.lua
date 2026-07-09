@@ -1,4 +1,5 @@
 local log = require('runtime.log')
+local policy_strings = require('seharden.shared.crypto_policy')
 local M = {}
 
 local DEFAULT_MODULES_DIR = '/etc/crypto-policies/policies/modules'
@@ -49,27 +50,6 @@ local function sanitize_module_content(content)
     return content
 end
 
--- Parse a policy string like "BASE:SUB1:SUB2" into base and subpolicies.
-local function parse_policy_string(policy_str)
-    policy_str = tostring(policy_str or ''):gsub('%s+', '')
-    if policy_str == '' then
-        return nil, {}
-    end
-    local parts = {}
-    for part in policy_str:gmatch('[^:]+') do
-        parts[#parts + 1] = part
-    end
-    if #parts == 0 then
-        return nil, {}
-    end
-    local base = parts[1]
-    local subpolicies = {}
-    for i = 2, #parts do
-        subpolicies[#subpolicies + 1] = parts[i]
-    end
-    return base, subpolicies
-end
-
 -- Detect the currently active crypto policy from the config file.
 -- Returns the raw policy string (e.g. "DEFAULT:NO-SHA1") or nil on failure.
 local function detect_current_policy(config_path)
@@ -86,55 +66,52 @@ local function detect_current_policy(config_path)
     return content:gsub('^%s+', ''):gsub('%s+$', '')
 end
 
--- Merge the requested policy with the host's currently active policy.
--- Bare base-policy requests must be honored exactly so rules can switch
--- away from LEGACY. DEFAULT-based subpolicy requests preserve stronger or
--- site-local current bases, but move LEGACY hosts onto DEFAULT.
-local function build_effective_policy(requested_policy, current_policy_str)
-    local requested_base, requested_subs = parse_policy_string(requested_policy)
-
-    if not current_policy_str or current_policy_str == '' then
-        return requested_policy
+local function read_file(path)
+    local file = _dependencies.io_open(path, 'r')
+    if not file then
+        return nil
     end
 
-    local current_base, current_subs = parse_policy_string(current_policy_str)
-    if not current_base then
-        return requested_policy
+    local content = file:read('*a')
+    file:close()
+    return content
+end
+
+local function write_file_if_changed(path, content)
+    if read_file(path) == content then
+        return true
     end
 
-    if #requested_subs == 0 then
-        return requested_policy
+    log.debug("crypto_policy.set_policy: writing module '%s'", path)
+    local file = _dependencies.io_open(path, 'w')
+    if not file then
+        return nil, string.format("crypto_policy.set_policy: cannot write '%s'", path)
     end
 
-    local result_base = requested_base
-    if requested_base == 'DEFAULT' and current_base ~= 'DEFAULT' and current_base ~= 'LEGACY' then
-        result_base = current_base
+    file:write(content)
+    local ok = file:close()
+    if not ok then
+        return nil, string.format("crypto_policy.set_policy: cannot close '%s'", path)
+    end
+    return true
+end
+
+local function write_module(mod, modules_dir)
+    if not mod.name or mod.content == nil then
+        return nil, "crypto_policy.set_policy: each module entry requires 'name' and 'content'"
     end
 
-    -- Collect current subpolicies into a set for deduplication.
-    local seen = {}
-    for _, sub in ipairs(current_subs) do
-        seen[sub] = true
+    local mod_name, name_err = sanitize_policy_token(mod.name, 'module name')
+    if not mod_name then
+        return nil, name_err
     end
 
-    -- Append only the subpolicies not already active.
-    local merged_subs = {}
-    for _, sub in ipairs(current_subs) do
-        merged_subs[#merged_subs + 1] = sub
-    end
-    for _, sub in ipairs(requested_subs) do
-        if not seen[sub] then
-            merged_subs[#merged_subs + 1] = sub
-            seen[sub] = true
-        end
+    local content = sanitize_module_content(mod.content)
+    if not content then
+        return nil, string.format("crypto_policy.set_policy: invalid content for module '%s'", mod_name)
     end
 
-    local result = result_base
-    for _, sub in ipairs(merged_subs) do
-        result = result .. ':' .. sub
-    end
-
-    return result
+    return write_file_if_changed(modules_dir .. '/' .. mod_name .. '.pmod', content)
 end
 
 -- Apply a system-wide crypto policy, optionally creating sub-policy module files.
@@ -161,41 +138,9 @@ function M.set_policy(params)
     -- Create/update module files if specified
     if params.modules then
         for _, mod in ipairs(params.modules) do
-            if not mod.name or mod.content == nil then
-                return nil, "crypto_policy.set_policy: each module entry requires 'name' and 'content'"
-            end
-
-            local mod_name, name_err = sanitize_policy_token(mod.name, 'module name')
-            if not mod_name then
-                return nil, name_err
-            end
-
-            local content = sanitize_module_content(mod.content)
-            if not content then
-                return nil, string.format("crypto_policy.set_policy: invalid content for module '%s'", mod_name)
-            end
-
-            local mod_path = modules_dir .. '/' .. mod_name .. '.pmod'
-
-            -- Check if file exists with matching content
-            local f_in = _dependencies.io_open(mod_path, 'r')
-            local existing_content = nil
-            if f_in then
-                existing_content = f_in:read('*a')
-                f_in:close()
-            end
-
-            if existing_content ~= content then
-                log.debug("crypto_policy.set_policy: writing module '%s'", mod_path)
-                local f_out = _dependencies.io_open(mod_path, 'w')
-                if not f_out then
-                    return nil, string.format("crypto_policy.set_policy: cannot write '%s'", mod_path)
-                end
-                f_out:write(content)
-                local ok = f_out:close()
-                if not ok then
-                    return nil, string.format("crypto_policy.set_policy: cannot close '%s'", mod_path)
-                end
+            local ok, module_err = write_module(mod, modules_dir)
+            if not ok then
+                return nil, module_err
             end
         end
     end
@@ -204,7 +149,7 @@ function M.set_policy(params)
     -- to avoid silently replacing an existing FIPS / site-local base.
     local current_policy_path = params.current_policy_path or DEFAULT_CURRENT_POLICY_CONFIG
     local current_policy_str = detect_current_policy(current_policy_path)
-    local effective_policy = build_effective_policy(policy, current_policy_str)
+    local effective_policy = policy_strings.build_effective_policy(policy, current_policy_str)
 
     if current_policy_str then
         log.debug(
