@@ -1,11 +1,11 @@
-local rule_schema = require("seharden.rule_schema")
+local rule_schema = require('seharden.rule_schema')
 
 local function make_rule(overrides)
     local rule = {
-        id = "rule.1",
-        desc = "demo rule",
+        id = 'rule.1',
+        desc = 'demo rule',
         assertion = {
-            compare = "is_true",
+            compare = 'is_true',
             actual = true,
         },
     }
@@ -18,118 +18,196 @@ local function make_rule(overrides)
 end
 
 function test_rule_schema_accepts_single_probe_task_shorthand()
-    local ok = rule_schema.validate_rule(make_rule({
-        probes = {
-            name = "attrs",
-            func = "permissions.get_attributes",
-            params = { path = "/etc/passwd" },
-        },
-    }), "rules[1]")
+    local ok = rule_schema.validate_rule(
+        make_rule({
+            probes = {
+                name = 'attrs',
+                func = 'permissions.get_attributes',
+                params = { path = '/etc/passwd' },
+            },
+        }),
+        'rules[1]'
+    )
 
-    assert(ok == true, "Expected single probe shorthand to remain valid")
+    assert(ok == true, 'Expected single probe shorthand to remain valid')
+end
+
+function test_rule_schema_get_probe_tasks_hides_probe_field_shape()
+    local rule = make_rule({
+        probes = {
+            name = 'attrs',
+            func = 'permissions.get_attributes',
+            params = { path = '/etc/passwd' },
+        },
+        reinforce_guard = {
+            name = 'container_host_check',
+            func = 'env_detect.is_container_host',
+        },
+    })
+
+    local probes = rule_schema.get_probe_tasks(rule)
+    local guard = rule_schema.get_probe_tasks(rule, 'reinforce_guard')
+
+    assert(#probes == 1 and probes[1].name == 'attrs', 'Expected probes shorthand to normalize to one task')
+    assert(#guard == 1 and guard[1].name == 'container_host_check', 'Expected guard shorthand to normalize to one task')
 end
 
 function test_rule_schema_rejects_probe_task_missing_name()
-    local ok, err = rule_schema.validate_rule(make_rule({
-        probes = {
-            {
-                func = "permissions.get_attributes",
-                params = { path = "/etc/passwd" },
+    local ok, err = rule_schema.validate_rule(
+        make_rule({
+            probes = {
+                {
+                    func = 'permissions.get_attributes',
+                    params = { path = '/etc/passwd' },
+                },
             },
-        },
-    }), "rules[1]")
+        }),
+        'rules[1]'
+    )
 
-    assert(ok == nil, "Expected malformed probe tasks to be rejected")
-    assert(err:find("rules[1].probes[1].name must be a non-empty string.", 1, true),
-        "Expected schema error to point at the missing probe name")
+    assert(ok == nil, 'Expected malformed probe tasks to be rejected')
+    assert(
+        err:find('rules[1].probes[1].name must be a non-empty string.', 1, true),
+        'Expected schema error to point at the missing probe name'
+    )
 end
 
 function test_rule_schema_rejects_duplicate_probe_names()
-    local ok, err = rule_schema.validate_rule(make_rule({
-        probes = {
-            {
-                name = "attrs",
-                func = "permissions.get_attributes",
-                params = { path = "/etc/passwd" },
+    local ok, err = rule_schema.validate_rule(
+        make_rule({
+            probes = {
+                {
+                    name = 'attrs',
+                    func = 'permissions.get_attributes',
+                    params = { path = '/etc/passwd' },
+                },
+                {
+                    name = 'attrs',
+                    func = 'permissions.get_attributes',
+                    params = { path = '/etc/group' },
+                },
             },
-            {
-                name = "attrs",
-                func = "permissions.get_attributes",
-                params = { path = "/etc/group" },
-            },
-        },
-    }), "rules[1]")
+        }),
+        'rules[1]'
+    )
 
-    assert(ok == nil, "Expected duplicate probe names to be rejected")
-    assert(err:find("duplicates probe name 'attrs'", 1, true),
-        "Expected schema error to call out duplicate probe names")
+    assert(ok == nil, 'Expected duplicate probe names to be rejected')
+    assert(
+        err:find("duplicates probe name 'attrs'", 1, true),
+        'Expected schema error to call out duplicate probe names'
+    )
 end
 
 function test_rule_schema_rejects_non_list_reinforce_steps()
-    local ok, err = rule_schema.validate_rule(make_rule({
-        reinforce = {
-            action = "file.append_line",
-            params = { path = "/tmp/demo", line = "ok" },
-        },
-    }), "rules[1]")
+    local ok, err = rule_schema.validate_rule(
+        make_rule({
+            reinforce = {
+                action = 'file.append_line',
+                params = { path = '/tmp/demo', line = 'ok' },
+            },
+        }),
+        'rules[1]'
+    )
 
-    assert(ok == nil, "Expected reinforce mappings to be rejected when not wrapped in a list")
-    assert(err:find("rules[1].reinforce must be a list of reinforce steps.", 1, true),
-        "Expected schema error to require reinforce lists explicitly")
+    assert(ok == nil, 'Expected reinforce mappings to be rejected when not wrapped in a list')
+    assert(
+        err:find('rules[1].reinforce must be a list of reinforce steps.', 1, true),
+        'Expected schema error to require reinforce lists explicitly'
+    )
 end
 
 function test_rule_schema_rejects_unknown_comparator()
-    local ok, err = rule_schema.validate_rule(make_rule({
-        assertion = {
-            compare = "does_not_exist",
-            actual = true,
-        },
-    }), "rules[1]")
+    local ok, err = rule_schema.validate_rule(
+        make_rule({
+            assertion = {
+                compare = 'does_not_exist',
+                actual = true,
+            },
+        }),
+        'rules[1]'
+    )
 
-    assert(ok == nil, "Expected unknown comparators to be rejected during schema validation")
-    assert(err:find("rules[1].assertion.compare references unknown comparator 'does_not_exist'.", 1, true),
-        "Expected schema error to mention the unknown comparator")
+    assert(ok == nil, 'Expected unknown comparators to be rejected during schema validation')
+    assert(
+        err:find("rules[1].assertion.compare references unknown comparator 'does_not_exist'.", 1, true),
+        'Expected schema error to mention the unknown comparator'
+    )
 end
 
 function test_rule_schema_rejects_non_assertion_for_all_expected()
-    local ok, err = rule_schema.validate_rule(make_rule({
-        assertion = {
-            compare = "for_all",
-            actual = {
-                { value = true },
+    local ok, err = rule_schema.validate_rule(
+        make_rule({
+            assertion = {
+                compare = 'for_all',
+                actual = {
+                    { value = true },
+                },
+                expected = true,
             },
-            expected = true,
-        },
-    }), "rules[1]")
+        }),
+        'rules[1]'
+    )
 
-    assert(ok == nil, "Expected for_all to require a nested assertion tree in expected")
-    assert(err:find("rules[1].assertion.expected must be an assertion table when compare is 'for_all'.", 1, true),
-        "Expected schema error to point at the nested for_all assertion")
+    assert(ok == nil, 'Expected for_all to require a nested assertion tree in expected')
+    assert(
+        err:find("rules[1].assertion.expected must be an assertion table when compare is 'for_all'.", 1, true),
+        'Expected schema error to point at the nested for_all assertion'
+    )
+end
+
+function test_rule_schema_reports_nested_any_of_assertion_path()
+    local ok, err = rule_schema.validate_rule(
+        make_rule({
+            assertion = {
+                any_of = {
+                    {
+                        compare = '',
+                        actual = true,
+                    },
+                },
+            },
+        }),
+        'rules[1]'
+    )
+
+    assert(ok == nil, 'Expected nested assertion validation to reject malformed children')
+    assert(
+        err:find('rules[1].assertion.any_of[1].compare must be a non-empty string.', 1, true),
+        'Expected schema error to preserve the nested any_of child path'
+    )
 end
 
 function test_rule_schema_accepts_reinforce_guard_with_name()
-    local ok = rule_schema.validate_rule(make_rule({
-        reinforce_guard = {
-            name = "container_host_check",
-            func = "env_detect.is_container_host",
-            skip_message = "Container host detected.",
-        },
-        reinforce = {
-            { action = "sysctl.set_value", params = { key = "net.ipv4.ip_forward", value = "0" } },
-        },
-    }), "rules[1]")
+    local ok = rule_schema.validate_rule(
+        make_rule({
+            reinforce_guard = {
+                name = 'container_host_check',
+                func = 'env_detect.is_container_host',
+                skip_message = 'Container host detected.',
+            },
+            reinforce = {
+                { action = 'sysctl.set_value', params = { key = 'net.ipv4.ip_forward', value = '0' } },
+            },
+        }),
+        'rules[1]'
+    )
 
-    assert(ok == true, "Expected rule with well-formed reinforce_guard to validate")
+    assert(ok == true, 'Expected rule with well-formed reinforce_guard to validate')
 end
 
 function test_rule_schema_rejects_reinforce_guard_without_name()
-    local ok, err = rule_schema.validate_rule(make_rule({
-        reinforce_guard = {
-            func = "env_detect.is_container_host",
-        },
-    }), "rules[1]")
+    local ok, err = rule_schema.validate_rule(
+        make_rule({
+            reinforce_guard = {
+                func = 'env_detect.is_container_host',
+            },
+        }),
+        'rules[1]'
+    )
 
-    assert(ok == nil, "Expected guard without name to be rejected")
-    assert(err:find("reinforce_guard") and err:find("name must be a non%-empty string"),
-        "Expected schema error to point at reinforce_guard.name, got: " .. tostring(err))
+    assert(ok == nil, 'Expected guard without name to be rejected')
+    assert(
+        err:find('reinforce_guard') and err:find('name must be a non%-empty string'),
+        'Expected schema error to point at reinforce_guard.name, got: ' .. tostring(err)
+    )
 end
