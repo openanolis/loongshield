@@ -21,6 +21,16 @@ end
 
 M._test_set_dependencies()
 
+local function read_existing_lines(path)
+    local lines, err, exists = fsutil.read_lines(path, 'file', _dependencies, {
+        missing_as_empty = true,
+    })
+    if not lines then
+        return {}, false, err
+    end
+    return lines, exists
+end
+
 -- Update or append "key=value" / "key value" in a config file. Idempotent.
 -- params: { path, key, value, separator (optional, default "=") }
 function M.set_key_value(params)
@@ -45,23 +55,19 @@ function M.set_key_value(params)
         return nil, string.format("file.set_key_value: refusing to overwrite symlink '%s'", params.path)
     end
 
-    local f_in = _dependencies.io_open(params.path, 'r')
-    if f_in then
-        for line in f_in:lines() do
-            local existing_val = line:match(match_pattern)
-            if existing_val ~= nil then
-                match_count = match_count + 1
-                if match_count == 1 then
-                    table.insert(lines, new_line)
-                end
-                if existing_val ~= value or match_count > 1 then
-                    needs_write = true
-                end
-            else
-                table.insert(lines, line)
+    for _, line in ipairs(read_existing_lines(params.path)) do
+        local existing_val = line:match(match_pattern)
+        if existing_val ~= nil then
+            match_count = match_count + 1
+            if match_count == 1 then
+                table.insert(lines, new_line)
             end
+            if existing_val ~= value or match_count > 1 then
+                needs_write = true
+            end
+        else
+            table.insert(lines, line)
         end
-        f_in:close()
     end
 
     if match_count == 0 then
@@ -90,18 +96,12 @@ function M.append_line(params)
         return nil, string.format("file.append_line: refusing to overwrite symlink '%s'", params.path)
     end
 
-    -- Check if line already exists
-    local f_in = _dependencies.io_open(params.path, 'r')
-    if f_in then
-        for line in f_in:lines() do
-            table.insert(lines, line)
-            if line == target_line then
-                f_in:close()
-                log.debug("file.append_line: line already present in '%s', skipping.", params.path)
-                return true
-            end
+    for _, line in ipairs(read_existing_lines(params.path)) do
+        table.insert(lines, line)
+        if line == target_line then
+            log.debug("file.append_line: line already present in '%s', skipping.", params.path)
+            return true
         end
-        f_in:close()
     end
 
     table.insert(lines, target_line)
@@ -143,19 +143,17 @@ function M.remove_line_matching(params)
             goto continue
         end
 
-        local f_in = _dependencies.io_open(path, 'r')
-        if not f_in then
-            -- File doesn't exist — skip
+        local existing_lines, file_exists = read_existing_lines(path)
+        if not file_exists then
             goto continue
         end
-        for line in f_in:lines() do
+        for _, line in ipairs(existing_lines) do
             if line:match(params.pattern) then
                 removed = removed + 1
             else
                 table.insert(lines, line)
             end
         end
-        f_in:close()
 
         if removed > 0 then
             log.debug('Enforcer file.remove_line_matching: removing %d line(s) from %s', removed, path)
@@ -192,12 +190,11 @@ function M.comment_line_matching(params)
         return nil, string.format("file.comment_line_matching: refusing to overwrite symlink '%s'", params.path)
     end
 
-    local f_in = _dependencies.io_open(params.path, 'r')
-    if not f_in then
-        -- File doesn't exist — nothing to comment
+    local existing_lines, file_exists = read_existing_lines(params.path)
+    if not file_exists then
         return true
     end
-    for line in f_in:lines() do
+    for _, line in ipairs(existing_lines) do
         if
             line:match(params.pattern)
             and not line:match('^%s*' .. comment_prefix:gsub('([%^%$%(%)%%%.%[%]%*%+%-%?])', '%%%1'))
@@ -209,7 +206,6 @@ function M.comment_line_matching(params)
             table.insert(lines, line)
         end
     end
-    f_in:close()
 
     if commented == 0 then
         log.debug("file.comment_line_matching: no uncommented matching lines in '%s', skipping.", params.path)
@@ -239,28 +235,11 @@ function M.write_content(params)
     end
 
     -- Read current content for idempotency check
-    local current_lines = {}
-    local f_in = _dependencies.io_open(params.path, 'r')
-    if f_in then
-        for line in f_in:lines() do
-            table.insert(current_lines, line)
-        end
-        f_in:close()
-    end
+    local current_lines = read_existing_lines(params.path)
 
-    -- Compare line-by-line
-    if #current_lines == #lines then
-        local same = true
-        for i = 1, #lines do
-            if current_lines[i] ~= lines[i] then
-                same = false
-                break
-            end
-        end
-        if same then
-            log.debug("file.write_content: '%s' already has desired content, skipping.", params.path)
-            return true
-        end
+    if fsutil.lines_equal(current_lines, lines) then
+        log.debug("file.write_content: '%s' already has desired content, skipping.", params.path)
+        return true
     end
 
     log.debug('Enforcer file.write_content: writing content to %s', params.path)
@@ -290,51 +269,44 @@ function M.set_ini_key_value(params)
     local key_pattern = '^%s*' .. escaped_key .. '%s*=%s*(.-)%s*$'
 
     local lines = {}
-    local current_section
     local in_target_section = false
     local key_found = false
     local key_updated = false
     local insert_index -- where to insert key=value if not found
 
-    local f_in = _dependencies.io_open(params.path, 'r')
-    if f_in then
-        for line in f_in:lines() do
-            table.insert(lines, line)
+    for _, line in ipairs(read_existing_lines(params.path)) do
+        table.insert(lines, line)
 
-            -- Check for section header
-            local section_name = line:match('^%s*%[([^%]]+)%]%s*$')
-            if section_name then
-                if in_target_section and not key_found then
-                    -- Leaving target section without finding key; record insertion point
-                    insert_index = #lines
+        -- Check for section header
+        local section_name = line:match('^%s*%[([^%]]+)%]%s*$')
+        if section_name then
+            if in_target_section and not key_found then
+                -- Leaving target section without finding key; record insertion point
+                insert_index = #lines
+            end
+            in_target_section = (section_name == target_section)
+        elseif in_target_section and not key_found then
+            local existing_val = line:match(key_pattern)
+            if existing_val ~= nil then
+                key_found = true
+                if existing_val == target_value then
+                    log.debug(
+                        "file.set_ini_key_value: [%s] %s already '%s', skipping.",
+                        target_section,
+                        target_key,
+                        target_value
+                    )
+                    return true
                 end
-                current_section = section_name
-                in_target_section = (section_name == target_section)
-            elseif in_target_section and not key_found then
-                local existing_val = line:match(key_pattern)
-                if existing_val ~= nil then
-                    key_found = true
-                    if existing_val == target_value then
-                        log.debug(
-                            "file.set_ini_key_value: [%s] %s already '%s', skipping.",
-                            target_section,
-                            target_key,
-                            target_value
-                        )
-                        f_in:close()
-                        return true
-                    end
-                    -- Replace value in-place
-                    lines[#lines] = target_key .. '=' .. target_value
-                    key_updated = true
-                end
+                -- Replace value in-place
+                lines[#lines] = target_key .. '=' .. target_value
+                key_updated = true
             end
         end
-        f_in:close()
+    end
 
-        if in_target_section and not key_found then
-            insert_index = #lines + 1
-        end
+    if in_target_section and not key_found then
+        insert_index = #lines + 1
     end
 
     if key_found and not key_updated then

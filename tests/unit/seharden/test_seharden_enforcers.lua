@@ -961,6 +961,41 @@ function test_file_test_dependencies_reset_symlink_override()
     assert(ok == true, 'Expected dependency reset to restore default symlink handling')
 end
 
+function test_file_write_content_skips_when_content_matches()
+    local written = false
+
+    file_enforcer._test_set_dependencies({
+        io_open = function(_, mode)
+            if mode == 'r' then
+                local lines = { 'line1', 'line2' }
+                local i = 0
+                return {
+                    lines = function()
+                        return function()
+                            i = i + 1
+                            return lines[i]
+                        end
+                    end,
+                    close = function()
+                        return true
+                    end,
+                }
+            end
+
+            written = true
+            return nil
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+    })
+
+    local ok = file_enforcer.write_content({ path = '/etc/test.conf', content = 'line1\nline2' })
+
+    assert(ok == true, 'Expected matching content to succeed')
+    assert(written == false, 'Expected no write when content already matches')
+end
+
 --------------------------------------------------------------------------------
 -- mounts enforcer
 --------------------------------------------------------------------------------
