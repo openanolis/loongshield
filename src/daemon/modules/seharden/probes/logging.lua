@@ -32,7 +32,7 @@ local function sorted_dir_entries(path)
 
     local entries = {}
     for name in iter, dir_obj do
-        if name ~= "." and name ~= ".." then
+        if name ~= '.' and name ~= '..' then
             entries[#entries + 1] = name
         end
     end
@@ -45,11 +45,11 @@ local function collect_regular_files(path, out)
     if not attr then
         return true
     end
-    if attr.mode == "file" then
+    if attr.mode == 'file' then
         out[#out + 1] = path
         return true
     end
-    if attr.mode ~= "directory" then
+    if attr.mode ~= 'directory' then
         return true
     end
 
@@ -59,7 +59,7 @@ local function collect_regular_files(path, out)
     end
 
     for _, entry in ipairs(entries) do
-        local ok, child_err = collect_regular_files(path .. "/" .. entry, out)
+        local ok, child_err = collect_regular_files(path .. '/' .. entry, out)
         if not ok then
             return nil, child_err
         end
@@ -96,73 +96,59 @@ local function set_from_list(values)
     return set
 end
 
+local function make_policy(name, max_mode, owners, groups)
+    return {
+        name = name,
+        max_mode = max_mode,
+        owners = owners,
+        groups = groups,
+        owner_set = set_from_list(owners),
+        group_set = set_from_list(groups),
+    }
+end
+
+local POLICIES = {
+    login_record = make_policy('login_record', tonumber('664', 8), { 'root' }, { 'root', 'utmp' }),
+    failed_login_record = make_policy('failed_login_record', tonumber('660', 8), { 'root' }, { 'root', 'utmp' }),
+    readme = make_policy('readme', tonumber('644', 8), { 'root', 'syslog' }, { 'root', 'adm' }),
+    journal = make_policy('journal', tonumber('640', 8), { 'root' }, { 'root', 'systemd-journal', 'adm' }),
+    sssd = make_policy('sssd', tonumber('600', 8), { 'root', 'sssd' }, { 'root', 'sssd' }),
+    gdm = make_policy('gdm', tonumber('640', 8), { 'root', 'gdm' }, { 'root', 'gdm', 'adm' }),
+    default = make_policy('default', tonumber('640', 8), { 'root', 'syslog' }, { 'root', 'adm' }),
+}
+
 local function basename(path)
-    return tostring(path):match("([^/]+)$") or tostring(path)
+    return tostring(path):match('([^/]+)$') or tostring(path)
 end
 
 local function policy_for_path(path)
     local name = basename(path)
 
-    if name == "lastlog" or name == "wtmp" then
-        return {
-            name = "login_record",
-            max_mode = tonumber("664", 8),
-            owners = { "root" },
-            groups = { "root", "utmp" },
-        }
+    if name == 'lastlog' or name == 'wtmp' then
+        return POLICIES.login_record
     end
 
-    if name == "btmp" then
-        return {
-            name = "failed_login_record",
-            max_mode = tonumber("660", 8),
-            owners = { "root" },
-            groups = { "root", "utmp" },
-        }
+    if name == 'btmp' then
+        return POLICIES.failed_login_record
     end
 
-    if name == "README" then
-        return {
-            name = "readme",
-            max_mode = tonumber("644", 8),
-            owners = { "root", "syslog" },
-            groups = { "root", "adm" },
-        }
+    if name == 'README' then
+        return POLICIES.readme
     end
 
-    if path:match("%.journal~?$") then
-        return {
-            name = "journal",
-            max_mode = tonumber("640", 8),
-            owners = { "root" },
-            groups = { "root", "systemd-journal", "adm" },
-        }
+    if path:match('%.journal~?$') then
+        return POLICIES.journal
     end
 
-    if path:match("/sssd/") or path:match("/SSSD/") then
-        return {
-            name = "sssd",
-            max_mode = tonumber("600", 8),
-            owners = { "root", "sssd" },
-            groups = { "root", "sssd" },
-        }
+    if path:match('/sssd/') or path:match('/SSSD/') then
+        return POLICIES.sssd
     end
 
-    if path:match("/gdm/") or path:match("/gdm3/") then
-        return {
-            name = "gdm",
-            max_mode = tonumber("640", 8),
-            owners = { "root", "gdm" },
-            groups = { "root", "gdm", "adm" },
-        }
+    if path:match('/gdm/') or path:match('/gdm3/') then
+        return POLICIES.gdm
     end
 
-    return {
-        name = "default",
-        max_mode = tonumber("640", 8),
-        owners = { "root", "syslog" },
-        groups = { "root", "adm" },
-    }
+    return POLICIES.default
 end
 
 local function access_detail(path, passwd_by_uid, group_by_gid)
@@ -172,7 +158,7 @@ local function access_detail(path, passwd_by_uid, group_by_gid)
             path = path,
             exists = false,
             configured = false,
-            reason = "stat_failed",
+            reason = 'stat_failed',
         }
     end
 
@@ -182,11 +168,9 @@ local function access_detail(path, passwd_by_uid, group_by_gid)
     local owner = passwd_by_uid[uid]
     local group = group_by_gid[gid]
     local policy = policy_for_path(path)
-    local owners = set_from_list(policy.owners)
-    local groups = set_from_list(policy.groups)
     local mode_ok = comparators.mode_is_no_more_permissive(mode, policy.max_mode)
-    local owner_ok = owner ~= nil and owners[owner] == true
-    local group_ok = group ~= nil and groups[group] == true
+    local owner_ok = owner ~= nil and policy.owner_set[owner] == true
+    local group_ok = group ~= nil and policy.group_set[group] == true
 
     return {
         path = path,
@@ -209,9 +193,9 @@ end
 
 function M.inspect_logfile_access(params)
     params = params or {}
-    local root_path = params.root_path or "/var/log"
-    local passwd_path = params.passwd_path or "/etc/passwd"
-    local group_path = params.group_path or "/etc/group"
+    local root_path = params.root_path or '/var/log'
+    local passwd_path = params.passwd_path or '/etc/passwd'
+    local group_path = params.group_path or '/etc/group'
 
     local passwd_by_uid, passwd_err = read_name_index(passwd_path, 7, 3)
     if not passwd_by_uid then
@@ -240,7 +224,7 @@ function M.inspect_logfile_access(params)
     local files = {}
     local ok, collect_err = collect_regular_files(root_path, files)
     if not ok then
-        log.warn("%s", collect_err)
+        log.warn('%s', collect_err)
         return {
             available = false,
             error = collect_err,

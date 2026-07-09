@@ -13,7 +13,7 @@ local function handle_for(content)
     return {
         lines = function()
             local lines = {}
-            for line in (content .. "\n"):gmatch("(.-)\n") do
+            for line in (content .. '\n'):gmatch('(.-)\n') do
                 lines[#lines + 1] = line
             end
             local index = 0
@@ -36,26 +36,41 @@ end
 
 local function make_attr(uid, gid, mode)
     return {
-        uid = function() return uid end,
-        gid = function() return gid end,
-        mode = function() return mode end,
+        uid = function()
+            return uid
+        end,
+        gid = function()
+            return gid
+        end,
+        mode = function()
+            return mode
+        end,
     }
+end
+
+local function find_detail(details, path)
+    for _, detail in ipairs(details) do
+        if detail.path == path then
+            return detail
+        end
+    end
+    return nil
 end
 
 function test_inspect_logfile_access_accepts_default_and_journal_policies()
     local dirs = {
-        ["/var/log"] = { ".", "..", "messages", "journal" },
-        ["/var/log/journal"] = { ".", "..", "system.journal" },
+        ['/var/log'] = { '.', '..', 'messages', 'journal' },
+        ['/var/log/journal'] = { '.', '..', 'system.journal' },
     }
     local modes = {
-        ["/var/log"] = "directory",
-        ["/var/log/journal"] = "directory",
-        ["/var/log/messages"] = "file",
-        ["/var/log/journal/system.journal"] = "file",
+        ['/var/log'] = 'directory',
+        ['/var/log/journal'] = 'directory',
+        ['/var/log/messages'] = 'file',
+        ['/var/log/journal/system.journal'] = 'file',
     }
     local stats = {
-        ["/var/log/messages"] = make_attr(0, 4, tonumber("640", 8)),
-        ["/var/log/journal/system.journal"] = make_attr(0, 190, tonumber("640", 8)),
+        ['/var/log/messages'] = make_attr(0, 4, tonumber('640', 8)),
+        ['/var/log/journal/system.journal'] = make_attr(0, 190, tonumber('640', 8)),
     }
 
     with_dependencies({
@@ -63,39 +78,44 @@ function test_inspect_logfile_access_accepts_default_and_journal_policies()
             return modes[path] and { mode = modes[path] } or nil
         end,
         lfs_dir = function(path)
-            return dir_iter(assert(dirs[path], "Unexpected directory: " .. tostring(path)))
+            return dir_iter(assert(dirs[path], 'Unexpected directory: ' .. tostring(path)))
         end,
         fs_stat = function(path)
             return stats[path]
         end,
         io_open = function(path)
-            if path == "/etc/passwd" then
-                return handle_for("root:x:0:0:root:/root:/bin/bash\nsyslog:x:101:101::/nonexistent:/sbin/nologin\n")
+            if path == '/etc/passwd' then
+                return handle_for('root:x:0:0:root:/root:/bin/bash\nsyslog:x:101:101::/nonexistent:/sbin/nologin\n')
             end
-            if path == "/etc/group" then
-                return handle_for("root:x:0:\nadm:x:4:\nsystemd-journal:x:190:\n")
+            if path == '/etc/group' then
+                return handle_for('root:x:0:\nadm:x:4:\nsystemd-journal:x:190:\n')
             end
-            return nil, "unexpected file"
+            return nil, 'unexpected file'
         end,
     }, function()
-        local result = logging_probe.inspect_logfile_access({ root_path = "/var/log" })
+        local result = logging_probe.inspect_logfile_access({ root_path = '/var/log' })
 
-        assert(result.available == true, "Expected /var/log evidence to be available")
-        assert(result.checked_count == 2, "Expected both regular log files to be inspected")
-        assert(result.violation_count == 0, "Expected compliant logfile access")
-        assert(result.all_configured == true, "Expected aggregate pass")
+        assert(result.available == true, 'Expected /var/log evidence to be available')
+        assert(result.checked_count == 2, 'Expected both regular log files to be inspected')
+        assert(result.violation_count == 0, 'Expected compliant logfile access')
+        assert(result.all_configured == true, 'Expected aggregate pass')
+        local journal_detail = find_detail(result.details, '/var/log/journal/system.journal')
+        assert(
+            journal_detail.allowed_groups[2] == 'systemd-journal',
+            'Expected journal policy evidence to be preserved'
+        )
     end)
 end
 
 function test_inspect_logfile_access_reports_permission_and_owner_violations()
     local modes = {
-        ["/var/log"] = "directory",
-        ["/var/log/open.log"] = "file",
-        ["/var/log/unknown-owner.log"] = "file",
+        ['/var/log'] = 'directory',
+        ['/var/log/open.log'] = 'file',
+        ['/var/log/unknown-owner.log'] = 'file',
     }
     local stats = {
-        ["/var/log/open.log"] = make_attr(0, 4, tonumber("666", 8)),
-        ["/var/log/unknown-owner.log"] = make_attr(9000, 4, tonumber("640", 8)),
+        ['/var/log/open.log'] = make_attr(0, 4, tonumber('666', 8)),
+        ['/var/log/unknown-owner.log'] = make_attr(9000, 4, tonumber('640', 8)),
     }
 
     with_dependencies({
@@ -103,55 +123,55 @@ function test_inspect_logfile_access_reports_permission_and_owner_violations()
             return modes[path] and { mode = modes[path] } or nil
         end,
         lfs_dir = function()
-            return dir_iter({ ".", "..", "open.log", "unknown-owner.log" })
+            return dir_iter({ '.', '..', 'open.log', 'unknown-owner.log' })
         end,
         fs_stat = function(path)
             return stats[path]
         end,
         io_open = function(path)
-            if path == "/etc/passwd" then
-                return handle_for("root:x:0:0:root:/root:/bin/bash\n")
+            if path == '/etc/passwd' then
+                return handle_for('root:x:0:0:root:/root:/bin/bash\n')
             end
-            if path == "/etc/group" then
-                return handle_for("root:x:0:\nadm:x:4:\n")
+            if path == '/etc/group' then
+                return handle_for('root:x:0:\nadm:x:4:\n')
             end
-            return nil, "unexpected file"
+            return nil, 'unexpected file'
         end,
     }, function()
-        local result = logging_probe.inspect_logfile_access({ root_path = "/var/log" })
+        local result = logging_probe.inspect_logfile_access({ root_path = '/var/log' })
 
-        assert(result.available == true, "Expected readable evidence")
-        assert(result.violation_count == 2, "Expected mode and unmapped owner violations")
-        assert(result.all_configured == false, "Expected aggregate failure")
-        assert(result.details[1].configured == false, "Expected noncompliant detail evidence")
+        assert(result.available == true, 'Expected readable evidence')
+        assert(result.violation_count == 2, 'Expected mode and unmapped owner violations')
+        assert(result.all_configured == false, 'Expected aggregate failure')
+        assert(result.details[1].configured == false, 'Expected noncompliant detail evidence')
     end)
 end
 
 function test_inspect_logfile_access_fails_in_band_when_log_dir_unreadable()
     with_dependencies({
         lfs_attributes = function(path)
-            if path == "/var/log" then
-                return { mode = "directory" }
+            if path == '/var/log' then
+                return { mode = 'directory' }
             end
             return nil
         end,
         lfs_dir = function()
-            return nil, "permission denied"
+            return nil, 'permission denied'
         end,
         io_open = function(path)
-            if path == "/etc/passwd" then
-                return handle_for("root:x:0:0:root:/root:/bin/bash\n")
+            if path == '/etc/passwd' then
+                return handle_for('root:x:0:0:root:/root:/bin/bash\n')
             end
-            if path == "/etc/group" then
-                return handle_for("root:x:0:\n")
+            if path == '/etc/group' then
+                return handle_for('root:x:0:\n')
             end
-            return nil, "unexpected file"
+            return nil, 'unexpected file'
         end,
     }, function()
-        local result = logging_probe.inspect_logfile_access({ root_path = "/var/log" })
+        local result = logging_probe.inspect_logfile_access({ root_path = '/var/log' })
 
-        assert(result.available == false, "Expected unreadable directory evidence to be unavailable")
-        assert(result.all_configured == false, "Expected unreadable evidence not to pass")
-        assert(result.error:find("permission denied", 1, true), "Expected traversal error evidence")
+        assert(result.available == false, 'Expected unreadable directory evidence to be unavailable')
+        assert(result.all_configured == false, 'Expected unreadable evidence not to pass')
+        assert(result.error:find('permission denied', 1, true), 'Expected traversal error evidence')
     end)
 end
