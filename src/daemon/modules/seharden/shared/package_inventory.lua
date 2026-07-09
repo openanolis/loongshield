@@ -3,21 +3,21 @@ local text = require('seharden.shared.text')
 local M = {}
 
 function M.read_installed_names(deps, context)
-    local handle = deps.io_popen("rpm -qa --qf '%{NAME}\\n'", "r")
+    local handle = deps.io_popen("rpm -qa --qf '%{NAME}\\n'", 'r')
     if not handle then
         return nil, string.format("%s: failed to execute 'rpm -qa'", context)
     end
 
     local packages = {}
     for line in handle:lines() do
-        if line ~= "" then
+        if line ~= '' then
             packages[#packages + 1] = line
         end
     end
 
     local ok, _, code = handle:close()
     if ok ~= true or (code ~= nil and code ~= 0) then
-        return nil, string.format("%s: rpm -qa failed with exit %s", context, tostring(code))
+        return nil, string.format('%s: rpm -qa failed with exit %s', context, tostring(code))
     end
 
     table.sort(packages)
@@ -30,17 +30,38 @@ function M.read_installed_index(deps, context)
         return nil, err
     end
 
-    local index = {}
-    for _, package_name in ipairs(packages) do
-        index[package_name] = true
+    return M.index_names(packages)
+end
+
+function M.read_installed_inventory(deps, context)
+    local packages, err = M.read_installed_names(deps, context)
+    if not packages then
+        return nil, err
     end
 
-    return index
+    local index, names = M.index_names(packages)
+    return {
+        index = index,
+        names = names,
+    }
+end
+
+function M.index_names(packages)
+    local index = {}
+    local names = {}
+    for _, package_name in ipairs(packages) do
+        if not index[package_name] then
+            index[package_name] = true
+            names[#names + 1] = package_name
+        end
+    end
+
+    return index, names
 end
 
 function M.compile_glob(pattern, context)
     local matcher = text.glob_to_pattern(pattern)
-    local ok = pcall(string.match, "", matcher)
+    local ok = pcall(string.match, '', matcher)
     if not ok then
         return nil, string.format("%s: invalid package pattern '%s'", context, tostring(pattern))
     end

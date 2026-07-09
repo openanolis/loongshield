@@ -16,8 +16,13 @@ end
 M._test_set_dependencies()
 
 local function get_all_packages()
-    log.debug("Loading installed package list...")
-    return package_inventory.read_installed_index(_dependencies, "packages.get_installed")
+    log.debug('Loading installed package list...')
+    return package_inventory.read_installed_index(_dependencies, 'packages.get_installed')
+end
+
+local function get_package_inventory()
+    log.debug('Loading installed package list...')
+    return package_inventory.read_installed_inventory(_dependencies, 'packages.get_installed')
 end
 
 local function shell_quote(value)
@@ -25,14 +30,14 @@ local function shell_quote(value)
 end
 
 local function read_command_lines(command)
-    local handle = _dependencies.io_popen(command, "r")
+    local handle = _dependencies.io_popen(command, 'r')
     if not handle then
         return nil, string.format("failed to execute '%s'", command)
     end
 
     local lines = {}
     for line in handle:lines() do
-        if line ~= "" then
+        if line ~= '' then
             lines[#lines + 1] = line
         end
     end
@@ -46,14 +51,15 @@ local function read_command_lines(command)
 end
 
 local function parse_rpm_query_line(line)
-    local name, epoch, version, release, arch = tostring(line or ""):match("^([^\t]+)\t([^\t]*)\t([^\t]+)\t([^\t]+)\t([^\t]+)$")
+    local name, epoch, version, release, arch =
+        tostring(line or ''):match('^([^\t]+)\t([^\t]*)\t([^\t]+)\t([^\t]+)\t([^\t]+)$')
     if not name then
         return nil
     end
 
-    local evr = version .. "-" .. release
-    if epoch and epoch ~= "" and epoch ~= "(none)" and epoch ~= "0" then
-        evr = epoch .. ":" .. evr
+    local evr = version .. '-' .. release
+    if epoch and epoch ~= '' and epoch ~= '(none)' and epoch ~= '0' then
+        evr = epoch .. ':' .. evr
     end
 
     return {
@@ -72,15 +78,15 @@ local function normalize_epoch(epoch)
 end
 
 local function parse_evr(evr)
-    local epoch, version_release = tostring(evr or ""):match("^([^:]+):(.+)$")
+    local epoch, version_release = tostring(evr or ''):match('^([^:]+):(.+)$')
     if not version_release then
-        version_release = tostring(evr or "")
+        version_release = tostring(evr or '')
     end
 
-    local version, release = version_release:match("^([^-]+)%-(.+)$")
+    local version, release = version_release:match('^([^-]+)%-(.+)$')
     if not version then
         version = version_release
-        release = ""
+        release = ''
     end
 
     return {
@@ -91,13 +97,13 @@ local function parse_evr(evr)
 end
 
 local function is_alnum(char)
-    return char and char:match("[%a%d]") ~= nil
+    return char and char:match('[%a%d]') ~= nil
 end
 
 local function skip_separators(value, index)
     while index <= #value do
         local char = value:sub(index, index)
-        if is_alnum(char) or char == "~" then
+        if is_alnum(char) or char == '~' then
             break
         end
         index = index + 1
@@ -106,16 +112,16 @@ local function skip_separators(value, index)
 end
 
 local function read_segment(value, index)
-    local numeric = value:sub(index, index):match("%d") ~= nil
+    local numeric = value:sub(index, index):match('%d') ~= nil
     local finish = index
 
     while finish <= #value do
         local char = value:sub(finish, finish)
         if numeric then
-            if not char:match("%d") then
+            if not char:match('%d') then
                 break
             end
-        elseif not char:match("%a") then
+        elseif not char:match('%a') then
             break
         end
         finish = finish + 1
@@ -125,13 +131,13 @@ local function read_segment(value, index)
 end
 
 local function compare_numeric_segments(left, right)
-    left = left:gsub("^0+", "")
-    right = right:gsub("^0+", "")
-    if left == "" then
-        left = "0"
+    left = left:gsub('^0+', '')
+    right = right:gsub('^0+', '')
+    if left == '' then
+        left = '0'
     end
-    if right == "" then
-        right = "0"
+    if right == '' then
+        right = '0'
     end
 
     if #left ~= #right then
@@ -144,8 +150,8 @@ local function compare_numeric_segments(left, right)
 end
 
 local function rpmvercmp(left, right)
-    left = tostring(left or "")
-    right = tostring(right or "")
+    left = tostring(left or '')
+    right = tostring(right or '')
     if left == right then
         return 0
     end
@@ -157,8 +163,8 @@ local function rpmvercmp(left, right)
         left_index = skip_separators(left, left_index)
         right_index = skip_separators(right, right_index)
 
-        local left_tilde = left:sub(left_index, left_index) == "~"
-        local right_tilde = right:sub(right_index, right_index) == "~"
+        local left_tilde = left:sub(left_index, left_index) == '~'
+        local right_tilde = right:sub(right_index, right_index) == '~'
         if left_tilde or right_tilde then
             if not left_tilde then
                 return 1
@@ -232,7 +238,7 @@ function M.get_installed(params)
 
     local pattern = params.name
 
-    if not pattern:match("[*?%[]") then
+    if not pattern:match('[*?%[]') then
         log.debug("Performing fast cache lookup for package '%s'", pattern)
         local all_pkgs, err = get_all_packages()
         if not all_pkgs then
@@ -245,27 +251,19 @@ function M.get_installed(params)
         end
     else
         local found_packages = {}
-        local all_pkgs, err = get_all_packages()
-        if not all_pkgs then
+        local inventory, err = get_package_inventory()
+        if not inventory then
             return nil, err
         end
-        if pattern:match("^gpg%-pubkey%-") then
-            if all_pkgs["gpg-pubkey"] then
-                return { count = 1, details = { { name = "gpg-pubkey" } } }
+        if pattern:match('^gpg%-pubkey%-') then
+            if inventory.index['gpg-pubkey'] then
+                return { count = 1, details = { { name = 'gpg-pubkey' } } }
             end
             return { count = 0, details = {} }
         end
-        local installed_names = {}
-        for pkg_name in pairs(all_pkgs) do
-            installed_names[#installed_names + 1] = pkg_name
-        end
-        table.sort(installed_names)
 
-        local matches, match_err = package_inventory.find_matching_names(
-            pattern,
-            installed_names,
-            "packages.get_installed"
-        )
+        local matches, match_err =
+            package_inventory.find_matching_names(pattern, inventory.names, 'packages.get_installed')
         if not matches then
             log.warn("Pattern match failed for '%s': %s", pattern, tostring(match_err))
             return nil, match_err
@@ -286,7 +284,8 @@ function M.inspect_min_version(params)
     local name = tostring(params.name)
     local minimum = tostring(params.minimum)
     local metadata_command = "rpm -q --qf '%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\\n' "
-        .. shell_quote(name) .. " 2>/dev/null"
+        .. shell_quote(name)
+        .. ' 2>/dev/null'
     local metadata_lines, metadata_err, metadata_code = read_command_lines(metadata_command)
     if not metadata_lines then
         return nil, metadata_err
@@ -304,7 +303,7 @@ function M.inspect_min_version(params)
     if metadata_code ~= 0 then
         if metadata_code ~= 1 then
             result.available = false
-            result.error = string.format("rpm package query failed with exit %s", tostring(metadata_code))
+            result.error = string.format('rpm package query failed with exit %s', tostring(metadata_code))
         end
         return result
     end
@@ -312,7 +311,7 @@ function M.inspect_min_version(params)
     local package_info = parse_rpm_query_line(metadata_lines[1])
     if not package_info then
         result.available = false
-        result.error = "rpm package query returned an unexpected format"
+        result.error = 'rpm package query returned an unexpected format'
         return result
     end
 
