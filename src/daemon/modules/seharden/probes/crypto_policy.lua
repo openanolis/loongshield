@@ -157,12 +157,8 @@ local function parse_token(raw_token)
     }
 end
 
-local function escape_lua_pattern(value)
-    return tostring(value or ''):gsub('([%^%$%(%)%%%.%[%]%+%-%?%*])', '%%%1')
-end
-
 local function wildcard_matches(pattern, token)
-    pattern = escape_lua_pattern(uppercase(pattern)):gsub('%%%*', '.*')
+    pattern = text.escape_lua_pattern(uppercase(pattern)):gsub('%%%*', '.*')
     return uppercase(token):match('^' .. pattern .. '$') ~= nil
 end
 
