@@ -2,7 +2,7 @@ local comparators = require('seharden.comparators')
 local fs = require('fs')
 local lfs = require('lfs')
 local log = require('runtime.log')
-local path_list = require('seharden.shared.path_list')
+local sshd_config_files = require('seharden.shared.sshd_config_files')
 local text = require('seharden.shared.text')
 local M = {}
 
@@ -23,10 +23,6 @@ function M._test_set_dependencies(deps)
     for key, default in pairs(_default_dependencies) do
         _dependencies[key] = deps[key] or default
     end
-    path_list._test_set_dependencies({
-        lfs_attributes = _dependencies.lfs_attributes,
-        lfs_dir = _dependencies.lfs_dir,
-    })
     _effective_dump_cache = {}
 end
 
@@ -42,26 +38,25 @@ M._test_set_dependencies()
 
 local trim = text.trim
 
-local MODE_0600 = tonumber("600", 8)
-local MODE_0640 = tonumber("640", 8)
-local MODE_0644 = tonumber("644", 8)
+local MODE_0600 = tonumber('600', 8)
+local MODE_0640 = tonumber('640', 8)
+local MODE_0644 = tonumber('644', 8)
 
-local SAFE_SHELL_ARG_PATTERN = "^[a-zA-Z0-9%._-]+$"
-local SAFE_SHELL_ADDR_PATTERN = "^[a-zA-Z0-9%._:-]+$"
+local SAFE_SHELL_ARG_PATTERN = '^[a-zA-Z0-9%._-]+$'
+local SAFE_SHELL_ADDR_PATTERN = '^[a-zA-Z0-9%._:-]+$'
 local SSHD_CANDIDATE_PATHS = {
-    "/usr/sbin/sshd",
-    "/usr/local/sbin/sshd",
-    "/sbin/sshd",
-    "/usr/bin/sshd",
-    "/usr/local/bin/sshd",
-    "/bin/sshd",
+    '/usr/sbin/sshd',
+    '/usr/local/sbin/sshd',
+    '/sbin/sshd',
+    '/usr/bin/sshd',
+    '/usr/local/bin/sshd',
+    '/bin/sshd',
 }
 
 local function sanitize_shell_arg(arg, pattern)
     pattern = pattern or SAFE_SHELL_ARG_PATTERN
     if not arg or not tostring(arg):match(pattern) then
-        log.error("Invalid or malicious argument detected for shell command: %s",
-            tostring(arg))
+        log.error('Invalid or malicious argument detected for shell command: %s', tostring(arg))
         return nil
     end
     return tostring(arg)
@@ -69,7 +64,7 @@ end
 
 local function resolve_sshd_path()
     for _, path in ipairs(SSHD_CANDIDATE_PATHS) do
-        local file = _dependencies.io_open(path, "r")
+        local file = _dependencies.io_open(path, 'r')
         if file then
             file:close()
             return path
@@ -84,12 +79,12 @@ local function read_effective_dump(cmd)
         return _effective_dump_cache[cmd]
     end
 
-    log.debug("Executing sshd config dump command: %s", cmd)
-    local handle = _dependencies.io_popen(cmd, "r")
+    log.debug('Executing sshd config dump command: %s', cmd)
+    local handle = _dependencies.io_popen(cmd, 'r')
     if not handle then
         local result = {
             available = false,
-            error = "Failed to execute sshd config dump command.",
+            error = 'Failed to execute sshd config dump command.',
         }
         _effective_dump_cache[cmd] = result
         return result
@@ -97,7 +92,7 @@ local function read_effective_dump(cmd)
 
     local values = {}
     for line in handle:lines() do
-        local key, value = line:match("^%s*(%S+)%s+(.*)$")
+        local key, value = line:match('^%s*(%S+)%s+(.*)$')
         if key then
             values[key:lower()] = value
         end
@@ -105,7 +100,7 @@ local function read_effective_dump(cmd)
 
     local ok, status, code = handle:close()
     if not ok or code ~= 0 then
-        local message = string.format("sshd command failed with exit code: %s", tostring(code))
+        local message = string.format('sshd command failed with exit code: %s', tostring(code))
         log.debug("The 'sshd -T' command failed with exit code: %s", tostring(code))
         local result = {
             available = true,
@@ -124,15 +119,15 @@ local function read_effective_dump(cmd)
 end
 
 local function read_local_hostname()
-    local file = _dependencies.io_open("/proc/sys/kernel/hostname", "r")
+    local file = _dependencies.io_open('/proc/sys/kernel/hostname', 'r')
     if not file then
         return nil
     end
 
-    local hostname = trim(file:read("*l"))
+    local hostname = trim(file:read('*l'))
     file:close()
 
-    if hostname == "" then
+    if hostname == '' then
         return nil
     end
 
@@ -144,17 +139,17 @@ local function resolve_localhost()
     local ip_address
     local localhost_ip
 
-    local f_hosts = _dependencies.io_open("/etc/hosts", "r")
+    local f_hosts = _dependencies.io_open('/etc/hosts', 'r')
     if f_hosts then
         for line in f_hosts:lines() do
-            if not line:match("^#") then
-                local line_ip = line:match("^(%S+)")
-                for word in line:gmatch("%S+") do
+            if not line:match('^#') then
+                local line_ip = line:match('^(%S+)')
+                for word in line:gmatch('%S+') do
                     if hostname and word == hostname then
                         ip_address = line_ip
                         break
                     end
-                    if word == "localhost" then
+                    if word == 'localhost' then
                         localhost_ip = localhost_ip or line_ip
                     end
                 end
@@ -166,8 +161,8 @@ local function resolve_localhost()
         f_hosts:close()
     end
 
-    hostname = hostname or "localhost"
-    ip_address = ip_address or localhost_ip or "127.0.0.1"
+    hostname = hostname or 'localhost'
+    ip_address = ip_address or localhost_ip or '127.0.0.1'
 
     return {
         host = hostname,
@@ -176,10 +171,10 @@ local function resolve_localhost()
 end
 
 local function parse_duration_seconds(value)
-    local remaining = trim(value):lower():gsub("%s+", "")
+    local remaining = trim(value):lower():gsub('%s+', '')
     local total = 0
     local multipliers = {
-        [""] = 1,
+        [''] = 1,
         s = 1,
         m = 60,
         h = 3600,
@@ -187,12 +182,12 @@ local function parse_duration_seconds(value)
         w = 604800,
     }
 
-    if remaining == "" then
+    if remaining == '' then
         return nil
     end
 
-    while remaining ~= "" do
-        local number, unit, rest = remaining:match("^(%d+)([smhdw]?)(.*)$")
+    while remaining ~= '' do
+        local number, unit, rest = remaining:match('^(%d+)([smhdw]?)(.*)$')
         if not number or multipliers[unit] == nil then
             return nil
         end
@@ -206,7 +201,7 @@ end
 
 local function parse_colon_numbers(value)
     local numbers = {}
-    for token in trim(value):gmatch("[^:]+") do
+    for token in trim(value):gmatch('[^:]+') do
         local number = tonumber(token)
         if number == nil then
             return nil
@@ -221,105 +216,21 @@ local function parse_colon_numbers(value)
     return numbers
 end
 
-local function escape_lua_pattern(value)
-    return tostring(value or ""):gsub("([%^%$%(%)%%%.%[%]%+%-%?%*])", "%%%1")
-end
-
-local function strip_comment(line)
-    local comment_start = tostring(line or ""):find("#", 1, true)
-    if comment_start then
-        return line:sub(1, comment_start - 1)
-    end
-    return line
-end
-
 local function path_mode(path)
     local attr = _dependencies.lfs_attributes(path)
     return attr and attr.mode or nil
 end
 
-local function path_exists_as_file(path)
-    return path_mode(path) == "file"
-end
-
-local function append_unique(list, seen, path)
-    if path and path ~= "" and not seen[path] then
-        list[#list + 1] = path
-        seen[path] = true
-    end
-end
-
-local function normalize_include_path(path, base_dir)
-    if path:sub(1, 1) == "/" then
-        return path
-    end
-    return (base_dir or "/etc/ssh") .. "/" .. path
-end
-
-local function expand_include_spec(spec, base_dir)
-    spec = normalize_include_path(spec, base_dir)
-    if spec:find("[%*%?%[]") then
-        local files = path_list.expand_files({ spec })
-        table.sort(files)
-        return files
-    end
-    if path_exists_as_file(spec) then
-        return { spec }
-    end
-    return {}
-end
-
-local function discover_include_files(path, base_dir)
-    local file = _dependencies.io_open(path, "r")
-    if not file then
-        return {}
-    end
-
-    local includes = {}
-    for line in file:lines() do
-        local active = trim(strip_comment(line))
-        local directive, value = active:match("^(%S+)%s+(.+)$")
-        if directive and directive:lower() == "include" then
-            for spec in tostring(value or ""):gmatch("%S+") do
-                for _, include_path in ipairs(expand_include_spec(spec, base_dir)) do
-                    includes[#includes + 1] = include_path
-                end
-            end
-        end
-    end
-    file:close()
-    return includes
-end
-
 local function discover_sshd_config_files(params)
-    local main_path = params.path or "/etc/ssh/sshd_config"
-    local base_dir = params.base_dir or "/etc/ssh"
-    local include_dir = params.include_dir or "/etc/ssh/sshd_config.d"
-    local queue = {}
-    local queued = {}
-    local files = {}
-    local seen_files = {}
-
-    append_unique(queue, queued, main_path)
-    for _, path in ipairs(path_list.expand_files({ include_dir .. "/*.conf" })) do
-        append_unique(queue, queued, path)
-    end
-
-    local index = 1
-    while index <= #queue do
-        local path = queue[index]
-        index = index + 1
-
-        if path_exists_as_file(path) then
-            append_unique(files, seen_files, path)
-            for _, include_path in ipairs(discover_include_files(path, base_dir)) do
-                append_unique(queue, queued, include_path)
-            end
-        end
-    end
-
-    table.sort(files)
-    return files
+    return sshd_config_files.discover({
+        path = params.path,
+        include_dir = params.include_dir,
+        base_dir = params.base_dir,
+        io_open = _dependencies.io_open,
+        lfs_attributes = _dependencies.lfs_attributes,
+        lfs_dir = _dependencies.lfs_dir,
+        sort_result = true,
+    })
 end
 
 local function get_file_access(path)
@@ -340,38 +251,34 @@ local function get_file_access(path)
     }
 end
 
-local function mode_no_more_permissive(mode, expected)
-    return comparators.mode_is_no_more_permissive(mode, expected)
-end
-
 local function config_file_access_ok(access)
     return access.exists == true
         and access.uid == 0
         and access.gid == 0
-        and mode_no_more_permissive(access.mode, MODE_0600)
+        and comparators.mode_is_no_more_permissive(access.mode, MODE_0600)
 end
 
 local function basename(path)
-    return tostring(path or ""):match("([^/]+)$") or tostring(path or "")
+    return tostring(path or ''):match('([^/]+)$') or tostring(path or '')
 end
 
 local function list_host_key_files(directory, key_type)
-    directory = directory or "/etc/ssh"
+    directory = directory or '/etc/ssh'
     local files = {}
     local ok, iter, dir_obj = pcall(_dependencies.lfs_dir, directory)
     if not ok then
         return nil, tostring(iter)
     end
     if not iter then
-        return nil, tostring(dir_obj or "directory unavailable")
+        return nil, tostring(dir_obj or 'directory unavailable')
     end
 
     for name in iter, dir_obj do
-        local path = directory .. "/" .. name
-        if path_mode(path) == "file" then
-            if key_type == "private" and name:match("^ssh_host_.+_key$") then
+        local path = directory .. '/' .. name
+        if path_mode(path) == 'file' then
+            if key_type == 'private' and name:match('^ssh_host_.+_key$') then
                 files[#files + 1] = path
-            elseif key_type == "public" and name:match("^ssh_host_.+_key%.pub$") then
+            elseif key_type == 'public' and name:match('^ssh_host_.+_key%.pub$') then
                 files[#files + 1] = path
             end
         end
@@ -386,10 +293,10 @@ local function private_host_key_access_ok(access, ssh_keys_gid)
         return false
     end
     if access.gid == 0 then
-        return mode_no_more_permissive(access.mode, MODE_0600)
+        return comparators.mode_is_no_more_permissive(access.mode, MODE_0600)
     end
     if ssh_keys_gid ~= nil and access.gid == ssh_keys_gid then
-        return mode_no_more_permissive(access.mode, MODE_0640)
+        return comparators.mode_is_no_more_permissive(access.mode, MODE_0640)
     end
     return false
 end
@@ -398,14 +305,14 @@ local function public_host_key_access_ok(access)
     return access.exists == true
         and access.uid == 0
         and access.gid == 0
-        and mode_no_more_permissive(access.mode, MODE_0644)
+        and comparators.mode_is_no_more_permissive(access.mode, MODE_0644)
 end
 
 local function inspect_host_key_access(params, key_type, predicate)
     params = params or {}
     local details = {}
     local invalid_count = 0
-    local ssh_keys_gid = _dependencies.fs_get_gid("ssh_keys")
+    local ssh_keys_gid = _dependencies.fs_get_gid('ssh_keys')
     local files, dir_err = list_host_key_files(params.directory, key_type)
 
     if not files then
@@ -446,11 +353,11 @@ local function normalize_value(value, value_type)
         return value
     end
 
-    if value_type == "duration_seconds" then
+    if value_type == 'duration_seconds' then
         return parse_duration_seconds(value)
     end
 
-    if value_type == "colon_numbers" then
+    if value_type == 'colon_numbers' then
         return parse_colon_numbers(value)
     end
 
@@ -473,8 +380,8 @@ local function value_is_present(value)
     if value == nil then
         return false
     end
-    if type(value) == "string" then
-        return trim(value) ~= ""
+    if type(value) == 'string' then
+        return trim(value) ~= ''
     end
     return true
 end
@@ -493,9 +400,9 @@ local function compare_number(value, expected, operator)
         return false
     end
 
-    if operator == ">=" then
+    if operator == '>=' then
         return number >= bound
-    elseif operator == "<=" then
+    elseif operator == '<=' then
         return number <= bound
     end
 
@@ -503,7 +410,7 @@ local function compare_number(value, expected, operator)
 end
 
 local function values_within_maximums(values, maximums)
-    if type(values) ~= "table" then
+    if type(values) ~= 'table' then
         return false
     end
 
@@ -517,9 +424,46 @@ local function values_within_maximums(values, maximums)
     return true
 end
 
+local function setting_constraint_failure(value, params)
+    if params.require_absolute_path then
+        local trimmed_value = trim(value)
+        if not trimmed_value:match('^/%S+$') then
+            return 'not_absolute_path'
+        end
+    end
+
+    if
+        params.expected_value ~= nil
+        and normalize_for_compare(value) ~= normalize_for_compare(params.expected_value)
+    then
+        return 'unexpected_value'
+    end
+
+    if params.allowed_values then
+        local allowed = allowed_value_set(params.allowed_values)
+        if not allowed[normalize_for_compare(value)] then
+            return 'unexpected_value'
+        end
+    end
+
+    if params.min_value ~= nil and not compare_number(value, params.min_value, '>=') then
+        return 'below_minimum'
+    end
+
+    if params.max_value ~= nil and not compare_number(value, params.max_value, '<=') then
+        return 'above_maximum'
+    end
+
+    if params.max_values and not values_within_maximums(value, params.max_values) then
+        return 'above_maximum'
+    end
+
+    return nil
+end
+
 local function split_algorithm_list(value)
     local algorithms = {}
-    for algorithm in tostring(value or ""):gmatch("[^,%s]+") do
+    for algorithm in tostring(value or ''):gmatch('[^,%s]+') do
         algorithms[#algorithms + 1] = algorithm
     end
     return algorithms
@@ -534,14 +478,14 @@ local function build_algorithm_set(values)
 end
 
 local function read_os_release_id(path)
-    local file = _dependencies.io_open(path or "/etc/os-release", "r")
+    local file = _dependencies.io_open(path or '/etc/os-release', 'r')
     if not file then
         return nil
     end
 
     for line in file:lines() do
-        local key, value = line:match("^%s*([%w_]+)%s*=%s*\"?([^\"\n]*)\"?")
-        if key == "ID" then
+        local key, value = line:match('^%s*([%w_]+)%s*=%s*"?([^"\n]*)"?')
+        if key == 'ID' then
             file:close()
             return trim(value):lower()
         end
@@ -552,16 +496,16 @@ local function read_os_release_id(path)
 end
 
 local function contains_os_disclosure(content, os_id)
-    local lowered = tostring(content or ""):lower()
-    for _, escape in ipairs({ "\\v", "\\r", "\\m", "\\s" }) do
+    local lowered = tostring(content or ''):lower()
+    for _, escape in ipairs({ '\\v', '\\r', '\\m', '\\s' }) do
         if lowered:find(escape, 1, true) then
             return true
         end
     end
 
-    os_id = trim(os_id or "")
-    if os_id ~= "" then
-        return lowered:match("%f[%w]" .. escape_lua_pattern(os_id) .. "%f[%W]") ~= nil
+    os_id = trim(os_id or '')
+    if os_id ~= '' then
+        return lowered:match('%f[%w]' .. text.escape_lua_pattern(os_id) .. '%f[%W]') ~= nil
     end
 
     return false
@@ -573,7 +517,7 @@ function M.get_effective_value(params)
     end
 
     local sim_conditions = {}
-    if params.conditions.from == "localhost" then
+    if params.conditions.from == 'localhost' then
         sim_conditions = resolve_localhost()
         sim_conditions.user = params.conditions.user
     else
@@ -585,23 +529,20 @@ function M.get_effective_value(params)
     local safe_addr = sanitize_shell_arg(sim_conditions.addr, SAFE_SHELL_ADDR_PATTERN)
 
     if not (safe_user and safe_host and safe_addr) then
-        return nil, "Invalid characters in command arguments."
+        return nil, 'Invalid characters in command arguments.'
     end
 
     local sshd_path = resolve_sshd_path()
     if not sshd_path then
-        log.debug("Could not locate an sshd binary in standard system paths.")
+        log.debug('Could not locate an sshd binary in standard system paths.')
         return {
             available = false,
             value = nil,
-            error = "sshd binary not found",
+            error = 'sshd binary not found',
         }
     end
 
-    local cmd = string.format(
-        "%s -T -C user=%s -C host=%s -C addr=%s",
-        sshd_path, safe_user, safe_host, safe_addr
-    )
+    local cmd = string.format('%s -T -C user=%s -C host=%s -C addr=%s', sshd_path, safe_user, safe_host, safe_addr)
 
     local dump_result = read_effective_dump(cmd)
     if dump_result.error ~= nil then
@@ -617,8 +558,8 @@ function M.get_effective_value(params)
 
     local normalized_value = normalize_value(found_value, params.value_type)
     if params.value_type ~= nil and normalized_value == nil and found_value ~= nil then
-        return nil, string.format("Could not parse SSH value '%s' as %s.", tostring(found_value),
-            tostring(params.value_type))
+        return nil,
+            string.format("Could not parse SSH value '%s' as %s.", tostring(found_value), tostring(params.value_type))
     end
 
     return {
@@ -633,7 +574,7 @@ function M.inspect_banner(params)
     end
 
     local setting, err = M.inspect_effective_setting({
-        key = "banner",
+        key = 'banner',
         conditions = params.conditions,
         require_absolute_path = true,
     })
@@ -657,22 +598,22 @@ function M.inspect_banner(params)
         return result
     end
 
-    local file, open_err = _dependencies.io_open(setting.value, "r")
+    local file, open_err = _dependencies.io_open(setting.value, 'r')
     if not file then
-        result.reason = "banner_file_unavailable"
-        result.error = tostring(open_err or "banner file not found")
+        result.reason = 'banner_file_unavailable'
+        result.error = tostring(open_err or 'banner file not found')
         return result
     end
 
-    local content = file:read("*a") or ""
+    local content = file:read('*a') or ''
     file:close()
 
     result.banner_file_available = true
-    result.info_leak_found = contains_os_disclosure(content,
-        read_os_release_id(params.os_release_path or "/etc/os-release"))
+    result.info_leak_found =
+        contains_os_disclosure(content, read_os_release_id(params.os_release_path or '/etc/os-release'))
     result.configured = result.info_leak_found == false
     if not result.configured then
-        result.reason = "info_leak_found"
+        result.reason = 'info_leak_found'
     end
 
     return result
@@ -701,44 +642,18 @@ function M.inspect_effective_setting(params)
     }
 
     if result.available == false then
-        return setting_failure(setting, "unavailable")
+        return setting_failure(setting, 'unavailable')
     end
     if result.error ~= nil then
-        return setting_failure(setting, "error")
+        return setting_failure(setting, 'error')
     end
     if not value_is_present(result.value) then
-        return setting_failure(setting, "missing")
+        return setting_failure(setting, 'missing')
     end
 
-    if params.require_absolute_path then
-        local value = trim(result.value)
-        if not value:match("^/%S+$") then
-            return setting_failure(setting, "not_absolute_path")
-        end
-    end
-
-    if params.expected_value ~= nil
-        and normalize_for_compare(result.value) ~= normalize_for_compare(params.expected_value) then
-        return setting_failure(setting, "unexpected_value")
-    end
-
-    if params.allowed_values then
-        local allowed = allowed_value_set(params.allowed_values)
-        if not allowed[normalize_for_compare(result.value)] then
-            return setting_failure(setting, "unexpected_value")
-        end
-    end
-
-    if params.min_value ~= nil and not compare_number(result.value, params.min_value, ">=") then
-        return setting_failure(setting, "below_minimum")
-    end
-
-    if params.max_value ~= nil and not compare_number(result.value, params.max_value, "<=") then
-        return setting_failure(setting, "above_maximum")
-    end
-
-    if params.max_values and not values_within_maximums(result.value, params.max_values) then
-        return setting_failure(setting, "above_maximum")
+    local constraint_failure = setting_constraint_failure(result.value, params)
+    if constraint_failure then
+        return setting_failure(setting, constraint_failure)
     end
 
     setting.configured = true
@@ -747,7 +662,8 @@ end
 
 function M.inspect_effective_algorithm_list(params)
     if not (params and params.key and params.conditions and params.disallowed_algorithms) then
-        return nil, "Probe 'ssh.inspect_effective_algorithm_list' requires 'key', 'conditions', and 'disallowed_algorithms' parameters."
+        return nil,
+            "Probe 'ssh.inspect_effective_algorithm_list' requires 'key', 'conditions', and 'disallowed_algorithms' parameters."
     end
 
     local result, err = M.get_effective_value({
@@ -776,10 +692,7 @@ function M.inspect_effective_algorithm_list(params)
         algorithms = algorithms,
         disallowed = disallowed,
         disallowed_count = #disallowed,
-        configured = result.available ~= false
-            and result.error == nil
-            and #algorithms > 0
-            and #disallowed == 0,
+        configured = result.available ~= false and result.error == nil and #algorithms > 0 and #disallowed == 0,
     }
 end
 
@@ -794,17 +707,15 @@ function M.find_config_directive(params)
     local disallowed = allowed_value_set(params.disallowed_values or {})
 
     for _, path in ipairs(files) do
-        local file, open_err = _dependencies.io_open(path, "r")
+        local file, open_err = _dependencies.io_open(path, 'r')
         if not file then
-            return nil, string.format("Could not open sshd configuration '%s': %s",
-                path, tostring(open_err))
+            return nil, string.format("Could not open sshd configuration '%s': %s", path, tostring(open_err))
         end
 
         local line_number = 0
         for line in file:lines() do
             line_number = line_number + 1
-            local active = trim(strip_comment(line))
-            local key, value = active:match("^(%S+)%s+(.+)$")
+            local key, value = sshd_config_files.parse_directive(line)
             if key and key:lower() == search_key then
                 local matched = false
                 if params.disallowed_values then
@@ -842,8 +753,8 @@ end
 
 function M.inspect_sysconfig_crypto_policy(params)
     params = params or {}
-    local path = params.path or "/etc/sysconfig/sshd"
-    local file = _dependencies.io_open(path, "r")
+    local path = params.path or '/etc/sysconfig/sshd'
+    local file = _dependencies.io_open(path, 'r')
     if not file then
         return {
             available = false,
@@ -860,12 +771,12 @@ function M.inspect_sysconfig_crypto_policy(params)
     local line_number = 0
     for line in file:lines() do
         line_number = line_number + 1
-        if line:match("^%s*#%s*CRYPTO_POLICY%s*=") then
+        if line:match('^%s*#%s*CRYPTO_POLICY%s*=') then
             commented_details[#commented_details + 1] = {
                 line = line_number,
                 text = line,
             }
-        elseif line:match("^%s*CRYPTO_POLICY%s*=") then
+        elseif line:match('^%s*CRYPTO_POLICY%s*=') then
             active_details[#active_details + 1] = {
                 line = line_number,
                 text = line,
@@ -907,11 +818,11 @@ function M.inspect_config_file_access(params)
 end
 
 function M.inspect_private_host_key_access(params)
-    return inspect_host_key_access(params, "private", private_host_key_access_ok)
+    return inspect_host_key_access(params, 'private', private_host_key_access_ok)
 end
 
 function M.inspect_public_host_key_access(params)
-    return inspect_host_key_access(params, "public", public_host_key_access_ok)
+    return inspect_host_key_access(params, 'public', public_host_key_access_ok)
 end
 
 function M.inspect_access_restrictions(params)
@@ -923,7 +834,7 @@ function M.inspect_access_restrictions(params)
     local available = true
     local details = {}
 
-    for _, key in ipairs({ "allowusers", "allowgroups", "denyusers", "denygroups" }) do
+    for _, key in ipairs({ 'allowusers', 'allowgroups', 'denyusers', 'denygroups' }) do
         local result, err = M.get_effective_value({
             key = key,
             conditions = params.conditions,
@@ -938,13 +849,13 @@ function M.inspect_access_restrictions(params)
             available = result.available,
             value = result.value,
             error = result.error,
-            configured = value ~= "",
+            configured = value ~= '',
         }
 
         if result.available == false then
             available = false
         end
-        if value ~= "" then
+        if value ~= '' then
             configured = true
         end
     end
