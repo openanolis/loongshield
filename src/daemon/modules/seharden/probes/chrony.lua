@@ -4,8 +4,8 @@ local text = require('seharden.shared.text')
 
 local M = {}
 
-local DEFAULT_CONFIG_PATHS = { "/etc/chrony.conf" }
-local DEFAULT_SYSCONFIG_PATH = "/etc/sysconfig/chronyd"
+local DEFAULT_CONFIG_PATHS = { '/etc/chrony.conf' }
+local DEFAULT_SYSCONFIG_PATH = '/etc/sysconfig/chronyd'
 
 local _default_dependencies = {
     io_open = io.open,
@@ -29,7 +29,7 @@ end
 M._test_set_dependencies()
 
 local function strip_comment(line)
-    local index = tostring(line or ""):find("#", 1, true)
+    local index = tostring(line or ''):find('#', 1, true)
     if index then
         return line:sub(1, index - 1)
     end
@@ -38,15 +38,15 @@ end
 
 local function parse_directive(line)
     local active = text.trim(strip_comment(line))
-    if active == "" then
+    if active == '' then
         return nil, nil
     end
 
-    local directive, value = active:match("^([%w_]+)%s*:%s*(.-)%s*$")
+    local directive, value = active:match('^([%w_]+)%s*:%s*(.-)%s*$')
     if not directive then
-        directive, value = active:match("^([%w_]+)%s+(.-)%s*$")
+        directive, value = active:match('^([%w_]+)%s+(.-)%s*$')
     end
-    if not directive or value == "" then
+    if not directive or value == '' then
         return nil, nil
     end
 
@@ -54,7 +54,7 @@ local function parse_directive(line)
 end
 
 local function first_word(value)
-    return tostring(value or ""):match("^(%S+)")
+    return tostring(value or ''):match('^(%S+)')
 end
 
 local function sorted_directory_files(path)
@@ -65,10 +65,10 @@ local function sorted_directory_files(path)
     end
 
     for name in dir do
-        if name ~= "." and name ~= ".." then
-            local full_path = path .. "/" .. name
+        if name ~= '.' and name ~= '..' then
+            local full_path = path .. '/' .. name
             local attr = _dependencies.lfs_attributes(full_path)
-            if attr and attr.mode == "file" then
+            if attr and attr.mode == 'file' then
                 files[#files + 1] = full_path
             end
         end
@@ -85,13 +85,13 @@ local function expand_include_path(path)
     end
 
     local attr = _dependencies.lfs_attributes(path)
-    if attr and attr.mode == "directory" then
+    if attr and attr.mode == 'directory' then
         return sorted_directory_files(path)
     end
-    if attr and attr.mode == "file" then
+    if attr and attr.mode == 'file' then
         return { path }
     end
-    if path:find("[%*%?%[]") then
+    if path:find('[%*%?%[]') then
         return path_list.expand_files({ path })
     end
 
@@ -105,10 +105,33 @@ local function append_unique(out, seen, path)
     end
 end
 
-local function discover_config_files(initial_paths)
+local function append_source_detail(details_by_path, path, directive, value)
+    if not details_by_path[path] then
+        details_by_path[path] = {}
+    end
+    details_by_path[path][#details_by_path[path] + 1] = {
+        path = path,
+        directive = directive,
+        value = value,
+    }
+end
+
+local function sorted_source_details(config_files, details_by_path)
+    local details = {}
+    for _, path in ipairs(config_files) do
+        for _, detail in ipairs(details_by_path[path] or {}) do
+            details[#details + 1] = detail
+        end
+    end
+    return details
+end
+
+local function scan_config_files(initial_paths)
     local files = {}
     local seen = {}
     local queue = {}
+    local source_details_by_path = {}
+    local unreadable = 0
 
     for _, path in ipairs(initial_paths or DEFAULT_CONFIG_PATHS) do
         append_unique(queue, seen, path)
@@ -120,25 +143,29 @@ local function discover_config_files(initial_paths)
         index = index + 1
 
         local attr = _dependencies.lfs_attributes(path)
-        if attr and attr.mode == "file" then
+        if attr and attr.mode == 'file' then
             files[#files + 1] = path
-            local handle = _dependencies.io_open(path, "r")
-            if handle then
+            local handle = _dependencies.io_open(path, 'r')
+            if not handle then
+                unreadable = unreadable + 1
+            else
                 for line in handle:lines() do
                     local directive, value = parse_directive(line)
-                    if directive == "confdir" or directive == "sourcedir" then
+                    if directive == 'confdir' or directive == 'sourcedir' then
                         for _, include_path in ipairs(expand_include_path(value)) do
                             append_unique(queue, seen, include_path)
                         end
+                    elseif (directive == 'server' or directive == 'pool') and first_word(value) then
+                        append_source_detail(source_details_by_path, path, directive, value)
                     end
                 end
                 handle:close()
             end
-        elseif attr and attr.mode == "directory" then
+        elseif attr and attr.mode == 'directory' then
             for _, include_path in ipairs(sorted_directory_files(path)) do
                 append_unique(queue, seen, include_path)
             end
-        elseif tostring(path):find("[%*%?%[]") then
+        elseif tostring(path):find('[%*%?%[]') then
             for _, include_path in ipairs(path_list.expand_files({ path })) do
                 append_unique(queue, seen, include_path)
             end
@@ -146,37 +173,11 @@ local function discover_config_files(initial_paths)
     end
 
     table.sort(files)
-    return files
-end
-
-local function inspect_sources(config_files)
-    local details = {}
-    local unreadable = 0
-
-    for _, path in ipairs(config_files) do
-        local handle = _dependencies.io_open(path, "r")
-        if not handle then
-            unreadable = unreadable + 1
-        else
-            for line in handle:lines() do
-                local directive, value = parse_directive(line)
-                if (directive == "server" or directive == "pool") and first_word(value) then
-                    details[#details + 1] = {
-                        path = path,
-                        directive = directive,
-                        value = value,
-                    }
-                end
-            end
-            handle:close()
-        end
-    end
-
-    return details, unreadable
+    return files, sorted_source_details(files, source_details_by_path), unreadable
 end
 
 local function strip_quotes(value)
-    value = text.trim(tostring(value or ""))
+    value = text.trim(tostring(value or ''))
     local first = value:sub(1, 1)
     local last = value:sub(-1)
     if #value >= 2 and ((first == '"' and last == '"') or (first == "'" and last == "'")) then
@@ -186,11 +187,11 @@ local function strip_quotes(value)
 end
 
 local function options_runs_as_root(value)
-    return strip_quotes(value):lower():find("%-u%s+root%f[%A]") ~= nil
+    return strip_quotes(value):lower():find('%-u%s+root%f[%A]') ~= nil
 end
 
 local function inspect_sysconfig(path)
-    local handle = _dependencies.io_open(path, "r")
+    local handle = _dependencies.io_open(path, 'r')
     if not handle then
         return false, false
     end
@@ -198,8 +199,8 @@ local function inspect_sysconfig(path)
     local runs_as_root = false
     for line in handle:lines() do
         local active = text.trim(strip_comment(line))
-        local key, value = active:match("^([^=%s]+)%s*=%s*(.-)%s*$")
-        if key and key:lower() == "options" and options_runs_as_root(value) then
+        local key, value = active:match('^([^=%s]+)%s*=%s*(.-)%s*$')
+        if key and key:lower() == 'options' and options_runs_as_root(value) then
             runs_as_root = true
             break
         end
@@ -214,8 +215,7 @@ function M.inspect_configuration(params)
     local config_paths = params.config_paths or DEFAULT_CONFIG_PATHS
     local sysconfig_path = params.sysconfig_path or DEFAULT_SYSCONFIG_PATH
 
-    local config_files = discover_config_files(config_paths)
-    local source_details, unreadable_count = inspect_sources(config_files)
+    local config_files, source_details, unreadable_count = scan_config_files(config_paths)
     local sysconfig_available, runs_as_root = inspect_sysconfig(sysconfig_path)
 
     return {
