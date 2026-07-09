@@ -90,15 +90,6 @@ local function process_single_rule(rule, mode, opts, report, counters)
             item.reason = string.format('would apply %d action(s)', #(rule.reinforce or {}))
             counters.dry_run_pending = counters.dry_run_pending + 1
         elseif enforce_status == 'DONE' then
-            -- Clear SSH probe cache to force fresh sshd -T execution after config changes
-            local ssh_probe = require('seharden.probes.ssh')
-            if type(ssh_probe.clear_cache) == 'function' then
-                ssh_probe.clear_cache()
-                if not quiet then
-                    log.debug('Cleared SSH probe cache for fresh verification.')
-                end
-            end
-
             local verify_status, verify_msg = rule_executor.audit(rule, opts)
             if verify_status == 'PASS' then
                 if not quiet then
