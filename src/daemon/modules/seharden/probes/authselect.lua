@@ -19,7 +19,7 @@ end
 M._test_set_dependencies()
 
 local function read_lines(path)
-    local file = dependencies.io_open(path, "r")
+    local file = dependencies.io_open(path, 'r')
     if not file then
         return nil
     end
@@ -42,7 +42,7 @@ local function read_authselect_conf(path)
     local features = {}
     for _, line in ipairs(lines) do
         local trimmed = text.trim(line)
-        if trimmed ~= "" and not trimmed:match("^#") then
+        if trimmed ~= '' and not trimmed:match('^#') then
             if not profile then
                 profile = trimmed
             else
@@ -58,24 +58,24 @@ local function read_authselect_conf(path)
 end
 
 local function profile_path_for(profile)
-    if profile:match("^custom/") then
-        return "/etc/authselect/" .. profile
+    if profile:match('^custom/') then
+        return '/etc/authselect/' .. profile
     end
-    if profile:match("^vendor/") then
-        return "/usr/share/authselect/" .. profile
+    if profile:match('^vendor/') then
+        return '/usr/share/authselect/' .. profile
     end
-    return "/usr/share/authselect/default/" .. profile
+    return '/usr/share/authselect/default/' .. profile
 end
 
 local function normalize_module_name(name)
-    name = tostring(name or "")
-    if name:match("^pam_.*%.so$") then
+    name = tostring(name or '')
+    if name:match('^pam_.*%.so$') then
         return name
     end
-    if name:match("^pam_") then
-        return name .. ".so"
+    if name:match('^pam_') then
+        return name .. '.so'
     end
-    return "pam_" .. name .. ".so"
+    return 'pam_' .. name .. '.so'
 end
 
 local function load_template_entries(path)
@@ -94,20 +94,27 @@ local function load_template_entries(path)
     return entries
 end
 
-local function has_module(entries, module_name)
+local function module_set(entries)
+    local modules = {}
     for _, entry in ipairs(entries) do
-        if entry.module == module_name then
-            return true
-        end
+        modules[entry.module] = true
     end
-    return false
+    return modules
+end
+
+local function normalize_modules(modules)
+    local normalized = {}
+    for _, module in ipairs(modules) do
+        normalized[#normalized + 1] = normalize_module_name(module)
+    end
+    return normalized
 end
 
 function M.inspect_profile_modules(params)
     params = params or {}
-    local modules = params.modules or { "pwquality", "pwhistory", "faillock", "unix" }
-    local files = params.files or { "system-auth", "password-auth" }
-    local conf_path = params.authselect_conf or "/etc/authselect/authselect.conf"
+    local modules = normalize_modules(params.modules or { 'pwquality', 'pwhistory', 'faillock', 'unix' })
+    local files = params.files or { 'system-auth', 'password-auth' }
+    local conf_path = params.authselect_conf or '/etc/authselect/authselect.conf'
 
     local profile, features = read_authselect_conf(conf_path)
     if not profile then
@@ -120,8 +127,8 @@ function M.inspect_profile_modules(params)
             details = {
                 {
                     path = conf_path,
-                    reason = "authselect_conf_unreadable",
-                }
+                    reason = 'authselect_conf_unreadable',
+                },
             },
         }
     end
@@ -130,21 +137,21 @@ function M.inspect_profile_modules(params)
     local details = {}
 
     for _, file_name in ipairs(files) do
-        local path = profile_path .. "/" .. file_name
+        local path = profile_path .. '/' .. file_name
         local entries = load_template_entries(path)
         if not entries then
             details[#details + 1] = {
                 path = path,
-                reason = "profile_template_unreadable",
+                reason = 'profile_template_unreadable',
             }
         else
+            local present_modules = module_set(entries)
             for _, module in ipairs(modules) do
-                local module_name = normalize_module_name(module)
-                if not has_module(entries, module_name) then
+                if not present_modules[module] then
                     details[#details + 1] = {
                         path = path,
-                        reason = "module_missing",
-                        module = module_name,
+                        reason = 'module_missing',
+                        module = module,
                     }
                 end
             end
