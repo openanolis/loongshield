@@ -5,21 +5,34 @@ local lyaml = require('lyaml')
 local M = {}
 local _validated_marker = {}
 
-local RULES_BASE_PATH =
-    os.getenv("LOONGSHIELD_SEHARDEN_RULES_PATH")
-    or "/etc/loongshield/seharden"
+local RULES_BASE_PATH = os.getenv('LOONGSHIELD_SEHARDEN_RULES_PATH') or '/etc/loongshield/seharden'
 
 local is_non_empty_string = utils.is_non_empty_string
 local is_list = utils.is_list
 
 local function validate_string_list(values, field_name)
     if not is_list(values) then
-        return nil, string.format("%s must be a list of non-empty strings.", field_name)
+        return nil, string.format('%s must be a list of non-empty strings.', field_name)
     end
 
     for i, value in ipairs(values) do
         if not is_non_empty_string(value) then
-            return nil, string.format("%s[%d] must be a non-empty string.", field_name, i)
+            return nil, string.format('%s[%d] must be a non-empty string.', field_name, i)
+        end
+    end
+
+    return true
+end
+
+local function validate_known_level_refs(values, field_name, level_ids)
+    local ok, err = validate_string_list(values, field_name)
+    if not ok then
+        return nil, err
+    end
+
+    for _, level_id in ipairs(values) do
+        if not level_ids[level_id] then
+            return nil, string.format("%s references unknown level '%s'.", field_name, level_id)
         end
     end
 
@@ -27,8 +40,8 @@ local function validate_string_list(values, field_name)
 end
 
 function M.validate(profile_data)
-    if type(profile_data) ~= "table" then
-        return nil, "Profile root must be a YAML mapping."
+    if type(profile_data) ~= 'table' then
+        return nil, 'Profile root must be a YAML mapping.'
     end
 
     if profile_data[_validated_marker] then
@@ -45,11 +58,11 @@ function M.validate(profile_data)
 
     local level_ids = {}
     for i, level_def in ipairs(profile_data.levels) do
-        if type(level_def) ~= "table" then
-            return nil, string.format("levels[%d] must be a table.", i)
+        if type(level_def) ~= 'table' then
+            return nil, string.format('levels[%d] must be a table.', i)
         end
         if not is_non_empty_string(level_def.id) then
-            return nil, string.format("levels[%d].id must be a non-empty string.", i)
+            return nil, string.format('levels[%d].id must be a non-empty string.', i)
         end
         if level_ids[level_def.id] then
             return nil, string.format("Duplicate level id '%s'.", level_def.id)
@@ -57,8 +70,7 @@ function M.validate(profile_data)
         level_ids[level_def.id] = true
 
         if level_def.inherits_from ~= nil then
-            local ok, err = validate_string_list(level_def.inherits_from,
-                string.format("levels[%d].inherits_from", i))
+            local ok, err = validate_string_list(level_def.inherits_from, string.format('levels[%d].inherits_from', i))
             if not ok then
                 return nil, err
             end
@@ -67,11 +79,13 @@ function M.validate(profile_data)
 
     for i, level_def in ipairs(profile_data.levels) do
         if level_def.inherits_from then
-            for _, parent_id in ipairs(level_def.inherits_from) do
-                if not level_ids[parent_id] then
-                    return nil, string.format(
-                        "levels[%d].inherits_from references unknown level '%s'.", i, parent_id)
-                end
+            local ok, err = validate_known_level_refs(
+                level_def.inherits_from,
+                string.format('levels[%d].inherits_from', i),
+                level_ids
+            )
+            if not ok then
+                return nil, err
             end
         end
     end
@@ -81,9 +95,11 @@ function M.validate(profile_data)
             return nil, "Profile field 'default_level' must be a non-empty string."
         end
         if not level_ids[profile_data.default_level] then
-            return nil, string.format(
-                "Profile field 'default_level' references unknown level '%s'.",
-                profile_data.default_level)
+            return nil,
+                string.format(
+                    "Profile field 'default_level' references unknown level '%s'.",
+                    profile_data.default_level
+                )
         end
     end
 
@@ -93,30 +109,27 @@ function M.validate(profile_data)
         end
 
         for i, entry in ipairs(profile_data.manual_review_required) do
-            if type(entry) ~= "table" then
-                return nil, string.format("manual_review_required[%d] must be a table.", i)
+            if type(entry) ~= 'table' then
+                return nil, string.format('manual_review_required[%d] must be a table.', i)
             end
             if not is_non_empty_string(entry.area) then
-                return nil, string.format("manual_review_required[%d].area must be a non-empty string.", i)
+                return nil, string.format('manual_review_required[%d].area must be a non-empty string.', i)
             end
             if not is_non_empty_string(entry.item) then
-                return nil, string.format("manual_review_required[%d].item must be a non-empty string.", i)
+                return nil, string.format('manual_review_required[%d].item must be a non-empty string.', i)
             end
             if not is_non_empty_string(entry.reason) then
-                return nil, string.format("manual_review_required[%d].reason must be a non-empty string.", i)
+                return nil, string.format('manual_review_required[%d].reason must be a non-empty string.', i)
             end
 
             if entry.level ~= nil then
-                local ok, err = validate_string_list(entry.level,
-                    string.format("manual_review_required[%d].level", i))
+                local ok, err = validate_known_level_refs(
+                    entry.level,
+                    string.format('manual_review_required[%d].level', i),
+                    level_ids
+                )
                 if not ok then
                     return nil, err
-                end
-                for _, level_id in ipairs(entry.level) do
-                    if not level_ids[level_id] then
-                        return nil, string.format(
-                            "manual_review_required[%d].level references unknown level '%s'.", i, level_id)
-                    end
                 end
             end
         end
@@ -124,11 +137,7 @@ function M.validate(profile_data)
 
     local rule_ids = {}
     for i, rule in ipairs(profile_data.rules) do
-        local ok, err = rule_schema.validate_rule(
-            rule,
-            string.format("rules[%d]", i),
-            { validate_comparators = false }
-        )
+        local ok, err = rule_schema.validate_rule(rule, string.format('rules[%d]', i), { validate_comparators = false })
         if not ok then
             return nil, err
         end
@@ -138,15 +147,9 @@ function M.validate(profile_data)
         rule_ids[rule.id] = true
 
         if rule.level ~= nil then
-            local levels_ok, levels_err = validate_string_list(rule.level, string.format("rules[%d].level", i))
-            if not levels_ok then
-                return nil, levels_err
-            end
-            for _, level_id in ipairs(rule.level) do
-                if not level_ids[level_id] then
-                    return nil, string.format(
-                        "rules[%d].level references unknown level '%s'.", i, level_id)
-                end
+            local ok, err = validate_known_level_refs(rule.level, string.format('rules[%d].level', i), level_ids)
+            if not ok then
+                return nil, err
             end
         end
     end
@@ -157,22 +160,22 @@ end
 
 function M.load(config_name_or_path)
     if not is_non_empty_string(config_name_or_path) then
-        log.error("Profile name/path must be a non-empty string.")
+        log.error('Profile name/path must be a non-empty string.')
         return nil
     end
 
     local rule_path
-    if config_name_or_path:match("/") then
+    if config_name_or_path:match('/') then
         rule_path = config_name_or_path
     else
         local name = config_name_or_path
-        if not (name:match("%.yml$") or name:match("%.yaml$")) then
-            name = name .. ".yml"
+        if not (name:match('%.yml$') or name:match('%.yaml$')) then
+            name = name .. '.yml'
         end
-        rule_path = string.format("%s/%s", RULES_BASE_PATH, name)
+        rule_path = string.format('%s/%s', RULES_BASE_PATH, name)
     end
 
-    log.debug("Attempting to load profile from: %s", rule_path)
+    log.debug('Attempting to load profile from: %s', rule_path)
     local yaml_content, err = utils.read_file_content(rule_path)
     if not yaml_content then
         log.error("Failed to read profile file '%s': %s", rule_path, tostring(err))
@@ -197,7 +200,7 @@ end
 function M.resolve_target_level(profile_data, requested_level_id)
     local valid, schema_err = M.validate(profile_data)
     if not valid then
-        log.error("Invalid profile schema: %s", schema_err)
+        log.error('Invalid profile schema: %s', schema_err)
         return nil, schema_err
     end
 
@@ -248,9 +251,11 @@ local function build_active_levels(profile_data, target_level_id)
     end
 
     local active_level_names = {}
-    for name, _ in pairs(active_levels) do table.insert(active_level_names, name) end
+    for name, _ in pairs(active_levels) do
+        table.insert(active_level_names, name)
+    end
     table.sort(active_level_names)
-    log.debug("Active levels for target '%s': %s", target_level_id or "all", table.concat(active_level_names, ", "))
+    log.debug("Active levels for target '%s': %s", target_level_id or 'all', table.concat(active_level_names, ', '))
 
     return active_levels
 end
@@ -258,7 +263,7 @@ end
 function M.get_rules_for_level(profile_data, target_level_id)
     local valid, schema_err = M.validate(profile_data)
     if not valid then
-        log.error("Invalid profile schema: %s", schema_err)
+        log.error('Invalid profile schema: %s', schema_err)
         return nil, schema_err
     end
 
@@ -270,11 +275,8 @@ function M.get_rules_for_level(profile_data, target_level_id)
     local rules_to_run = {}
     for index, rule in ipairs(profile_data.rules) do
         if not rule.level then
-            local ok, err = rule_schema.validate_rule(
-                rule,
-                string.format("rules[%d]", index),
-                { validate_comparators = true }
-            )
+            local ok, err =
+                rule_schema.validate_rule(rule, string.format('rules[%d]', index), { validate_comparators = true })
             if not ok then
                 return nil, err
             end
@@ -284,7 +286,7 @@ function M.get_rules_for_level(profile_data, target_level_id)
                 if active_levels[rule_level_id] then
                     local ok, err = rule_schema.validate_rule(
                         rule,
-                        string.format("rules[%d]", index),
+                        string.format('rules[%d]', index),
                         { validate_comparators = true }
                     )
                     if not ok then
@@ -303,7 +305,7 @@ end
 function M.get_manual_review_items_for_level(profile_data, target_level_id)
     local valid, schema_err = M.validate(profile_data)
     if not valid then
-        log.error("Invalid profile schema: %s", schema_err)
+        log.error('Invalid profile schema: %s', schema_err)
         return nil, schema_err
     end
 
