@@ -52,9 +52,7 @@ local BUILTIN_ATTRS = {
     selinux = true,
 }
 
-local function shell_escape(arg)
-    return "'" .. tostring(arg):gsub("'", "'\\''") .. "'"
-end
+local shell_escape = text.shell_escape
 
 local function strip_inline_comment(line)
     local in_single_quote = false
@@ -66,9 +64,9 @@ local function strip_inline_comment(line)
             in_single_quote = not in_single_quote
         elseif char == '"' and not in_single_quote then
             in_double_quote = not in_double_quote
-        elseif char == "#" and not in_single_quote and not in_double_quote then
+        elseif char == '#' and not in_single_quote and not in_double_quote then
             local previous = index > 1 and line:sub(index - 1, index - 1) or nil
-            if previous == nil or previous:match("%s") then
+            if previous == nil or previous:match('%s') then
                 return line:sub(1, index - 1)
             end
         end
@@ -84,17 +82,17 @@ local function sorted_files(paths)
 end
 
 local function dirname(path)
-    return tostring(path):match("^(.*)/[^/]+$") or "."
+    return tostring(path):match('^(.*)/[^/]+$') or '.'
 end
 
 local function join_path(base, part)
-    if tostring(part):sub(1, 1) == "/" then
+    if tostring(part):sub(1, 1) == '/' then
         return part
     end
-    if base == "/" then
-        return "/" .. part
+    if base == '/' then
+        return '/' .. part
     end
-    return tostring(base):gsub("/$", "") .. "/" .. tostring(part)
+    return tostring(base):gsub('/$', '') .. '/' .. tostring(part)
 end
 
 local function path_mode(path)
@@ -104,7 +102,7 @@ end
 
 local function sorted_directory_files(path, name_pattern)
     local files = {}
-    if path_mode(path) ~= "directory" then
+    if path_mode(path) ~= 'directory' then
         return files
     end
 
@@ -115,15 +113,15 @@ local function sorted_directory_files(path, name_pattern)
 
     local names = {}
     for name in iter, dir_obj do
-        if name ~= "." and name ~= ".." and (not name_pattern or name:match(name_pattern)) then
+        if name ~= '.' and name ~= '..' and (not name_pattern or name:match(name_pattern)) then
             names[#names + 1] = name
         end
     end
     table.sort(names)
 
     for _, name in ipairs(names) do
-        local child = path .. "/" .. name
-        if path_mode(child) == "file" then
+        local child = path .. '/' .. name
+        if path_mode(child) == 'file' then
             files[#files + 1] = child
         end
     end
@@ -132,7 +130,7 @@ end
 
 local function normalize_include_args(line)
     local args = {}
-    for value in tostring(line or ""):gmatch("%S+") do
+    for value in tostring(line or ''):gmatch('%S+') do
         args[#args + 1] = value:gsub('^"', ''):gsub('"$', '')
     end
     return args
@@ -147,14 +145,14 @@ local function add_include_files(files, seen, current_path, include_args)
     local mode = path_mode(include_path)
     local candidates
 
-    if include_path:find("[%*%?%[]") then
+    if include_path:find('[%*%?%[]') then
         candidates = sorted_files({ include_path })
-    elseif mode == "directory" then
+    elseif mode == 'directory' then
         candidates = sorted_directory_files(include_path, include_args[2])
         if not candidates then
             return nil, "Could not enumerate AIDE include directory '" .. include_path .. "'"
         end
-    elseif mode == "file" then
+    elseif mode == 'file' then
         candidates = { include_path }
     else
         candidates = {}
@@ -182,7 +180,7 @@ local function parse_config_files(initial_paths)
 
     while index <= #files do
         local path = files[index]
-        local file, err = _dependencies.io_open(path, "r")
+        local file, err = _dependencies.io_open(path, 'r')
         if not file then
             log.warn("Could not open AIDE config '%s': %s", path, tostring(err))
             return nil, string.format("Could not open AIDE config '%s': %s", path, tostring(err))
@@ -190,22 +188,22 @@ local function parse_config_files(initial_paths)
 
         for line in file:lines() do
             local trimmed = text.trim(strip_inline_comment(line))
-            if trimmed ~= "" then
-                local directive, rest = trimmed:match("^(@@[%w_]+)%s*(.*)$")
-                if directive == "@@include" or directive == "@@x_include" then
+            if trimmed ~= '' then
+                local directive, rest = trimmed:match('^(@@[%w_]+)%s*(.*)$')
+                if directive == '@@include' or directive == '@@x_include' then
                     local ok, include_err = add_include_files(files, seen, path, normalize_include_args(rest))
                     if not ok then
                         file:close()
                         return nil, include_err
                     end
-                elseif not trimmed:match("^[!%-]") then
-                    local alias, expr = trimmed:match("^([%w_]+)%s*=%s*(.+)$")
+                elseif not trimmed:match('^[!%-]') then
+                    local alias, expr = trimmed:match('^([%w_]+)%s*=%s*(.+)$')
                     if alias then
                         aliases[alias] = text.trim(expr)
                     else
-                        local selector, rule_expr = trimmed:match("^([^%s]+)%s+(.+)$")
+                        local selector, rule_expr = trimmed:match('^([^%s]+)%s+(.+)$')
                         if selector and rule_expr then
-                            selector = selector:gsub("^=", ""):gsub("^%^", "")
+                            selector = selector:gsub('^=', ''):gsub('^%^', '')
                             rules[#rules + 1] = {
                                 path_pattern = selector,
                                 expr = text.trim(rule_expr),
@@ -229,12 +227,12 @@ end
 
 local function split_attr_expr(expr)
     local items = {}
-    local current_operator = "+"
+    local current_operator = '+'
 
-    for op, token in tostring(expr or ""):gmatch("([+%-]?)([^+%-]+)") do
+    for op, token in tostring(expr or ''):gmatch('([+%-]?)([^+%-]+)') do
         token = text.trim(token)
-        if token ~= "" then
-            if op ~= "" then
+        if token ~= '' then
+            if op ~= '' then
                 current_operator = op
             end
             items[#items + 1] = {
@@ -264,7 +262,7 @@ local function add_attrs_from_expr(expr, aliases, attrs, stack)
 
         if expanded then
             for attr, _ in pairs(expanded) do
-                if item.op == "-" then
+                if item.op == '-' then
                     attrs[attr] = nil
                 else
                     attrs[attr] = true
@@ -278,6 +276,19 @@ local function resolved_attrs(expr, aliases)
     local attrs = {}
     add_attrs_from_expr(expr, aliases, attrs, {})
     return attrs
+end
+
+local function unavailable_result(err)
+    return {
+        available = false,
+        error = err,
+        checked_count = 0,
+        required_count = 0,
+        compliant_count = 0,
+        violation_count = 0,
+        all_configured = false,
+        details = {},
+    }
 end
 
 local function selector_matches_path(selector, path)
@@ -303,17 +314,17 @@ end
 
 local function readlink_f(path)
     local mode = path_mode(path)
-    if mode ~= "file" then
+    if mode ~= 'file' then
         return nil
     end
 
-    local pipe = _dependencies.io_popen("readlink -f -- " .. shell_escape(path) .. " 2>/dev/null", "r")
+    local pipe = _dependencies.io_popen('readlink -f -- ' .. shell_escape(path) .. ' 2>/dev/null', 'r')
     if not pipe then
         return path
     end
-    local resolved = pipe:read("*l")
+    local resolved = pipe:read('*l')
     pipe:close()
-    if resolved and resolved ~= "" then
+    if resolved and resolved ~= '' then
         return resolved
     end
     return path
@@ -321,7 +332,7 @@ end
 
 local function resolve_required_paths(params)
     local paths = {}
-    if type(params.required_paths) == "table" then
+    if type(params.required_paths) == 'table' then
         for _, path in ipairs(params.required_paths) do
             paths[#paths + 1] = tostring(path)
         end
@@ -329,8 +340,8 @@ local function resolve_required_paths(params)
 
     for _, tool in ipairs(params.required_tools or {}) do
         local candidates = {
-            "/sbin/" .. tostring(tool),
-            "/usr/sbin/" .. tostring(tool),
+            '/sbin/' .. tostring(tool),
+            '/usr/sbin/' .. tostring(tool),
         }
         local resolved
         for _, candidate in ipairs(candidates) do
@@ -358,34 +369,16 @@ end
 
 function M.inspect_required_file_rules(params)
     params = params or {}
-    local config_paths = params.config_paths or { "/etc/aide.conf", "/etc/aide.conf.d/*" }
+    local config_paths = params.config_paths or { '/etc/aide.conf', '/etc/aide.conf.d/*' }
     local required_attrs = params.required_attrs or {}
     local parsed, parse_err = parse_config_files(config_paths)
 
     if not parsed then
-        return {
-            available = false,
-            error = parse_err,
-            checked_count = 0,
-            required_count = 0,
-            compliant_count = 0,
-            violation_count = 0,
-            all_configured = false,
-            details = {},
-        }
+        return unavailable_result(parse_err)
     end
 
     if #parsed.files == 0 then
-        return {
-            available = false,
-            error = "No AIDE configuration files were available.",
-            checked_count = 0,
-            required_count = 0,
-            compliant_count = 0,
-            violation_count = 0,
-            all_configured = false,
-            details = {},
-        }
+        return unavailable_result('No AIDE configuration files were available.')
     end
 
     local required_paths = resolve_required_paths(params)
