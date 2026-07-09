@@ -1,10 +1,10 @@
 local lfs = require('lfs')
+local audit_rules = require('seharden.shared.audit_rules')
 local text = require('seharden.shared.text')
 local user_defaults = require('seharden.shared.user_defaults')
 local M = {}
 
 -- Audit constants
-local AUDIT_UNSET_AUID = 4294967295  -- uint32 max, represents unset AUID
 local DEFAULT_AUID_MIN = 1000
 
 local _default_dependencies = {
@@ -209,182 +209,6 @@ local function read_uid_min(params)
     return user_defaults.read_uid_min(_dependencies.io_open, _dependencies.login_defs_path)
 end
 
-local function line_has_key(line)
-    return line:match('%-k%s+%S+') ~= nil or line:match('%-F%s+key=%S+') ~= nil
-end
-
-local function extract_key(line)
-    return line:match('%-k%s+(%S+)') or line:match('%-F%s+key=(%S+)')
-end
-
-local function line_key_matches(line, key, require_key)
-    if require_key == false then
-        return true
-    end
-    if key == nil then
-        return line_has_key(line)
-    end
-    return extract_key(line) == key
-end
-
-local function has_required_permissions(actual, required)
-    local present = {}
-
-    for permission in tostring(actual):gmatch('.') do
-        if permission:match('[rwax]') then
-            present[permission] = true
-        end
-    end
-
-    for permission in tostring(required):gmatch('.') do
-        if permission:match('[rwax]') and not present[permission] then
-            return false
-        end
-    end
-
-    return true
-end
-
-local function extract_watch_target(line)
-    local watched_path = line:match('^%-w%s+(%S+)')
-    if watched_path then
-        return watched_path, 'watch'
-    end
-
-    watched_path = line:match('%-F%s+path=(%S+)')
-    if watched_path then
-        return watched_path, 'path'
-    end
-
-    watched_path = line:match('%-F%s+dir=(%S+)')
-    if watched_path then
-        return watched_path, 'dir'
-    end
-end
-
-local function extract_watch_permissions(line)
-    return (line:match('%-p%s+([rwax]+)') or line:match('%-F%s+perm=([rwax]+)') or '')
-end
-
-local function is_always_exit_rule(line)
-    return line:match('^%-a%s+always,exit%f[%s]') ~= nil or line:match('^%-a%s+exit,always%f[%s]') ~= nil
-end
-
-local function line_matches_auid_min(line, threshold)
-    for raw_value in line:gmatch('%-F%s+auid>=(%d+)') do
-        local numeric_value = tonumber(raw_value)
-        if numeric_value and numeric_value <= threshold then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function line_excludes_unset_auid(line)
-    return line:match('%-F%s+auid!=unset') ~= nil
-        or line:match('%-F%s+auid!=%-1') ~= nil
-        or line:match('%-F%s+auid!=' .. AUDIT_UNSET_AUID) ~= nil
-end
-
-local function line_has_exit(line, expected_exit)
-    if expected_exit == nil then
-        return true
-    end
-
-    local normalized_expected = tostring(expected_exit):gsub('^%-', '')
-    for value in line:gmatch('%-F%s+exit=([^%s]+)') do
-        if value:gsub('^%-', '') == normalized_expected then
-            return true
-        end
-    end
-    return false
-end
-
-local function line_has_field(line, field)
-    if type(field) ~= 'table' or not field.name then
-        return true
-    end
-
-    for value in line:gmatch('%-F%s+' .. tostring(field.name) .. '=([^%s]+)') do
-        if field.value == nil or tostring(value) == tostring(field.value) then
-            return true
-        end
-    end
-    return false
-end
-
-local function line_has_fields(line, fields)
-    for _, field in ipairs(fields or {}) do
-        if not line_has_field(line, field) then
-            return false
-        end
-    end
-    return true
-end
-
-local function normalize_comparison(value)
-    value = tostring(value or '')
-    if value == 'uid!=euid' or value == 'euid!=uid' then
-        return 'uid!=euid'
-    end
-    return value
-end
-
-local function line_has_comparison(line, expected)
-    if expected == nil then
-        return true
-    end
-
-    local normalized_expected = normalize_comparison(expected)
-    for value in line:gmatch('%-C%s+([^%s]+)') do
-        if normalize_comparison(value) == normalized_expected then
-            return true
-        end
-    end
-    return false
-end
-
-local function line_has_any_comparison(line, comparisons)
-    if comparisons == nil or #comparisons == 0 then
-        return true
-    end
-    for _, comparison in ipairs(comparisons) do
-        if line_has_comparison(line, comparison) then
-            return true
-        end
-    end
-    return false
-end
-
-local function line_matches_auid_filters(line, auid_min, require_unset_exclusion)
-    if auid_min ~= nil and not line_matches_auid_min(line, auid_min) then
-        return false
-    end
-    if require_unset_exclusion ~= false and not line_excludes_unset_auid(line) then
-        return false
-    end
-    return true
-end
-
-local function collect_syscalls(line)
-    local syscalls = {}
-
-    for token in line:gmatch('%-S%s+([^%s]+)') do
-        for syscall in token:gmatch('([^,]+)') do
-            if syscall ~= '' then
-                syscalls[syscall] = true
-            end
-        end
-    end
-
-    return syscalls
-end
-
-local function extract_syscall_arch(line)
-    return line:match('%-F%s+arch=(%S+)')
-end
-
 local function normalize_required_arches(required_arches)
     if required_arches == nil then
         return nil
@@ -445,8 +269,9 @@ local function find_watch_rule_in_lines(lines, params)
     local require_key = params.require_key ~= false
 
     for _, line in ipairs(lines) do
-        local watched_path, watch_kind = extract_watch_target(line)
-        local is_watch_rule = line:match('^%-w%s+') ~= nil or (is_always_exit_rule(line) and watched_path ~= nil)
+        local watched_path, watch_kind = audit_rules.extract_watch_target(line)
+        local is_watch_rule = line:match('^%-w%s+') ~= nil
+            or (audit_rules.is_always_exit_rule(line) and watched_path ~= nil)
 
         if is_watch_rule and watched_path then
             local normalized_watched_path = normalize_path(watched_path)
@@ -457,17 +282,17 @@ local function find_watch_rule_in_lines(lines, params)
             end
 
             if path_matches then
-                local permissions = extract_watch_permissions(line)
+                local permissions = audit_rules.extract_watch_permissions(line)
                 if
-                    has_required_permissions(permissions, params.permissions)
-                    and line_key_matches(line, params.key, require_key)
+                    audit_rules.has_permissions(permissions, params.permissions)
+                    and audit_rules.key_matches(line, params.key, require_key)
                 then
                     return {
                         found = true,
                         details = {
                             path = watched_path,
                             permissions = permissions,
-                            key = extract_key(line),
+                            key = audit_rules.extract_key(line),
                         },
                     }
                 end
@@ -533,12 +358,12 @@ end
 local function line_matches_syscall_filters(line, params, auid_min, exit_value)
     local require_auid_unset_exclusion = params.require_auid_unset_exclusion ~= false
 
-    return is_always_exit_rule(line)
-        and line_matches_auid_filters(line, auid_min, require_auid_unset_exclusion)
-        and line_has_exit(line, exit_value)
-        and line_has_fields(line, params.fields)
-        and line_has_any_comparison(line, params.comparisons_any)
-        and line_key_matches(line, params.key, params.require_key ~= false)
+    return audit_rules.is_always_exit_rule(line)
+        and audit_rules.matches_auid_filters(line, auid_min, require_auid_unset_exclusion)
+        and audit_rules.line_has_exit(line, exit_value)
+        and audit_rules.line_has_fields(line, params.fields)
+        and audit_rules.line_has_any_comparison(line, params.comparisons_any)
+        and audit_rules.key_matches(line, params.key, params.require_key ~= false)
 end
 
 local function find_syscall_rule_in_lines(lines, params, auid_min)
@@ -561,8 +386,8 @@ local function find_syscall_rule_in_lines(lines, params, auid_min)
     for _, line in ipairs(lines) do
         for _, exit_requirement in ipairs(required_exits) do
             if line_matches_syscall_filters(line, params, auid_min, exit_requirement.value) then
-                local line_syscalls = collect_syscalls(line)
-                local bucket = get_syscall_bucket(buckets, extract_syscall_arch(line), exit_requirement.key)
+                local line_syscalls = audit_rules.collect_syscalls(line)
+                local bucket = get_syscall_bucket(buckets, audit_rules.extract_syscall_arch(line), exit_requirement.key)
                 for syscall in pairs(required_syscalls) do
                     if line_syscalls[syscall] then
                         bucket[syscall] = true
@@ -641,21 +466,21 @@ local function find_path_exec_rule_in_lines(lines, params, auid_min)
     local require_auid_unset_exclusion = params.require_auid_unset_exclusion ~= false
 
     for _, line in ipairs(lines) do
-        local watched_path = extract_watch_target(line)
+        local watched_path = audit_rules.extract_watch_target(line)
         if
-            is_always_exit_rule(line)
+            audit_rules.is_always_exit_rule(line)
             and watched_path
             and normalize_path(watched_path) == target_path
-            and has_required_permissions(extract_watch_permissions(line), params.permissions or 'x')
-            and line_matches_auid_filters(line, auid_min, require_auid_unset_exclusion)
-            and line_key_matches(line, params.key, require_key)
+            and audit_rules.has_permissions(audit_rules.extract_watch_permissions(line), params.permissions or 'x')
+            and audit_rules.matches_auid_filters(line, auid_min, require_auid_unset_exclusion)
+            and audit_rules.key_matches(line, params.key, require_key)
         then
             return {
                 found = true,
                 details = {
                     path = watched_path,
-                    permissions = extract_watch_permissions(line),
-                    key = extract_key(line),
+                    permissions = audit_rules.extract_watch_permissions(line),
+                    key = audit_rules.extract_key(line),
                 },
             }
         end

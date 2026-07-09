@@ -1,5 +1,7 @@
 local lfs = require('lfs')
 local fsutil = require('seharden.enforcers.fsutil')
+local audit_rules = require('seharden.shared.audit_rules')
+local text = require('seharden.shared.text')
 local user_defaults = require('seharden.shared.user_defaults')
 local M = {}
 
@@ -37,29 +39,6 @@ end
 
 local function is_safe_key(key)
     return type(key) == 'string' and key:match('^[%w_.:-]+$') ~= nil
-end
-
-local function canonicalize_permissions(permissions)
-    if type(permissions) ~= 'string' or permissions == '' then
-        return nil
-    end
-
-    local seen = {}
-    for char in permissions:gmatch('.') do
-        if not char:match('[rwax]') then
-            return nil
-        end
-        seen[char] = true
-    end
-
-    local ordered = {}
-    for _, char in ipairs({ 'r', 'w', 'a', 'x' }) do
-        if seen[char] then
-            ordered[#ordered + 1] = char
-        end
-    end
-
-    return table.concat(ordered)
 end
 
 local function normalize_string_list(values, field_name, pattern)
@@ -110,7 +89,7 @@ function M.ensure_watch_rule(params)
         return nil, "audit.ensure_watch_rule: requires a safe 'path' parameter"
     end
 
-    local permissions = canonicalize_permissions(params.permissions)
+    local permissions = audit_rules.canonicalize_permissions(params.permissions)
     if not permissions then
         return nil, "audit.ensure_watch_rule: requires 'permissions' to contain only r,w,a,x"
     end
@@ -124,10 +103,11 @@ function M.ensure_watch_rule(params)
         return nil, path_err
     end
 
-    local line = string.format('-w %s -p %s', params.path, permissions)
-    if params.key then
-        line = line .. string.format(' -k %s', params.key)
-    end
+    local line = audit_rules.build_watch_line({
+        path = params.path,
+        permissions = permissions,
+        key = params.key,
+    })
 
     return fsutil.append_unique_line(rule_file, line, 'audit.ensure_watch_rule', _dependencies)
 end
@@ -162,44 +142,6 @@ function M.ensure_syscall_rule(params)
 
     local include_auid_unset = params.require_auid_unset_exclusion ~= false
 
-    -- Build optional comparison fragment: -C field!=value
-    local comparison_fragment = ''
-    if type(params.comparisons_any) == 'table' and #params.comparisons_any > 0 then
-        local parts = {}
-        for _, cmp in ipairs(params.comparisons_any) do
-            if type(cmp) == 'string' and cmp ~= '' then
-                parts[#parts + 1] = '-C ' .. cmp
-            end
-        end
-        if #parts > 0 then
-            comparison_fragment = ' ' .. table.concat(parts, ' ')
-        end
-    end
-
-    -- Build optional fields fragment: -F name=value
-    local fields_fragment = ''
-    if type(params.fields) == 'table' and #params.fields > 0 then
-        local parts = {}
-        for _, field in ipairs(params.fields) do
-            if type(field) == 'table' and field.name and field.value then
-                parts[#parts + 1] = string.format('-F %s=%s', tostring(field.name), tostring(field.value))
-            end
-        end
-        if #parts > 0 then
-            fields_fragment = ' ' .. table.concat(parts, ' ')
-        end
-    end
-
-    -- Build exit list (nil = no exit filter; list = one rule per exit value)
-    local exit_values
-    if type(params.exits) == 'table' and #params.exits > 0 then
-        exit_values = {}
-        for _, exit_val in ipairs(params.exits) do
-            local normalized = tostring(exit_val):gsub('^%-', '')
-            exit_values[#exit_values + 1] = normalized
-        end
-    end
-
     if params.key ~= nil and not is_safe_key(params.key) then
         return nil, string.format("audit.ensure_syscall_rule: invalid key '%s'", tostring(params.key))
     end
@@ -209,56 +151,19 @@ function M.ensure_syscall_rule(params)
         return nil, path_err
     end
 
-    local syscall_fragment = {}
-    for _, syscall in ipairs(syscalls) do
-        syscall_fragment[#syscall_fragment + 1] = '-S ' .. syscall
-    end
-
-    -- Build auid fragment
-    local auid_fragment
-    if auid_min and include_auid_unset then
-        auid_fragment = string.format(' -F auid>=%d -F auid!=unset', auid_min)
-    elseif auid_min then
-        auid_fragment = string.format(' -F auid>=%d', auid_min)
-    elseif include_auid_unset then
-        auid_fragment = ' -F auid!=unset'
-    else
-        auid_fragment = ''
-    end
-
-    -- Build key fragment
-    local key_fragment = params.key and string.format(' -k %s', params.key) or ''
-
-    local function write_rule(exit_filter)
-        local exit_frag = exit_filter and string.format(' -F exit=-%s', exit_filter) or ''
-        for _, arch in ipairs(normalized_arches) do
-            local line = string.format(
-                '-a always,exit -F arch=%s %s%s%s%s%s%s',
-                arch,
-                table.concat(syscall_fragment, ' '),
-                comparison_fragment,
-                fields_fragment,
-                exit_frag,
-                auid_fragment,
-                key_fragment
-            )
-            local ok, err = fsutil.append_unique_line(rule_file, line, 'audit.ensure_syscall_rule', _dependencies)
-            if not ok then
-                return nil, err
-            end
-        end
-        return true
-    end
-
-    if exit_values then
-        for _, exit_val in ipairs(exit_values) do
-            local ok, err = write_rule(exit_val)
-            if not ok then
-                return nil, err
-            end
-        end
-    else
-        local ok, err = write_rule(nil)
+    for _, line in
+        ipairs(audit_rules.build_syscall_rule_lines({
+            arches = normalized_arches,
+            syscalls = syscalls,
+            comparisons_any = params.comparisons_any,
+            fields = params.fields,
+            exits = params.exits,
+            auid_min = auid_min,
+            include_auid_unset = include_auid_unset,
+            key = params.key,
+        }))
+    do
+        local ok, err = fsutil.append_unique_line(rule_file, line, 'audit.ensure_syscall_rule', _dependencies)
         if not ok then
             return nil, err
         end
@@ -290,10 +195,13 @@ function M.ensure_path_exec_rule(params)
         return nil, path_err
     end
 
-    local key_fragment = params.key and string.format(' -k %s', params.key) or ''
-
-    for _, arch in ipairs(normalized_arches) do
-        local line = string.format('-a always,exit -F arch=%s -F path=%s -F perm=x%s', arch, params.path, key_fragment)
+    for _, line in
+        ipairs(audit_rules.build_path_exec_rule_lines({
+            arches = normalized_arches,
+            path = params.path,
+            key = params.key,
+        }))
+    do
         local ok, err = fsutil.append_unique_line(rule_file, line, 'audit.ensure_path_exec_rule', _dependencies)
         if not ok then
             return nil, err
@@ -303,9 +211,7 @@ function M.ensure_path_exec_rule(params)
     return true
 end
 
-local function shell_escape(arg)
-    return "'" .. tostring(arg):gsub("'", "'\\''") .. "'"
-end
+local shell_escape = text.shell_escape
 
 local function normalize_popen_close(ok, _, code)
     if ok == true then
