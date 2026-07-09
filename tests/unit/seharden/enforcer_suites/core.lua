@@ -1729,6 +1729,19 @@ function test_services_set_active_state_calls_systemctl()
     assert(cmd_run:find('stop') and cmd_run:find('sshd'), 'Expected correct systemctl stop command')
 end
 
+function test_services_set_active_state_rejects_filestate_operations()
+    services_enforcer._test_set_dependencies({
+        io_popen = function()
+            error('systemctl should not run for invalid active state')
+        end,
+    })
+
+    local ok, err = services_enforcer.set_active_state({ name = 'sshd.service', state = 'mask' })
+
+    assert(ok == nil, 'Expected file-state operations to be rejected by active-state enforcer')
+    assert(err:find('use set_filestate', 1, true), 'Expected active-state error to point to set_filestate')
+end
+
 function test_services_set_filestate_reports_systemctl_failures()
     services_enforcer._test_set_dependencies({
         io_popen = function()
