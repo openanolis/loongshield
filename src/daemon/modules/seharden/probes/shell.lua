@@ -1,4 +1,5 @@
 local path_list = require('seharden.shared.path_list')
+local shell_syntax = require('seharden.shared.shell_syntax')
 local umask_policy = require('seharden.shared.umask_policy')
 local M = {}
 
@@ -20,29 +21,11 @@ end
 
 M._test_set_dependencies()
 
-local function trim(value)
-    return (tostring(value or ""):match("^%s*(.-)%s*$"))
-end
-
 local function expand_paths(paths)
-    if type(paths) ~= "table" or #paths == 0 then
+    if type(paths) ~= 'table' or #paths == 0 then
         return nil, "Probe requires a non-empty 'paths' list."
     end
     return _dependencies.expand_paths(paths)
-end
-
-local function line_unsets_tmout(line)
-    for command in tostring(line or ""):gmatch("[^;|&]+") do
-        if trim(command):match("^unset%s+TMOUT$") then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function strip_shell_comment(line)
-    return trim((tostring(line or ""):gsub("%s+#.*$", "")))
 end
 
 local function iter_file_lines(paths)
@@ -53,7 +36,7 @@ local function iter_file_lines(paths)
 
     local files = {}
     for _, path in ipairs(expanded) do
-        local file = _dependencies.io_open(path, "r")
+        local file = _dependencies.io_open(path, 'r')
         if not file then
             return nil, string.format("Could not open shell profile file '%s' for reading.", path)
         end
@@ -68,14 +51,14 @@ function M.check_umask_value(params)
         return nil, "Probe 'shell.check_umask_value' requires a 'value' parameter."
     end
 
-    local baseline = umask_policy.parse_mask(params.baseline or "027")
+    local baseline = umask_policy.parse_mask(params.baseline or '027')
     if not baseline then
         return nil, "Probe 'shell.check_umask_value' requires a valid octal 'baseline' parameter."
     end
 
     local classification = umask_policy.classify(params.value, baseline)
     return {
-        compliant = classification == "compliant",
+        compliant = classification == 'compliant',
         value = tostring(params.value),
     }
 end
@@ -102,18 +85,17 @@ function M.find_tmout_assignments(params)
         local line_number = 0
         for line in file_info.handle:lines() do
             line_number = line_number + 1
-            local active = strip_shell_comment(line)
-            if active ~= "" and not active:match("^#") then
-                if line_unsets_tmout(active) then
+            local active = shell_syntax.strip_comment(line)
+            if active ~= '' and not active:match('^#') then
+                if shell_syntax.line_unsets_tmout(active) then
                     conflicts[#conflicts + 1] = {
                         path = file_info.path,
                         line = line_number,
-                        value = "unset",
+                        value = 'unset',
                     }
                 end
 
-                for value in active:gmatch("%f[%w]TMOUT=(%d+)") do
-                    local numeric_value = tonumber(value)
+                for _, numeric_value in ipairs(shell_syntax.tmout_values_from_line(active)) do
                     local entry = {
                         path = file_info.path,
                         line = line_number,
@@ -136,24 +118,6 @@ function M.find_tmout_assignments(params)
         details = details,
         conflicts = conflicts,
     }
-end
-
-local function line_sets_tmout_readonly(active)
-    return active:match("^%s*typeset%s+%-xr%s+TMOUT=%d+%s*$") ~= nil
-        or active:match("%f[%a]readonly%s+[^;|&]*%f[%w]TMOUT%f[%W]") ~= nil
-end
-
-local function line_sets_tmout_export(active)
-    return active:match("^%s*typeset%s+%-xr%s+TMOUT=%d+%s*$") ~= nil
-        or active:match("%f[%a]export%s+[^;|&]*%f[%w]TMOUT%f[%W]") ~= nil
-end
-
-local function tmout_values_from_line(active)
-    local values = {}
-    for value in active:gmatch("%f[%w]TMOUT=(%d+)") do
-        values[#values + 1] = tonumber(value)
-    end
-    return values
 end
 
 function M.inspect_tmout(params)
@@ -182,27 +146,27 @@ function M.inspect_tmout(params)
 
         for line in file_info.handle:lines() do
             line_number = line_number + 1
-            local active = strip_shell_comment(line)
-            if active ~= "" and not active:match("^#") and active:match("%f[%w]TMOUT%f[%W]") then
+            local active = shell_syntax.strip_comment(line)
+            if active ~= '' and not active:match('^#') and shell_syntax.line_mentions_tmout(active) then
                 saw_tmout = true
                 file_saw_tmout = true
 
-                if line_unsets_tmout(active) then
+                if shell_syntax.line_unsets_tmout(active) then
                     details[#details + 1] = {
                         path = file_info.path,
                         line = line_number,
-                        reason = "tmout_unset",
+                        reason = 'tmout_unset',
                     }
                 end
 
-                if line_sets_tmout_readonly(active) then
+                if shell_syntax.line_sets_tmout_readonly(active) then
                     file_has_readonly = true
                 end
-                if line_sets_tmout_export(active) then
+                if shell_syntax.line_sets_tmout_export(active) then
                     file_has_export = true
                 end
 
-                for _, value in ipairs(tmout_values_from_line(active)) do
+                for _, value in ipairs(shell_syntax.tmout_values_from_line(active)) do
                     if value > 0 and value <= max_value then
                         file_has_good_value = true
                     else
@@ -210,7 +174,7 @@ function M.inspect_tmout(params)
                             path = file_info.path,
                             line = line_number,
                             value = value,
-                            reason = "tmout_value_invalid",
+                            reason = 'tmout_value_invalid',
                         }
                     end
                 end
@@ -220,13 +184,13 @@ function M.inspect_tmout(params)
 
         if file_saw_tmout then
             if not file_has_good_value then
-                details[#details + 1] = { path = file_info.path, reason = "tmout_value_missing" }
+                details[#details + 1] = { path = file_info.path, reason = 'tmout_value_missing' }
             end
             if not file_has_readonly then
-                details[#details + 1] = { path = file_info.path, reason = "tmout_readonly_missing" }
+                details[#details + 1] = { path = file_info.path, reason = 'tmout_readonly_missing' }
             end
             if not file_has_export then
-                details[#details + 1] = { path = file_info.path, reason = "tmout_export_missing" }
+                details[#details + 1] = { path = file_info.path, reason = 'tmout_export_missing' }
             end
             if file_has_good_value and file_has_readonly and file_has_export then
                 compliant_files[#compliant_files + 1] = file_info.path
@@ -235,7 +199,7 @@ function M.inspect_tmout(params)
     end
 
     if not saw_tmout then
-        details[#details + 1] = { reason = "tmout_not_configured" }
+        details[#details + 1] = { reason = 'tmout_not_configured' }
     end
 
     return {
@@ -252,7 +216,7 @@ function M.find_umask_commands(params)
         return nil, "Probe 'shell.find_umask_commands' requires parameters."
     end
 
-    local baseline = umask_policy.parse_mask(params.baseline or "027")
+    local baseline = umask_policy.parse_mask(params.baseline or '027')
     if not baseline then
         return nil, "Probe 'shell.find_umask_commands' requires a valid octal 'baseline' parameter."
     end
@@ -269,10 +233,10 @@ function M.find_umask_commands(params)
         local line_number = 0
         for line in file_info.handle:lines() do
             line_number = line_number + 1
-            local active = strip_shell_comment(line)
-            if active ~= "" and not active:match("^#") then
-                for value in active:gmatch("%f[%a]umask%s+([^%s;|&]+)") do
-                    if value:sub(1, 1) ~= "-" then
+            local active = shell_syntax.strip_comment(line)
+            if active ~= '' and not active:match('^#') then
+                for value in active:gmatch('%f[%a]umask%s+([^%s;|&]+)') do
+                    if value:sub(1, 1) ~= '-' then
                         local classification = umask_policy.classify(value, baseline)
                         local entry = {
                             path = file_info.path,
@@ -280,9 +244,9 @@ function M.find_umask_commands(params)
                             value = value,
                         }
 
-                        if classification == "compliant" then
+                        if classification == 'compliant' then
                             details[#details + 1] = entry
-                        elseif classification == "conflict" then
+                        elseif classification == 'conflict' then
                             conflicts[#conflicts + 1] = entry
                         end
                     end
