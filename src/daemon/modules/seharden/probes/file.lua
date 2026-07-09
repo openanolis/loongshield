@@ -36,7 +36,7 @@ end
 M._test_set_dependencies()
 
 local function open_or_error(path, context)
-    local file, err = _dependencies.io_open(path, "r")
+    local file, err = _dependencies.io_open(path, 'r')
     if not file then
         log.warn("Could not open file '%s' while %s: %s", path, context, tostring(err))
         return nil, string.format("Could not open file '%s': %s", path, tostring(err))
@@ -52,10 +52,10 @@ local function normalize_execute_exit_code(ok, _, code)
     if ok == true then
         return 0
     end
-    if type(code) == "number" then
+    if type(code) == 'number' then
         return code
     end
-    if type(ok) == "number" then
+    if type(ok) == 'number' then
         if ok > 0 and ok % 256 == 0 then
             return ok / 256
         end
@@ -68,32 +68,32 @@ local shell_escape = text.shell_escape
 
 local function lua_pattern_to_ere(pattern)
     local map = {
-        s = "[[:space:]]",
-        S = "[^[:space:]]",
-        d = "[0-9]",
-        D = "[^0-9]",
-        w = "[[:alnum:]_]",
-        W = "[^[:alnum:]_]",
-        a = "[[:alpha:]]",
-        A = "[^[:alpha:]]",
-        l = "[[:lower:]]",
-        u = "[[:upper:]]",
-        p = "[[:punct:]]"
+        s = '[[:space:]]',
+        S = '[^[:space:]]',
+        d = '[0-9]',
+        D = '[^0-9]',
+        w = '[[:alnum:]_]',
+        W = '[^[:alnum:]_]',
+        a = '[[:alpha:]]',
+        A = '[^[:alpha:]]',
+        l = '[[:lower:]]',
+        u = '[[:upper:]]',
+        p = '[[:punct:]]',
     }
 
     local out = {}
     local i = 1
     while i <= #pattern do
         local c = pattern:sub(i, i)
-        if c == "%" then
+        if c == '%' then
             local n = pattern:sub(i + 1, i + 1)
-            if n == "" then
-                out[#out + 1] = "%"
-            elseif n == "%" then
-                out[#out + 1] = "%"
+            if n == '' then
+                out[#out + 1] = '%'
+            elseif n == '%' then
+                out[#out + 1] = '%'
                 i = i + 1
             else
-                out[#out + 1] = map[n] or ("\\" .. n)
+                out[#out + 1] = map[n] or ('\\' .. n)
                 i = i + 1
             end
         else
@@ -105,18 +105,20 @@ local function lua_pattern_to_ere(pattern)
 end
 
 local function parse_pattern_options(pattern)
-    if pattern:sub(1, 4) == "(?i)" then
+    if pattern:sub(1, 4) == '(?i)' then
         return pattern:sub(5), true
     end
     return pattern, false
 end
 
 local function grep_match(path, pattern, is_case_insensitive)
-    local flags = is_case_insensitive and "-i" or ""
-    local cmd = string.format("grep -E -q %s -- %s %s 2>/dev/null",
+    local flags = is_case_insensitive and '-i' or ''
+    local cmd = string.format(
+        'grep -E -q %s -- %s %s 2>/dev/null',
         flags,
         shell_escape(lua_pattern_to_ere(pattern)),
-        shell_escape(path))
+        shell_escape(path)
+    )
     local ok, status_type, code = _dependencies.os_execute(cmd)
     local exit_code = normalize_execute_exit_code(ok, status_type, code)
     if exit_code == 0 then
@@ -126,26 +128,21 @@ local function grep_match(path, pattern, is_case_insensitive)
         return false
     end
     if exit_code == 2 then
-        local err = string.format("grep -E failed for file '%s' with pattern '%s'",
-            path, pattern)
-        log.warn("%s", err)
+        local err = string.format("grep -E failed for file '%s' with pattern '%s'", path, pattern)
+        log.warn('%s', err)
         return nil, err
     end
 
-    local err = string.format("grep -E exited unexpectedly for file '%s' with code: %s",
-        path, tostring(exit_code))
-    log.warn("%s", err)
+    local err = string.format("grep -E exited unexpectedly for file '%s' with code: %s", path, tostring(exit_code))
+    log.warn('%s', err)
     return nil, err
 end
 
 local function lua_pattern_match(path, pattern, is_case_insensitive)
     local pattern_to_match = is_case_insensitive and pattern:lower() or pattern
-    local file, err = _dependencies.io_open(path, "r")
+    local file, err = open_or_error(path, 'matching pattern')
     if not file then
-        log.warn("Could not open file '%s' while matching pattern: %s",
-            path, tostring(err))
-        return nil, string.format("Could not open file '%s': %s",
-            path, tostring(err))
+        return nil, err
     end
 
     for line in file:lines() do
@@ -160,7 +157,7 @@ local function lua_pattern_match(path, pattern, is_case_insensitive)
 end
 
 local function parse_key_value_file(path, opts, allow_missing)
-    local file, err = _dependencies.io_open(path, "r")
+    local file, err = _dependencies.io_open(path, 'r')
 
     if not file then
         if allow_missing and _dependencies.lfs_attributes(path) == nil then
@@ -180,7 +177,7 @@ local function normalize_value(value, mode)
         return nil
     end
     value = tostring(value)
-    if mode == "lower" then
+    if mode == 'lower' then
         value = value:lower()
     end
     return value
@@ -195,7 +192,7 @@ local function build_allowed_set(values, normalize_mode)
 end
 
 local function unquote_value(value)
-    value = tostring(value or "")
+    value = tostring(value or '')
     local first = value:sub(1, 1)
     local last = value:sub(-1)
     if #value >= 2 and ((first == '"' and last == '"') or (first == "'" and last == "'")) then
@@ -207,12 +204,14 @@ end
 local function key_value_matches(value, params)
     local normalized = normalize_value(value, params.normalize_values)
 
-    if params.expected_value ~= nil and
-        normalized ~= normalize_value(params.expected_value, params.normalize_values) then
+    if
+        params.expected_value ~= nil
+        and normalized ~= normalize_value(params.expected_value, params.normalize_values)
+    then
         return false
     end
 
-    if params.require_non_empty_value and text.trim(unquote_value(normalized)) == "" then
+    if params.require_non_empty_value and text.trim(unquote_value(normalized)) == '' then
         return false
     end
 
@@ -221,7 +220,7 @@ local function key_value_matches(value, params)
     end
 
     if params.numeric_min ~= nil or params.numeric_max ~= nil then
-        local numeric_value = tonumber(tostring(normalized):match("(-?%d+)%s*$"))
+        local numeric_value = tonumber(tostring(normalized):match('(-?%d+)%s*$'))
         if numeric_value == nil then
             return false
         end
@@ -237,7 +236,7 @@ local function key_value_matches(value, params)
 end
 
 local function basename(path)
-    return tostring(path):match("([^/]+)$") or tostring(path)
+    return tostring(path):match('([^/]+)$') or tostring(path)
 end
 
 local function sorted_dir_entries(path)
@@ -246,12 +245,12 @@ local function sorted_dir_entries(path)
         return nil, tostring(iter)
     end
     if not iter then
-        return nil, tostring(dir_obj or "directory unavailable")
+        return nil, tostring(dir_obj or 'directory unavailable')
     end
 
     local entries = {}
     for name in iter, dir_obj do
-        if name ~= "." and name ~= ".." then
+        if name ~= '.' and name ~= '..' then
             entries[#entries + 1] = name
         end
     end
@@ -264,14 +263,14 @@ local function collect_bootloader_config_paths(base_path, out)
     if not attr then
         return true
     end
-    if attr.mode == "file" then
+    if attr.mode == 'file' then
         local name = basename(base_path)
-        if name == "user.cfg" or name:match("^grub") then
+        if name == 'user.cfg' or name:match('^grub') then
             out[#out + 1] = base_path
         end
         return true
     end
-    if attr.mode ~= "directory" then
+    if attr.mode ~= 'directory' then
         return true
     end
 
@@ -281,7 +280,7 @@ local function collect_bootloader_config_paths(base_path, out)
     end
 
     for _, entry in ipairs(entries) do
-        local ok, child_err = collect_bootloader_config_paths(base_path .. "/" .. entry, out)
+        local ok, child_err = collect_bootloader_config_paths(base_path .. '/' .. entry, out)
         if not ok then
             return nil, child_err
         end
@@ -290,10 +289,10 @@ local function collect_bootloader_config_paths(base_path, out)
 end
 
 local function bootloader_expected_mode(path)
-    if tostring(path):match("^/boot/efi/EFI/") then
-        return tonumber("700", 8)
+    if tostring(path):match('^/boot/efi/EFI/') then
+        return tonumber('700', 8)
     end
-    return tonumber("600", 8)
+    return tonumber('600', 8)
 end
 
 local function bootloader_access_ok(access)
@@ -326,6 +325,32 @@ local function make_key_value_detail(path, entry)
     }
 end
 
+local function scan_key_value_entries(params, context, parse_opts, on_entry, opts)
+    local files_to_check = expand_paths(params.paths)
+    if opts and opts.sort then
+        table.sort(files_to_check)
+    end
+
+    for _, file_path in ipairs(files_to_check) do
+        local file, err = open_or_error(file_path, context)
+        if not file then
+            return nil, err
+        end
+
+        for _, entry in ipairs(key_value_file.parse_entries(file, parse_opts)) do
+            local callback_err = on_entry(file_path, entry)
+            if callback_err then
+                file:close()
+                return nil, callback_err
+            end
+        end
+
+        file:close()
+    end
+
+    return true
+end
+
 function M.find_pattern(params)
     if not params or not params.paths or not params.pattern then
         return nil, "Probe 'find_pattern' requires 'paths' and 'pattern' parameters."
@@ -341,7 +366,7 @@ function M.find_pattern(params)
         }
     end
 
-    local use_grep = pattern_to_match:find("|", 1, true) ~= nil
+    local use_grep = pattern_to_match:find('|', 1, true) ~= nil
 
     for _, file_path in ipairs(files_to_check) do
         local matched, err
@@ -379,31 +404,26 @@ end
 
 function M.find_key_value_outside_allowed(params)
     if not params or not params.paths or not params.key or not params.allowed_values then
-        return nil, "Probe 'file.find_key_value_outside_allowed' requires 'paths', 'key', and 'allowed_values' parameters."
+        return nil,
+            "Probe 'file.find_key_value_outside_allowed' requires 'paths', 'key', and 'allowed_values' parameters."
     end
 
-    local files_to_check = expand_paths(params.paths)
     local allowed = build_allowed_set(params.allowed_values, params.normalize_values)
     local details = {}
 
-    for _, file_path in ipairs(files_to_check) do
-        local file, err = open_or_error(file_path, "checking key values")
-        if not file then
-            return nil, err
-        end
-
-        for _, entry in ipairs(key_value_file.parse_entries(file)) do
-            if entry.key == params.key then
-                if not allowed[normalize_value(entry.value, params.normalize_values)] then
-                    details[#details + 1] = {
-                        path = file_path,
-                        key = entry.key,
-                        value = entry.value,
-                    }
-                end
+    local ok, err = scan_key_value_entries(params, 'checking key values', nil, function(file_path, entry)
+        if entry.key == params.key then
+            if not allowed[normalize_value(entry.value, params.normalize_values)] then
+                details[#details + 1] = {
+                    path = file_path,
+                    key = entry.key,
+                    value = entry.value,
+                }
             end
         end
-        file:close()
+    end)
+    if not ok then
+        return nil, err
     end
 
     return {
@@ -418,24 +438,18 @@ function M.find_key_value(params)
         return nil, "Probe 'file.find_key_value' requires 'paths' and 'key' parameters."
     end
 
-    local files_to_check = expand_paths(params.paths)
     local details = {}
 
-    for _, file_path in ipairs(files_to_check) do
-        local file, err = open_or_error(file_path, "checking key values")
-        if not file then
-            return nil, err
+    local ok, err = scan_key_value_entries(params, 'checking key values', {
+        normalize_values = params.normalize_values,
+        section = params.section,
+    }, function(file_path, entry)
+        if entry.key == params.key and key_value_matches(entry.value, params) then
+            details[#details + 1] = make_key_value_detail(file_path, entry)
         end
-
-        for _, entry in ipairs(key_value_file.parse_entries(file, {
-            normalize_values = params.normalize_values,
-            section = params.section,
-        })) do
-            if entry.key == params.key and key_value_matches(entry.value, params) then
-                details[#details + 1] = make_key_value_detail(file_path, entry)
-            end
-        end
-        file:close()
+    end)
+    if not ok then
+        return nil, err
     end
 
     return {
@@ -450,25 +464,17 @@ function M.get_effective_key_value(params)
         return nil, "Probe 'file.get_effective_key_value' requires 'paths' and 'key' parameters."
     end
 
-    local files_to_check = expand_paths(params.paths)
-    table.sort(files_to_check)
-
     local effective
-    for _, file_path in ipairs(files_to_check) do
-        local file, err = open_or_error(file_path, "checking effective key values")
-        if not file then
-            return nil, err
+    local ok, err = scan_key_value_entries(params, 'checking effective key values', {
+        normalize_values = params.normalize_values,
+        section = params.section,
+    }, function(file_path, entry)
+        if entry.key == params.key then
+            effective = make_key_value_detail(file_path, entry)
         end
-
-        for _, entry in ipairs(key_value_file.parse_entries(file, {
-            normalize_values = params.normalize_values,
-            section = params.section,
-        })) do
-            if entry.key == params.key then
-                effective = make_key_value_detail(file_path, entry)
-            end
-        end
-        file:close()
+    end, { sort = true })
+    if not ok then
+        return nil, err
     end
 
     local matched = effective ~= nil and key_value_matches(effective.value, params) or false
@@ -490,13 +496,14 @@ function M.parse_systemd_key_values(params)
 
     if params.effective then
         local config_name = basename(params.path)
-        local config_dirs = params.config_dirs or {
-            "/etc/systemd",
-            "/run/systemd",
-            "/usr/local/lib/systemd",
-            "/usr/lib/systemd",
-            "/lib/systemd",
-        }
+        local config_dirs = params.config_dirs
+            or {
+                '/etc/systemd',
+                '/run/systemd',
+                '/usr/local/lib/systemd',
+                '/usr/lib/systemd',
+                '/lib/systemd',
+            }
         local values = {}
         local main_loaded = false
 
@@ -513,7 +520,7 @@ function M.parse_systemd_key_values(params)
             return nil, string.format("Could not open effective systemd configuration '%s'", params.path)
         end
 
-        for _, path in ipairs(config_paths.sorted_unique_files(config_dirs, config_name .. ".d", "%.conf$")) do
+        for _, path in ipairs(config_paths.sorted_unique_files(config_dirs, config_name .. '.d', '%.conf$')) do
             local ok, parse_err = parse_file_into(values, path, params)
             if not ok then
                 return nil, parse_err
@@ -533,10 +540,10 @@ function M.parse_systemd_key_values(params)
 
     local dropin_dirs = params.dropin_dirs
     if dropin_dirs == nil then
-        dropin_dirs = { params.path .. ".d" }
+        dropin_dirs = { params.path .. '.d' }
     end
 
-    for _, path in ipairs(config_paths.sorted_unique_files(dropin_dirs, nil, "%.conf$")) do
+    for _, path in ipairs(config_paths.sorted_unique_files(dropin_dirs, nil, '%.conf$')) do
         local ok, parse_err = parse_file_into(values, path, params)
         if not ok then
             return nil, parse_err
@@ -548,27 +555,28 @@ end
 
 function M.find_duplicate_values_in_field(params)
     if not params or not (params.path and params.field_index and params.key_name and params.value_index) then
-        return nil, "Probe 'file.find_duplicate_values_in_field' requires 'path', 'field_index', 'key_name', and 'value_index'."
+        return nil,
+            "Probe 'file.find_duplicate_values_in_field' requires 'path', 'field_index', 'key_name', and 'value_index'."
     end
 
-    local delimiter = params.delimiter or ":"
+    local delimiter = params.delimiter or ':'
     local match_key = params.match_key
     if match_key ~= nil then
         match_key = tostring(match_key)
     end
-    local file, err = _dependencies.io_open(params.path, "r")
+    local file, err = _dependencies.io_open(params.path, 'r')
     if not file then
         log.warn("Could not open file '%s': %s", params.path, tostring(err))
         return nil, string.format("Could not open file '%s': %s", params.path, tostring(err))
     end
 
     local key_to_values = {}
-    local safe_delimiter = delimiter:gsub("([%^$()%%.[]*+?-])", "%%%1")
+    local safe_delimiter = delimiter:gsub('([%^$()%%.[]*+?-])', '%%%1')
 
     for line in file:lines() do
-        if not line:match("^#") and line:match(".") then
+        if not line:match('^#') and line:match('.') then
             local parts = {}
-            for part in (line .. delimiter):gmatch("(.-)" .. safe_delimiter) do
+            for part in (line .. delimiter):gmatch('(.-)' .. safe_delimiter) do
                 table.insert(parts, part)
             end
             table.remove(parts)
@@ -578,7 +586,9 @@ function M.find_duplicate_values_in_field(params)
                 local value = parts[params.value_index]
 
                 if match_key == nil or key == match_key then
-                    if not key_to_values[key] then key_to_values[key] = {} end
+                    if not key_to_values[key] then
+                        key_to_values[key] = {}
+                    end
                     table.insert(key_to_values[key], value)
                 end
             end
@@ -611,13 +621,13 @@ function M.list_paths(params)
 
     return {
         count = #details,
-        details = details
+        details = details,
     }
 end
 
 function M.inspect_bootloader_config_access(params)
     params = params or {}
-    local base_path = params.base_path or "/boot"
+    local base_path = params.base_path or '/boot'
     local paths = {}
     local ok, err = collect_bootloader_config_paths(base_path, paths)
     if not ok then
