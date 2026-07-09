@@ -1002,6 +1002,51 @@ end
 
 local mounts_enforcer = require('seharden.enforcers.mounts')
 
+local function mount_remount_with_fstab_line(line, add_options)
+    local written = {}
+    local fake_out = {
+        write = function(_, s)
+            table.insert(written, s)
+        end,
+        close = function()
+            return true
+        end,
+    }
+
+    mounts_enforcer._test_set_dependencies({
+        os_execute = function()
+            return true, 'exit', 0
+        end,
+        io_open = function(_, mode)
+            if mode == 'r' then
+                local lines = { line }
+                local i = 0
+                return {
+                    lines = function()
+                        return function()
+                            i = i + 1
+                            return lines[i]
+                        end
+                    end,
+                    close = function()
+                        return true
+                    end,
+                }
+            end
+            return fake_out
+        end,
+        os_rename = function()
+            return true
+        end,
+        os_remove = function()
+            return true
+        end,
+    })
+
+    local ok, err = mounts_enforcer.remount({ path = '/dev/shm', add_options = add_options })
+    return ok, err, table.concat(written)
+end
+
 function test_mounts_remount_returns_error_when_live_remount_fails()
     local written = {}
     local fake_out = {
@@ -1052,6 +1097,15 @@ function test_mounts_remount_returns_error_when_live_remount_fails()
         table.concat(written):find('defaults,noexec', 1, true),
         'Expected fstab update to still persist the requested option'
     )
+end
+
+function test_mounts_remount_appends_missing_options_without_duplicates()
+    local ok, err, content =
+        mount_remount_with_fstab_line('tmpfs /dev/shm tmpfs defaults,noexec 0 0', { 'noexec', 'nodev' })
+
+    assert(ok == true, 'Expected remount to succeed, got: ' .. tostring(err))
+    assert(content:find('defaults,noexec,nodev', 1, true), 'Expected missing option to be appended once')
+    assert(not content:find('defaults,noexec,noexec', 1, true), 'Expected existing option not to be duplicated')
 end
 
 function test_mounts_remount_rejects_invalid_option_tokens()
