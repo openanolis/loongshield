@@ -37,14 +37,15 @@ end
 
 M._test_set_dependencies()
 
-local function parse_numeric_id(value, field_name)
+local function parse_numeric_id(value, field_name, context)
     if value == nil then
         return nil
     end
 
     local parsed = tonumber(value)
     if not parsed or parsed < 0 or parsed ~= math.floor(parsed) then
-        return nil, string.format("permissions.set_attributes: invalid %s '%s'", field_name, tostring(value))
+        return nil,
+            string.format("%s: invalid %s '%s'", context or 'permissions.set_attributes', field_name, tostring(value))
     end
 
     return parsed
@@ -140,9 +141,15 @@ function M.set_attributes_for_all(params)
         return nil, "permissions.set_attributes_for_all: requires 'mode' parameter"
     end
 
-    -- Optional uid and gid parameters
-    local want_uid = params.uid ~= nil and tonumber(params.uid) or nil
-    local want_gid = params.gid ~= nil and tonumber(params.gid) or nil
+    local want_uid, uid_err = parse_numeric_id(params.uid, 'uid', 'permissions.set_attributes_for_all')
+    if uid_err then
+        return nil, uid_err
+    end
+
+    local want_gid, gid_err = parse_numeric_id(params.gid, 'gid', 'permissions.set_attributes_for_all')
+    if gid_err then
+        return nil, gid_err
+    end
 
     local changed = 0
     local skipped_symlink = 0

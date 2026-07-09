@@ -538,6 +538,47 @@ function test_permissions_set_attributes_rejects_invalid_uid_and_gid()
     assert(chmod_called == false, 'Expected chmod not to run on invalid input')
 end
 
+function test_permissions_set_attributes_for_all_rejects_invalid_uid_and_gid()
+    local chown_called = false
+    local chmod_called = false
+
+    permissions_enforcer._test_set_dependencies({
+        fs_stat = function()
+            return make_fs_attr(1000, 1000, tonumber('644', 8))
+        end,
+        fs_chown = function()
+            chown_called = true
+            return true
+        end,
+        fs_chmod = function()
+            chmod_called = true
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+    })
+
+    local ok, err = permissions_enforcer.set_attributes_for_all({
+        list = { details = { { path = '/tmp/test' } } },
+        mode = tonumber('700', 8),
+        uid = 'root',
+    })
+    assert(ok == nil, 'Expected invalid uid to be rejected')
+    assert(err:find('invalid uid', 1, true), 'Expected uid validation error')
+
+    ok, err = permissions_enforcer.set_attributes_for_all({
+        list = { details = { { path = '/tmp/test' } } },
+        mode = tonumber('700', 8),
+        gid = -1,
+    })
+    assert(ok == nil, 'Expected invalid gid to be rejected')
+    assert(err:find('invalid gid', 1, true), 'Expected gid validation error')
+
+    assert(chown_called == false, 'Expected chown not to run on invalid input')
+    assert(chmod_called == false, 'Expected chmod not to run on invalid input')
+end
+
 --------------------------------------------------------------------------------
 -- file enforcer
 --------------------------------------------------------------------------------
