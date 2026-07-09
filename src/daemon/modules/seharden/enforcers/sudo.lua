@@ -12,25 +12,31 @@ local _default_dependencies = {
     lfs_attributes = lfs.attributes,
     lfs_dir = lfs.dir,
     lfs_symlinkattributes = fsutil.default_lfs_symlinkattributes,
-    fs_stat = function(path) return require('fs').stat(path) end,
-    fs_chmod = function(path, mode) return require('fs').chmod(path, mode) end,
-    fs_chown = function(path, uid, gid) return require('fs').chown(path, uid, gid) end,
+    fs_stat = function(path)
+        return require('fs').stat(path)
+    end,
+    fs_chmod = function(path, mode)
+        return require('fs').chmod(path, mode)
+    end,
+    fs_chown = function(path, uid, gid)
+        return require('fs').chown(path, uid, gid)
+    end,
     get_short_hostname = function()
-        local file = io.open("/proc/sys/kernel/hostname", "r")
+        local file = io.open('/proc/sys/kernel/hostname', 'r')
         if not file then
             return nil
         end
 
-        local hostname = file:read("*l")
+        local hostname = file:read('*l')
         file:close()
-        if not hostname or hostname == "" then
+        if not hostname or hostname == '' then
             return nil
         end
 
-        hostname = hostname:match("^[^.]+") or hostname
-        return hostname:gsub("/", "_")
+        hostname = hostname:match('^[^.]+') or hostname
+        return hostname:gsub('/', '_')
     end,
-    root_path = "/etc/sudoers",
+    root_path = '/etc/sudoers',
     ensure_watch_rule = function(params)
         return require('seharden.enforcers.audit').ensure_watch_rule(params)
     end,
@@ -50,7 +56,7 @@ M._test_set_dependencies()
 local trim = text.trim
 
 local function is_safe_path(path)
-    return type(path) == "string" and path ~= "" and not path:find("[%c\n\r]")
+    return type(path) == 'string' and path ~= '' and not path:find('[%c\n\r]')
 end
 
 local function collect_state(root_path, context)
@@ -88,89 +94,55 @@ local function collect_audit_paths(root_path, context)
     return paths
 end
 
-local function read_lines(path)
-    local file, err = _dependencies.io_open(path, "r")
-    if not file then
-        return nil, string.format("sudo.set_use_pty: could not open sudoers file '%s': %s", path, tostring(err))
+local function rewrite_sudo_auth_line(line)
+    local active = trim((line:gsub('%s+#.*$', '')))
+    if active == '' or active:match('^#') then
+        return line, false
     end
 
-    local lines = {}
-    for line in file:lines() do
-        lines[#lines + 1] = line
-    end
-    file:close()
-    return lines
-end
+    if active:lower():find('nopasswd:', 1, true) then
+        local new_line = line:gsub('([Nn][Oo][Pp][Aa][Ss][Ss][Ww][Dd]:)', '')
+        new_line = new_line:gsub('%s+', ' '):gsub('%s+$', '')
 
-local function lines_equal(left, right)
-    if #left ~= #right then
-        return false
+        local leading_ws = line:match('^(%s*)')
+        return leading_ws .. trim(new_line), true, 'nopasswd'
     end
 
-    for index = 1, #left do
-        if left[index] ~= right[index] then
-            return false
-        end
+    local rewritten, changed = sudoers.rewrite_defaults_without_flag(line, 'authenticate', true)
+    if not changed then
+        return line, false
     end
 
-    return true
-end
-
-local function strip_negated_use_pty(line)
-    local active = trim((line:gsub("%s+#.*$", "")))
-    if active == "" or active:match("^#") then
-        return line
+    if not rewritten then
+        return nil, true, 'empty_defaults'
     end
 
-    local prefix, remainder = active:match("^(Defaults[^%s]*)%s+(.+)$")
-    if not prefix then
-        return line
-    end
-
-    local tokens = {}
-    local removed = false
-    for token in remainder:gmatch("[^,%s]+") do
-        if token == "!use_pty" then
-            removed = true
-        else
-            tokens[#tokens + 1] = token
-        end
-    end
-
-    if not removed then
-        return line
-    end
-
-    if #tokens == 0 then
-        return nil
-    end
-
-    return prefix .. " " .. table.concat(tokens, ",")
+    return rewritten, true, 'authenticate'
 end
 
 function M.set_use_pty(params)
     params = params or {}
     local root_path = params.root_path or _dependencies.root_path
     if not is_safe_path(root_path) then
-        return nil, "sudo.set_use_pty: requires a safe root_path"
+        return nil, 'sudo.set_use_pty: requires a safe root_path'
     end
     if fsutil.is_symlink(root_path, _dependencies) then
         return nil, string.format("sudo.set_use_pty: refusing to overwrite symlink '%s'", root_path)
     end
 
-    local paths, err = collect_paths(root_path, "sudo.set_use_pty")
+    local paths, err = collect_paths(root_path, 'sudo.set_use_pty')
     if not paths then
         return nil, err
     end
 
-    local desired_line = "Defaults use_pty"
+    local desired_line = 'Defaults use_pty'
 
     for _, path in ipairs(paths) do
         if fsutil.is_symlink(path, _dependencies) then
             return nil, string.format("sudo.set_use_pty: refusing to overwrite symlink '%s'", path)
         end
 
-        local original_lines, read_err = read_lines(path)
+        local original_lines, read_err = fsutil.read_lines(path, 'sudo.set_use_pty', _dependencies)
         if not original_lines then
             return nil, read_err
         end
@@ -179,7 +151,7 @@ function M.set_use_pty(params)
         local has_desired_line = false
 
         for _, line in ipairs(original_lines) do
-            local rewritten = strip_negated_use_pty(line)
+            local rewritten = sudoers.rewrite_defaults_without_flag(line, 'use_pty', true)
             if rewritten then
                 if rewritten == desired_line then
                     has_desired_line = true
@@ -192,13 +164,9 @@ function M.set_use_pty(params)
             new_lines[#new_lines + 1] = desired_line
         end
 
-        if not lines_equal(original_lines, new_lines) then
-            local ok, write_err = fsutil.write_lines_atomically_preserving_attrs(
-                path,
-                new_lines,
-                "sudo.set_use_pty",
-                _dependencies
-            )
+        if not fsutil.lines_equal(original_lines, new_lines) then
+            local ok, write_err =
+                fsutil.write_lines_atomically_preserving_attrs(path, new_lines, 'sudo.set_use_pty', _dependencies)
             if not ok then
                 return nil, write_err
             end
@@ -212,15 +180,15 @@ function M.ensure_audit_watches(params)
     params = params or {}
     local root_path = params.root_path or _dependencies.root_path
     if not is_safe_path(root_path) then
-        return nil, "sudo.ensure_audit_watches: requires a safe root_path"
+        return nil, 'sudo.ensure_audit_watches: requires a safe root_path'
     end
 
-    local permissions = params.permissions or "wa"
-    if type(permissions) ~= "string" or permissions == "" or permissions:find("[^rwax]") then
+    local permissions = params.permissions or 'wa'
+    if type(permissions) ~= 'string' or permissions == '' or permissions:find('[^rwax]') then
         return nil, "sudo.ensure_audit_watches: requires 'permissions' to contain only r,w,a,x"
     end
 
-    local paths, err = collect_audit_paths(root_path, "sudo.ensure_audit_watches")
+    local paths, err = collect_audit_paths(root_path, 'sudo.ensure_audit_watches')
     if not paths then
         return nil, err
     end
@@ -253,7 +221,7 @@ function M.fix_permission_paths(params)
 
     local list = params.list
     local entries = list.details
-    if not entries or type(entries) ~= "table" then
+    if not entries or type(entries) ~= 'table' then
         return nil, "sudo.fix_permission_paths: 'list' must contain a 'details' table"
     end
 
@@ -280,17 +248,17 @@ function M.fix_permission_paths(params)
         -- Check if path exists
         local attr = _dependencies.fs_stat(path)
         if not attr then
-            log.warn("sudo.fix_permission_paths: path not found: %s", path)
+            log.warn('sudo.fix_permission_paths: path not found: %s', path)
             skipped_missing = skipped_missing + 1
             goto continue
         end
 
         -- Determine target mode based on path type
         local want_mode
-        if path_type == "file" then
-            want_mode = tonumber("0440", 8)  -- octal 0440 = decimal 288
-        elseif path_type == "directory" then
-            want_mode = tonumber("0750", 8)  -- octal 0750 = decimal 488
+        if path_type == 'file' then
+            want_mode = tonumber('0440', 8) -- octal 0440 = decimal 288
+        elseif path_type == 'directory' then
+            want_mode = tonumber('0750', 8) -- octal 0750 = decimal 488
         else
             log.warn("sudo.fix_permission_paths: unknown path_type '%s' for '%s'", path_type, path)
             goto continue
@@ -306,7 +274,7 @@ function M.fix_permission_paths(params)
 
         -- Fix ownership (chown to root:root)
         if needs_chown then
-            log.debug("sudo.fix_permission_paths: chown 0:0 %s", path)
+            log.debug('sudo.fix_permission_paths: chown 0:0 %s', path)
             local ok, err = _dependencies.fs_chown(path, 0, 0)
             if not ok then
                 errors[#errors + 1] = string.format("chown failed on '%s': %s", path, tostring(err))
@@ -316,7 +284,7 @@ function M.fix_permission_paths(params)
 
         -- Fix permissions (chmod)
         if needs_chmod then
-            log.debug("sudo.fix_permission_paths: chmod %o %s (was %o)", want_mode, path, attr:mode())
+            log.debug('sudo.fix_permission_paths: chmod %o %s (was %o)', want_mode, path, attr:mode())
             local ok, err = _dependencies.fs_chmod(path, want_mode)
             if not ok then
                 errors[#errors + 1] = string.format("chmod failed on '%s': %s", path, tostring(err))
@@ -330,13 +298,16 @@ function M.fix_permission_paths(params)
     end
 
     if #errors > 0 then
-        return nil, string.format(
-            "sudo.fix_permission_paths: %d error(s): %s",
-            #errors, table.concat(errors, "; "))
+        return nil, string.format('sudo.fix_permission_paths: %d error(s): %s', #errors, table.concat(errors, '; '))
     end
 
-    log.info("sudo.fix_permission_paths: changed %d, already compliant %d, skipped symlink %d, missing %d",
-        changed, already_compliant, skipped_symlink, skipped_missing)
+    log.info(
+        'sudo.fix_permission_paths: changed %d, already compliant %d, skipped symlink %d, missing %d',
+        changed,
+        already_compliant,
+        skipped_symlink,
+        skipped_missing
+    )
     return true
 end
 
@@ -349,13 +320,13 @@ function M.remove_nopasswd(params)
     params = params or {}
     local root_path = params.root_path or _dependencies.root_path
     if not is_safe_path(root_path) then
-        return nil, "sudo.remove_nopasswd: requires a safe root_path"
+        return nil, 'sudo.remove_nopasswd: requires a safe root_path'
     end
     if fsutil.is_symlink(root_path, _dependencies) then
         return nil, string.format("sudo.remove_nopasswd: refusing to overwrite symlink '%s'", root_path)
     end
 
-    local paths, err = collect_paths(root_path, "sudo.remove_nopasswd")
+    local paths, err = collect_paths(root_path, 'sudo.remove_nopasswd')
     if not paths then
         return nil, err
     end
@@ -369,7 +340,7 @@ function M.remove_nopasswd(params)
             goto continue
         end
 
-        local original_lines, read_err = read_lines(path)
+        local original_lines, read_err = fsutil.read_lines(path, 'sudo.remove_nopasswd', _dependencies)
         if not original_lines then
             return nil, read_err
         end
@@ -379,98 +350,44 @@ function M.remove_nopasswd(params)
         local file_changed_lines = 0
 
         for _, line in ipairs(original_lines) do
-            -- Strip comments for analysis
-            local active = trim((line:gsub("%s+#.*$", "")))
-
-            -- Skip empty lines and comment-only lines
-            if active == "" or active:match("^#") then
-                new_lines[#new_lines + 1] = line
-                goto next_line
+            local rewritten, changed, action = rewrite_sudo_auth_line(line)
+            if rewritten then
+                new_lines[#new_lines + 1] = rewritten
             end
 
-            -- Check if line contains NOPASSWD: tag
-            if active:lower():find("nopasswd:", 1, true) then
-                -- Remove NOPASSWD: tag (case-insensitive)
-                local new_line = line:gsub("([Nn][Oo][Pp][Aa][Ss][Ss][Ww][Dd]:)", "")
-
-                -- Clean up extra whitespace
-                new_line = new_line:gsub("%s+", " "):gsub("%s+$", "")
-
-                -- Preserve leading whitespace
-                local leading_ws = line:match("^(%s*)")
-                new_line = leading_ws .. trim(new_line)
-
-                new_lines[#new_lines + 1] = new_line
+            if changed then
                 file_changed = true
                 changed_lines = changed_lines + 1
                 file_changed_lines = file_changed_lines + 1
-
-                log.debug("sudo.remove_nopasswd: removed NOPASSWD from line: %s -> %s",
-                    trim(line), trim(new_line))
-            elseif active:match("^Defaults[^%s]*%s") and active:lower():find("!authenticate", 1, true) then
-                -- Handle Defaults lines containing !authenticate token
-                local prefix, remainder = active:match("^(Defaults[^%s]*)%s+(.+)$")
-                if prefix and remainder then
-                    local tokens = {}
-                    local removed = false
-                    for token in remainder:gmatch("[^,%s]+") do
-                        if token:lower() == "!authenticate" then
-                            removed = true
-                        else
-                            tokens[#tokens + 1] = token
-                        end
-                    end
-                    if removed then
-                        if #tokens == 0 then
-                            -- No remaining tokens: drop the line entirely
-                            log.debug("sudo.remove_nopasswd: dropped empty Defaults line: %s",
-                                trim(line))
-                        else
-                            local new_line = prefix .. " " .. table.concat(tokens, ",")
-                            new_lines[#new_lines + 1] = new_line
-                            log.debug("sudo.remove_nopasswd: removed !authenticate from line: %s -> %s",
-                                trim(line), new_line)
-                        end
-                        file_changed = true
-                        changed_lines = changed_lines + 1
-                        file_changed_lines = file_changed_lines + 1
-                    else
-                        new_lines[#new_lines + 1] = line
-                    end
-                else
-                    new_lines[#new_lines + 1] = line
+                if action == 'nopasswd' then
+                    log.debug('sudo.remove_nopasswd: removed NOPASSWD from line: %s -> %s', trim(line), trim(rewritten))
+                elseif action == 'empty_defaults' then
+                    log.debug('sudo.remove_nopasswd: dropped empty Defaults line: %s', trim(line))
+                elseif action == 'authenticate' then
+                    log.debug('sudo.remove_nopasswd: removed !authenticate from line: %s -> %s', trim(line), rewritten)
                 end
-            else
-                new_lines[#new_lines + 1] = line
             end
-
-            ::next_line::
         end
 
         if file_changed then
-            local ok, write_err = fsutil.write_lines_atomically_preserving_attrs(
-                path,
-                new_lines,
-                "sudo.remove_nopasswd",
-                _dependencies
-            )
+            local ok, write_err =
+                fsutil.write_lines_atomically_preserving_attrs(path, new_lines, 'sudo.remove_nopasswd', _dependencies)
             if not ok then
                 return nil, write_err
             end
             changed_files = changed_files + 1
-            log.info("sudo.remove_nopasswd: modified %s (%d lines changed)", path, file_changed_lines)
+            log.info('sudo.remove_nopasswd: modified %s (%d lines changed)', path, file_changed_lines)
         end
 
         ::continue::
     end
 
     if changed_files == 0 then
-        log.debug("sudo.remove_nopasswd: no NOPASSWD tags found, skipping")
+        log.debug('sudo.remove_nopasswd: no NOPASSWD tags found, skipping')
         return true
     end
 
-    log.info("sudo.remove_nopasswd: modified %d file(s), %d line(s) total",
-        changed_files, changed_lines)
+    log.info('sudo.remove_nopasswd: modified %d file(s), %d line(s) total', changed_files, changed_lines)
     return true
 end
 
