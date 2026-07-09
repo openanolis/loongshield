@@ -293,6 +293,54 @@ function test_sysctl_set_value_writes_live_and_persists()
     assert(conf_content:find('2'), 'Expected value in conf file')
 end
 
+function test_sysctl_set_value_normalizes_slash_key_before_persisting()
+    local conf_written = {}
+
+    sysctl_enforcer._test_set_dependencies({
+        sysctl_conf = '/tmp/test-loongshield.conf',
+        procfs_root = '/tmp/test-proc-sys',
+        os_rename = function()
+            return true
+        end,
+        os_remove = function()
+            return true
+        end,
+        io_open = function(path, mode)
+            if mode == 'r' then
+                return nil
+            end
+            if mode == 'w' and path:find('proc') then
+                assert(path == '/tmp/test-proc-sys/net/ipv4/ip_forward')
+                return {
+                    write = function() end,
+                    close = function()
+                        return true
+                    end,
+                }
+            end
+            if mode == 'w' then
+                return {
+                    write = function(_, s)
+                        table.insert(conf_written, s)
+                    end,
+                    close = function()
+                        return true
+                    end,
+                }
+            end
+            return nil
+        end,
+    })
+
+    local ok = sysctl_enforcer.set_value({ key = '-net/ipv4/ip_forward', value = '0' })
+
+    assert(ok == true, 'Expected slash-form sysctl key to be accepted')
+    assert(
+        table.concat(conf_written):find('net.ipv4.ip_forward = 0', 1, true),
+        'Expected persisted key to use dotted sysctl form'
+    )
+end
+
 function test_sysctl_set_value_rejects_invalid_key()
     sysctl_enforcer._test_set_dependencies({
         io_open = function()

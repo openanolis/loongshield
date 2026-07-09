@@ -1,10 +1,11 @@
 local log = require('runtime.log')
 local config_paths = require('seharden.shared.config_paths')
 local key_value_file = require('seharden.shared.key_value_file')
+local sysctl_keys = require('seharden.shared.sysctl_keys')
 local lfs = require('lfs')
 local M = {}
 
-local procfs_root = "/proc/sys"
+local procfs_root = '/proc/sys'
 
 local _default_dependencies = {
     io_open = io.open,
@@ -32,25 +33,18 @@ function M.set_procfs_root(path)
 end
 
 local function key_to_path(key)
-    if not key or not key:match("^[a-zA-Z0-9_.]+$") or key:match("%.%.") then
-        log.error("Invalid or malicious sysctl key provided: %s", key)
+    local path = sysctl_keys.procfs_path(key, procfs_root)
+    if not path then
+        log.error('Invalid or malicious sysctl key provided: %s', key)
         return nil
     end
-    return procfs_root .. "/" .. key:gsub("%.", "/")
-end
-
-local function normalize_sysctl_key(key)
-    if not key then
-        return nil
-    end
-    key = tostring(key):gsub("^%-", "")
-    return key:gsub("/", ".")
+    return path
 end
 
 local function parse_sysctl_assignment(line)
     local entry = key_value_file.parse_line(line, {
         allow_whitespace_assignment = false,
-        normalize_key = normalize_sysctl_key,
+        normalize_key = sysctl_keys.normalize,
     })
     if entry and entry.key then
         return entry.key, entry.value
@@ -60,15 +54,15 @@ end
 
 local function effective_sysctl_files(params)
     local files = config_paths.sorted_unique_files(params.sysctl_d_dirs or {
-        "/etc/sysctl.d",
-        "/run/sysctl.d",
-        "/usr/local/lib/sysctl.d",
-        "/usr/lib/sysctl.d",
-        "/lib/sysctl.d",
-    }, nil, "%.conf$")
+        '/etc/sysctl.d',
+        '/run/sysctl.d',
+        '/usr/local/lib/sysctl.d',
+        '/usr/lib/sysctl.d',
+        '/lib/sysctl.d',
+    }, nil, '%.conf$')
 
-    local sysctl_conf = params.sysctl_conf or "/etc/sysctl.conf"
-    if _dependencies.lfs_attributes(sysctl_conf, "mode") == "file" then
+    local sysctl_conf = params.sysctl_conf or '/etc/sysctl.conf'
+    if _dependencies.lfs_attributes(sysctl_conf, 'mode') == 'file' then
         files[#files + 1] = sysctl_conf
     end
 
@@ -82,14 +76,14 @@ function M.get_live_value(params)
 
     local path = key_to_path(params.key)
     if not path then
-        return nil, "Invalid key"
+        return nil, 'Invalid key'
     end
 
-    local f, err = _dependencies.io_open(path, "r")
+    local f, err = _dependencies.io_open(path, 'r')
     if not f then
-        local message = string.format("Could not read sysctl key '%s' from path '%s': %s",
-            params.key, path, tostring(err))
-        log.warn("%s", message)
+        local message =
+            string.format("Could not read sysctl key '%s' from path '%s': %s", params.key, path, tostring(err))
+        log.warn('%s', message)
         return {
             available = false,
             path = path,
@@ -98,7 +92,7 @@ function M.get_live_value(params)
         }
     end
 
-    local value = f:read("*l")
+    local value = f:read('*l')
     f:close()
 
     return {
@@ -113,9 +107,9 @@ function M.get_persistent_value(params)
         return nil, "Probe 'sysctl.get_persistent_value' requires a 'key' parameter."
     end
 
-    local target_key = normalize_sysctl_key(params.key)
-    if not target_key or not target_key:match("^[a-zA-Z0-9_.]+$") or target_key:match("%.%.") then
-        return nil, "Invalid key"
+    local target_key = sysctl_keys.validate(params.key)
+    if not target_key then
+        return nil, 'Invalid key'
     end
 
     local result = {
@@ -125,7 +119,7 @@ function M.get_persistent_value(params)
     }
 
     for _, path in ipairs(effective_sysctl_files(params)) do
-        local file, err = _dependencies.io_open(path, "r")
+        local file, err = _dependencies.io_open(path, 'r')
         if not file then
             log.warn("Could not open sysctl configuration '%s': %s", path, tostring(err))
             return nil, string.format("Could not open sysctl configuration '%s': %s", path, tostring(err))
