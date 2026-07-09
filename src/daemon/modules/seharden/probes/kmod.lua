@@ -5,7 +5,7 @@ local M = {}
 local _default_dependencies = {
     ctx_new = function()
         return kmod.ctx_new()
-    end
+    end,
 }
 
 local _dependencies = {}
@@ -18,18 +18,34 @@ end
 M._test_set_dependencies()
 
 local function get_ctx()
-    log.debug("kmod.lua: Creating fresh kmod context...")
+    log.debug('kmod.lua: Creating fresh kmod context...')
     local ctx = _dependencies.ctx_new()
     if not ctx then
-        log.error("Failed to create new kmod context.")
+        log.error('Failed to create new kmod context.')
     end
     return ctx
 end
 
+local function normalize_module_name(name)
+    return tostring(name):gsub('-', '_')
+end
+
+local function module_name_matches(left, right)
+    return normalize_module_name(left) == normalize_module_name(right)
+end
+
+local function module_lookup_candidates(module_name)
+    local candidates = { module_name }
+    local normalized = normalize_module_name(module_name)
+    if normalized ~= module_name then
+        candidates[#candidates + 1] = normalized
+    end
+    return candidates
+end
+
 local function is_loaded_in_context(ctx, module_name)
-    local requested_name = module_name:gsub("-", "_")
     for mod in ctx:modules_from_loaded() do
-        if tostring(mod:name()):gsub("-", "_") == requested_name then
+        if module_name_matches(mod:name(), module_name) then
             return true
         end
     end
@@ -37,9 +53,8 @@ local function is_loaded_in_context(ctx, module_name)
 end
 
 local function is_blacklisted_in_context(ctx, module_name)
-    local requested_name = module_name:gsub("-", "_")
     for name in ctx:config_blacklists() do
-        if tostring(name):gsub("-", "_") == requested_name then
+        if module_name_matches(name, module_name) then
             return true
         end
     end
@@ -47,31 +62,25 @@ local function is_blacklisted_in_context(ctx, module_name)
 end
 
 local function get_install_command_in_context(ctx, module_name)
-    local requested_name = module_name:gsub("-", "_")
     for name, cmd in ctx:config_install_commands() do
-        if tostring(name):gsub("-", "_") == requested_name then
+        if module_name_matches(name, module_name) then
             return cmd
         end
     end
-    return "none"
+    return 'none'
 end
 
 local function lookup_module_in_context(ctx, module_name)
-    local candidates = { module_name, module_name:gsub("-", "_") }
-    local seen = {}
     local last_errno
     local last_err
 
-    for _, candidate in ipairs(candidates) do
-        if not seen[candidate] then
-            local mod, errno, err = ctx:module_from_name_lookup(candidate)
-            if mod then
-                return mod, nil, nil, candidate
-            end
-            last_errno = errno
-            last_err = err
-            seen[candidate] = true
+    for _, candidate in ipairs(module_lookup_candidates(module_name)) do
+        local mod, errno, err = ctx:module_from_name_lookup(candidate)
+        if mod then
+            return mod, nil, nil, candidate
         end
+        last_errno = errno
+        last_err = err
     end
 
     return nil, last_errno, last_err
@@ -88,19 +97,19 @@ local function get_availability_in_context(ctx, module_name)
         }
     end
 
-    local state = "unknown"
-    if type(mod.initstate) == "function" then
-        state = mod:initstate() or "unknown"
+    local state = 'unknown'
+    if type(mod.initstate) == 'function' then
+        state = mod:initstate() or 'unknown'
     end
 
     local path
-    if type(mod.path) == "function" then
+    if type(mod.path) == 'function' then
         path = mod:path()
     end
 
     return {
         available = true,
-        builtin = state == "builtin",
+        builtin = state == 'builtin',
         state = state,
         path = path,
         lookup_name = lookup_name,
@@ -108,7 +117,7 @@ local function get_availability_in_context(ctx, module_name)
 end
 
 local function is_disabled_install_command(command)
-    return command == "/bin/true" or command == "/bin/false"
+    return command == '/bin/true' or command == '/bin/false'
 end
 
 function M.is_loaded(params)
@@ -120,7 +129,9 @@ function M.is_loaded(params)
     log.debug("Probe is_loaded: Checking for module '%s'", module_name)
 
     local ctx = get_ctx()
-    if not ctx then return { loaded = false } end
+    if not ctx then
+        return { loaded = false }
+    end
 
     local loaded = is_loaded_in_context(ctx, module_name)
     log.debug(" -> Result for '%s': loaded = %s", module_name, tostring(loaded))
@@ -136,7 +147,9 @@ function M.is_blacklisted(params)
     log.debug("Probe is_blacklisted: Checking for module '%s'", module_name)
 
     local ctx = get_ctx()
-    if not ctx then return { blacklisted = false } end
+    if not ctx then
+        return { blacklisted = false }
+    end
 
     local blacklisted = is_blacklisted_in_context(ctx, module_name)
     log.debug(" -> Result for '%s': blacklisted = %s", module_name, tostring(blacklisted))
@@ -152,7 +165,9 @@ function M.get_install_command(params)
     log.debug("Probe get_install_command: Checking for module '%s'", module_name)
 
     local ctx = get_ctx()
-    if not ctx then return { command = "none" } end
+    if not ctx then
+        return { command = 'none' }
+    end
 
     local command = get_install_command_in_context(ctx, module_name)
     log.debug(" -> Result for '%s': command = '%s'", module_name, command)
@@ -169,7 +184,7 @@ function M.get_availability(params)
 
     local ctx = get_ctx()
     if not ctx then
-        return nil, "Failed to create kmod context."
+        return nil, 'Failed to create kmod context.'
     end
 
     local availability = get_availability_in_context(ctx, module_name)
@@ -192,7 +207,7 @@ function M.get_disable_state(params)
 
     local ctx = get_ctx()
     if not ctx then
-        return nil, "Failed to create kmod context."
+        return nil, 'Failed to create kmod context.'
     end
 
     local availability = get_availability_in_context(ctx, module_name)
@@ -200,12 +215,8 @@ function M.get_disable_state(params)
     local blacklisted = is_blacklisted_in_context(ctx, module_name)
     local install_command = get_install_command_in_context(ctx, module_name)
     local install_command_disabled = is_disabled_install_command(install_command)
-    local disabled = (not availability.available) or (
-        not availability.builtin and
-        not loaded and
-        blacklisted and
-        install_command_disabled
-    )
+    local disabled = not availability.available
+        or (not availability.builtin and not loaded and blacklisted and install_command_disabled)
 
     log.debug(" -> Result for '%s': disabled = %s", module_name, tostring(disabled))
     return {
