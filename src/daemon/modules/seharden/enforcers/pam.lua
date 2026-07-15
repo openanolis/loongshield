@@ -122,16 +122,14 @@ function M.ensure_entry(params)
         return nil, string.format("pam.ensure_entry: invalid anchor_module '%s'", tostring(anchor_module))
     end
 
-    if fsutil.is_symlink(params.path, _dependencies) then
-        return nil, string.format("pam.ensure_entry: refusing to overwrite symlink '%s'", params.path)
-    end
+    local file_path = fsutil.resolve_symlink(params.path, _dependencies)
 
     local desired_line = string.format('%s %s %s', params.kind, params.control, params.module)
     if #args > 0 then
         desired_line = desired_line .. ' ' .. table.concat(args, ' ')
     end
 
-    local original_lines, read_err = fsutil.read_lines(params.path, 'pam.ensure_entry', _dependencies, {
+    local original_lines, read_err = fsutil.read_lines(file_path, 'pam.ensure_entry', _dependencies, {
         missing_as_empty = true,
     })
     if not original_lines then
@@ -179,7 +177,171 @@ function M.ensure_entry(params)
         return true
     end
 
-    return fsutil.write_lines_atomically_preserving_attrs(params.path, new_lines, 'pam.ensure_entry', _dependencies)
+    return fsutil.write_lines_atomically_preserving_attrs(file_path, new_lines, 'pam.ensure_entry', _dependencies)
+end
+
+--- Add an option to matching PAM module lines if not already present.
+-- params: { path, module, option, kind (optional) }
+-- Matches lines where module appears in the given kind (default: any kind).
+-- If the option is not present, appends it to the line.
+function M.ensure_option(params)
+    if not params or not is_safe_path(params.path) then
+        return nil, "pam.ensure_option: requires a safe 'path' parameter"
+    end
+    if not is_safe_token(params.module) then
+        return nil, string.format("pam.ensure_option: invalid module '%s'", tostring(params and params.module))
+    end
+    if not is_safe_token(params.option) then
+        return nil, string.format("pam.ensure_option: invalid option '%s'", tostring(params and params.option))
+    end
+
+    local target_kind = params.kind
+    if target_kind ~= nil and not VALID_KINDS[target_kind] then
+        return nil, string.format("pam.ensure_option: invalid kind '%s'", tostring(target_kind))
+    end
+
+    local file_path = fsutil.resolve_symlink(params.path, _dependencies)
+
+    local original_lines, read_err = fsutil.read_lines(file_path, 'pam.ensure_option', _dependencies, {
+        missing_as_empty = true,
+    })
+    if not original_lines then
+        return nil, read_err
+    end
+
+    local changed = false
+    local new_lines = {}
+
+    for _, line in ipairs(original_lines) do
+        local entry = pam_parser.parse_line(line)
+        local is_match = entry
+            and entry.module == params.module
+            and (target_kind == nil or entry.kind == target_kind)
+
+        if is_match then
+            -- Check if option is already present
+            local has_option = false
+            for _, arg in ipairs(entry.args or {}) do
+                if arg == params.option then
+                    has_option = true
+                    break
+                end
+            end
+
+            if not has_option then
+                -- Append with a single separator, preserving the original
+                -- line content (trailing whitespace trimmed first).
+                local trimmed_line = line:gsub('%s+$', '')
+                new_lines[#new_lines + 1] = trimmed_line .. ' ' .. params.option
+                changed = true
+            else
+                new_lines[#new_lines + 1] = line
+            end
+        else
+            new_lines[#new_lines + 1] = line
+        end
+    end
+
+    if not changed then
+        return true
+    end
+
+    return fsutil.write_lines_atomically_preserving_attrs(file_path, new_lines, 'pam.ensure_option', _dependencies)
+end
+
+--- Remove an option from matching PAM module lines if present.
+-- params: { path, module, option (exact match) OR option_prefix (prefix match), kind (optional) }
+-- When option_prefix is given, removes any arg starting with that prefix (e.g. "remember=" matches "remember=5").
+-- Matches lines where module appears in the given kind (default: any kind).
+function M.remove_option(params)
+    if not params or not is_safe_path(params.path) then
+        return nil, "pam.remove_option: requires a safe 'path' parameter"
+    end
+    if not is_safe_token(params.module) then
+        return nil, string.format("pam.remove_option: invalid module '%s'", tostring(params and params.module))
+    end
+
+    local use_prefix = params.option_prefix ~= nil
+    if use_prefix then
+        if not is_safe_token(params.option_prefix) then
+            return nil, string.format("pam.remove_option: invalid option_prefix '%s'", tostring(params.option_prefix))
+        end
+    else
+        if not is_safe_token(params.option) then
+            return nil, string.format("pam.remove_option: invalid option '%s'", tostring(params and params.option))
+        end
+    end
+
+    local target_kind = params.kind
+    if target_kind ~= nil and not VALID_KINDS[target_kind] then
+        return nil, string.format("pam.remove_option: invalid kind '%s'", tostring(target_kind))
+    end
+
+    local file_path = fsutil.resolve_symlink(params.path, _dependencies)
+
+    local original_lines, read_err = fsutil.read_lines(file_path, 'pam.remove_option', _dependencies, {
+        missing_as_empty = true,
+    })
+    if not original_lines then
+        return nil, read_err
+    end
+
+    local option_prefix = use_prefix and params.option_prefix or nil
+    local option_exact = use_prefix and nil or params.option
+
+    local changed = false
+    local new_lines = {}
+
+    for _, line in ipairs(original_lines) do
+        local entry = pam_parser.parse_line(line)
+        local is_match = entry
+            and entry.module == params.module
+            and (target_kind == nil or entry.kind == target_kind)
+
+        if is_match then
+            local filtered_args = {}
+            for _, arg in ipairs(entry.args or {}) do
+                local should_remove
+                if option_prefix then
+                    should_remove = arg:sub(1, #option_prefix) == option_prefix
+                else
+                    should_remove = arg == option_exact
+                end
+                if not should_remove then
+                    filtered_args[#filtered_args + 1] = arg
+                end
+            end
+
+            if #filtered_args ~= #(entry.args or {}) then
+                -- Remove only the matched option token(s) from the raw line,
+                -- preserving the original formatting and any in-line comment.
+                local new_line = line
+                for _, arg in ipairs(entry.args or {}) do
+                    local should_remove
+                    if option_prefix then
+                        should_remove = arg:sub(1, #option_prefix) == option_prefix
+                    else
+                        should_remove = arg == option_exact
+                    end
+                    if should_remove then
+                        new_line = new_line:gsub('%s' .. text.escape_lua_pattern(arg) .. '%s*', ' ', 1)
+                    end
+                end
+                new_lines[#new_lines + 1] = new_line
+                changed = true
+            else
+                new_lines[#new_lines + 1] = line
+            end
+        else
+            new_lines[#new_lines + 1] = line
+        end
+    end
+
+    if not changed then
+        return true
+    end
+
+    return fsutil.write_lines_atomically_preserving_attrs(file_path, new_lines, 'pam.remove_option', _dependencies)
 end
 
 return M

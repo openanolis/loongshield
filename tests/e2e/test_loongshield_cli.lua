@@ -57,10 +57,33 @@ local function assert_not_contains(haystack, needle, message)
     assert(not haystack:find(needle, 1, true), message or ('Expected output not to contain: ' .. needle))
 end
 
-local function assert_no_runtime_errors(output)
-    assert_not_contains(output, 'Engine Error', 'Expected profile scan to finish without SEHarden engine errors')
-    assert_not_contains(output, 'Runtime error', 'Expected profile scan to finish without Lua runtime errors')
-    assert_not_contains(output, 'Failed to load suite', 'Expected profile scan to avoid test loader failures')
+local function extract_error_lines(output, marker)
+    local lines = {}
+    for line in output:gmatch('[^\n]+') do
+        if line:find(marker, 1, true) then
+            lines[#lines + 1] = line
+        end
+    end
+    return table.concat(lines, '\n')
+end
+
+local function assert_no_runtime_errors(output, context)
+    local prefix = context and (context .. ': ') or ''
+    local engine_errors = extract_error_lines(output, 'Engine Error')
+    local runtime_errors = extract_error_lines(output, 'Runtime error')
+    assert(
+        engine_errors == '',
+        prefix .. 'Expected profile scan to finish without SEHarden engine errors.\n' .. engine_errors
+    )
+    assert(
+        runtime_errors == '',
+        prefix .. 'Expected profile scan to finish without Lua runtime errors.\n' .. runtime_errors
+    )
+    assert_not_contains(
+        output,
+        'Failed to load suite',
+        prefix .. 'Expected profile scan to avoid test loader failures'
+    )
 end
 
 local function assert_file_exists(path)
@@ -426,10 +449,10 @@ function test_bundled_seharden_profiles_scan_without_engine_errors()
     local profiles = {
         seharden_scan_case('agentos_baseline', 'profiles/seharden/agentos_baseline.yml', 'baseline', 23, 0),
         seharden_scan_case('agentos_baseline', 'profiles/seharden/agentos_baseline.yml', 'openclaw', 32, 7),
-        seharden_scan_case('cis_alinux_3', 'profiles/seharden/cis_alinux_3.yml', 'l1_server', 236, 3),
-        seharden_scan_case('cis_alinux_3', 'profiles/seharden/cis_alinux_3.yml', 'l2_server', 280, 4),
-        seharden_scan_case('cis_alinux_3', 'profiles/seharden/cis_alinux_3.yml', 'l1_workstation', 167, 3),
-        seharden_scan_case('cis_alinux_3', 'profiles/seharden/cis_alinux_3.yml', 'l2_workstation', 184, 3),
+        seharden_scan_case('cis_alinux_3', 'profiles/seharden/cis_alinux_3.yml', 'l1_server', 239, 20),
+        seharden_scan_case('cis_alinux_3', 'profiles/seharden/cis_alinux_3.yml', 'l2_server', 286, 25),
+        seharden_scan_case('cis_alinux_3', 'profiles/seharden/cis_alinux_3.yml', 'l1_workstation', 170, 19),
+        seharden_scan_case('cis_alinux_3', 'profiles/seharden/cis_alinux_3.yml', 'l2_workstation', 187, 19),
         seharden_scan_case('dengbao_alinux3_l3', 'profiles/seharden/dengbao_3.yml', 'l1_server', 53, 15),
         seharden_scan_case('dengbao_alinux3_l3', 'profiles/seharden/dengbao_3.yml', 'l2_server', 53, 15),
         seharden_scan_case('dengbao_alinux3_l3', 'profiles/seharden/dengbao_3.yml', 'l1_workstation', 53, 15),
@@ -437,11 +460,12 @@ function test_bundled_seharden_profiles_scan_without_engine_errors()
     }
 
     for _, profile in ipairs(profiles) do
+        local ctx = string.format('%s/%s', profile.name, profile.level)
         local code, output = run_loongshield(profile.args)
 
-        assert(code == 0 or code == 1, 'Expected scan to return a documented scan exit code')
+        assert(code == 0 or code == 1, ctx .. ': Expected scan to return a documented scan exit code')
         assert_scan_header(output, profile)
         assert_contains(output, 'Summary:')
-        assert_no_runtime_errors(output)
+        assert_no_runtime_errors(output, ctx)
     end
 end

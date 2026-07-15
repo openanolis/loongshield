@@ -103,6 +103,27 @@ function test_check_password_history_reports_missing_and_small_values()
     end)
 end
 
+function test_check_password_history_handles_unreadable_pam_file_gracefully()
+    with_dependencies({
+        expand_paths = function()
+            return {}
+        end,
+        io_open = function()
+            return nil
+        end,
+    }, function()
+        local result = pam_probe.check_password_history({
+            pam_paths = { "/etc/pam.d/system-auth" },
+            min_remember = 24,
+        })
+
+        assert(result ~= nil, "Expected probe to return a result, not nil")
+        assert(result.count == 1, "Expected one violation detail for unreadable PAM file")
+        assert(result.details[1].reason == "pam_file_unreadable",
+            "Expected pam_file_unreadable reason")
+    end)
+end
+
 function test_inspect_pwquality_accepts_default_minlen_and_config_overrides()
     with_dependencies({
         expand_paths = function(paths)

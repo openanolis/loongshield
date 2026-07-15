@@ -1,7 +1,7 @@
 policy: "CIS Alibaba Cloud Linux 3 Benchmark v2.0.0"
 title: "CIS Alibaba Cloud Linux 3 Benchmark v2.0.0"
 id: cis_alinux_3
-version: "0.0.3"
+version: "0.0.4"
 source: https://www.cisecurity.org/benchmark/aliyun_linux
 benchmark_version: "2.0.0"
 benchmark_workbench_source: https://workbench.cisecurity.org/benchmarks/23595/files
@@ -40,6 +40,90 @@ manual_review_required:
     - area: cis_6_2_2_6_rsyslog_remote
       item: "CIS 6.2.2.6 Ensure rsyslog is configured to send logs to a remote log host"
       reason: "CIS v2.0.0 classifies this as manual because remote log destinations and forwarding policy are site-specific."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_1_1_1_11_unused_filesystem_modules
+      item: "CIS 1.1.1.11 Ensure unused filesystem kernel modules are not available"
+      reason: "CIS v2.0.0 classifies this as manual; determining which filesystem modules are 'unused' requires environment-specific audit."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_1_2_1_3_repo_gpgcheck
+      item: "CIS 1.2.1.3 Ensure repo_gpgcheck is globally activated"
+      reason: "CIS v2.0.0 classifies this as manual; internal repositories may lack GPG signatures, requiring an organizational decision."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_1_2_1_4_repo_configuration
+      item: "CIS 1.2.1.4 Ensure package manager repositories are configured"
+      reason: "CIS v2.0.0 classifies this as manual; repository configuration is organization-specific policy."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_1_2_2_1_security_patches
+      item: "CIS 1.2.2.1 Ensure updates, patches, and additional security software are installed"
+      reason: "CIS v2.0.0 classifies this as manual; patch deployment requires compatibility testing and change management approval."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_1_3_1_4_unconfined_services
+      item: "CIS 1.3.1.4 Ensure no unconfined services exist"
+      reason: "CIS v2.0.0 classifies this as manual; confining custom services requires per-service SELinux policy development."
+      level: ["l2_server"]
+    - area: cis_1_6_5_crypto_chacha20
+      item: "CIS 1.6.5 Ensure crypto policy disables chacha20-poly1305 for SSH"
+      reason: "CIS v2.0.0 classifies this as manual; disabling specific algorithms requires SSH client compatibility assessment."
+      level: ["l2_server"]
+    - area: cis_1_6_6_crypto_etm
+      item: "CIS 1.6.6 Ensure crypto policy disables EtM for SSH"
+      reason: "CIS v2.0.0 classifies this as manual; Encrypt-then-MAC policy requires overall cryptographic strategy evaluation."
+      level: ["l2_server"]
+    - area: cis_3_1_1_ipv6_status
+      item: "CIS 3.1.1 Ensure IPv6 status is identified"
+      reason: "CIS v2.0.0 classifies this as manual; IPv6 enablement decision impacts multiple subsequent network configuration items."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_4_1_5_nftables_loopback
+      item: "CIS 4.1.5 Ensure nftables loopback traffic is configured"
+      reason: "CIS v2.0.0 classifies this as manual; loopback traffic rules require confirmation that local communication (databases, message queues) is not disrupted."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_4_1_6_nftables_outbound
+      item: "CIS 4.1.6 Ensure nftables outbound and established connections are configured"
+      reason: "CIS v2.0.0 classifies this as manual; outbound rules depend on the network topology and application communication patterns."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_4_1_7_nftables_port_rules
+      item: "CIS 4.1.7 Ensure nftables port/services rules are configured"
+      reason: "CIS v2.0.0 classifies this as manual; port and service rules are entirely deployment-specific and form the core of the firewall policy."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_5_3_3_2_3_password_complexity
+      item: "CIS 5.3.3.2.3 Ensure password complexity is configured"
+      reason: "CIS v2.0.0 classifies this as manual; password complexity rules are an organizational security policy decision."
+      level: ["l1_server"]
+    - area: cis_6_2_1_1_2_journald_access
+      item: "CIS 6.2.1.1.2 Ensure journald access to log files is configured"
+      reason: "CIS v2.0.0 classifies this as manual; log access control policies depend on the organization's logging tool chain."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_6_2_1_1_3_journald_rotation
+      item: "CIS 6.2.1.1.3 Ensure journald log rotation is configured"
+      reason: "CIS v2.0.0 classifies this as manual; rotation policy must balance disk capacity with audit retention requirements."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_6_2_1_2_2_journal_remote_auth
+      item: "CIS 6.2.1.2.2 Ensure systemd-journal-remote authentication is configured"
+      reason: "CIS v2.0.0 classifies this as manual; requires PKI/TLS certificate infrastructure for journal-remote authentication."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_6_2_2_5_rsyslog_rules
+      item: "CIS 6.2.2.5 Ensure rsyslog logging is configured"
+      reason: "CIS v2.0.0 classifies this as manual; rsyslog rules are entirely dependent on the organization's log collection strategy."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_6_2_2_8_logrotate
+      item: "CIS 6.2.2.8 Ensure logrotate is configured"
+      reason: "CIS v2.0.0 classifies this as manual; logrotate policy must balance disk capacity with compliance retention requirements."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_6_3_3_22_audit_consistency
+      item: "CIS 6.3.3.22 Ensure audit configuration running matches on-disk"
+      reason: "CIS v2.0.0 classifies this as manual; resolving discrepancies requires determining which version (running vs on-disk) is authoritative."
+      level: ["l2_server"]
+    - area: cis_7_1_13_suid_sgid_review
+      item: "CIS 7.1.13 Ensure SUID and SGID files are reviewed"
+      reason: "CIS v2.0.0 classifies this as manual; determining legitimate SUID/SGID binaries requires per-file business justification review."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_7_2_3_group_consistency
+      item: "CIS 7.2.3 Ensure all groups in /etc/passwd exist in /etc/group"
+      reason: "CIS v2.0.0 classifies this as manual; resolving group inconsistencies requires understanding the intended account-to-group mapping."
+      level: ["l1_server", "l1_workstation"]
+    - area: cis_7_2_8_home_directories
+      item: "CIS 7.2.8 Ensure local interactive user home directories are configured"
+      reason: "CIS v2.0.0 classifies this as manual; home directory permissions and ownership remediation requires per-user assessment."
       level: ["l1_server", "l1_workstation"]
 
 rules:
@@ -287,6 +371,9 @@ rules:
               compare: has_key
               expected: "nodev"
               message: "The /tmp partition is not mounted with the 'nodev' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/tmp", add_options: ["nodev"]}
 
     - id: "1.1.2.1.4"
       desc: "Ensure noexec option set on /tmp partition"
@@ -303,6 +390,9 @@ rules:
               compare: has_key
               expected: "noexec"
               message: "The /tmp partition is not mounted with the 'noexec' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/tmp", add_options: ["noexec"]}
 
     - id: "1.1.2.1.3"
       desc: "Ensure nosuid option set on /tmp partition"
@@ -319,6 +409,9 @@ rules:
               compare: has_key
               expected: "nosuid"
               message: "The /tmp partition is not mounted with the 'nosuid' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/tmp", add_options: ["nosuid"]}
 
     - id: "1.1.2.4.1"
       desc: "Ensure separate partition exists for /var"
@@ -350,6 +443,9 @@ rules:
               compare: has_key
               expected: "nodev"
               message: "The /var partition is not mounted with the 'nodev' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var", add_options: ["nodev"]}
 
     - id: "1.1.2.4.3"
       desc: "Ensure nosuid option set on /var partition"
@@ -366,6 +462,9 @@ rules:
               compare: has_key
               expected: "nosuid"
               message: "The /var partition is not mounted with the 'nosuid' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var", add_options: ["nosuid"]}
 
     - id: "1.1.2.5.1"
       desc: "Ensure separate partition exists for /var/tmp"
@@ -397,6 +496,9 @@ rules:
               compare: has_key
               expected: "noexec"
               message: "The /var/tmp partition is not mounted with the 'noexec' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var/tmp", add_options: ["noexec"]}
 
     - id: "1.1.2.5.3"
       desc: "Ensure nosuid option set on /var/tmp partition"
@@ -413,6 +515,9 @@ rules:
               compare: has_key
               expected: "nosuid"
               message: "The /var/tmp partition is not mounted with the 'nosuid' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var/tmp", add_options: ["nosuid"]}
 
     - id: "1.1.2.5.2"
       desc: "Ensure nodev option set on /var/tmp partition"
@@ -429,6 +534,9 @@ rules:
               compare: has_key
               expected: "nodev"
               message: "The /var/tmp partition is not mounted with the 'nodev' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var/tmp", add_options: ["nodev"]}
 
     - id: "1.1.2.6.1"
       desc: "Ensure separate partition exists for /var/log"
@@ -460,6 +568,9 @@ rules:
               compare: has_key
               expected: "nodev"
               message: "The /var/log partition is not mounted with the 'nodev' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var/log", add_options: ["nodev"]}
 
     - id: "1.1.2.6.3"
       desc: "Ensure nosuid option set on /var/log partition"
@@ -476,6 +587,9 @@ rules:
               compare: has_key
               expected: "nosuid"
               message: "The /var/log partition is not mounted with the 'nosuid' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var/log", add_options: ["nosuid"]}
 
     - id: "1.1.2.6.4"
       desc: "Ensure noexec option set on /var/log partition"
@@ -492,6 +606,9 @@ rules:
               compare: has_key
               expected: "noexec"
               message: "The /var/log partition is not mounted with the 'noexec' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var/log", add_options: ["noexec"]}
 
     - id: "1.1.2.7.1"
       desc: "Ensure separate partition exists for /var/log/audit"
@@ -523,6 +640,9 @@ rules:
               compare: has_key
               expected: "nodev"
               message: "The /var/log/audit partition is not mounted with the 'nodev' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var/log/audit", add_options: ["nodev"]}
 
     - id: "1.1.2.7.3"
       desc: "Ensure nosuid option set on /var/log/audit partition"
@@ -539,6 +659,9 @@ rules:
               compare: has_key
               expected: "nosuid"
               message: "The /var/log/audit partition is not mounted with the 'nosuid' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var/log/audit", add_options: ["nosuid"]}
 
     - id: "1.1.2.7.4"
       desc: "Ensure noexec option set on /var/log/audit partition"
@@ -555,6 +678,9 @@ rules:
               compare: has_key
               expected: "noexec"
               message: "The /var/log/audit partition is not mounted with the 'noexec' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/var/log/audit", add_options: ["noexec"]}
 
     - id: "1.1.2.3.1"
       desc: "Ensure separate partition exists for /home"
@@ -586,6 +712,9 @@ rules:
               compare: has_key
               expected: "nodev"
               message: "The /home partition is not mounted with the 'nodev' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/home", add_options: ["nodev"]}
 
     - id: "1.1.2.3.3"
       desc: "Ensure nosuid option set on /home partition"
@@ -602,6 +731,9 @@ rules:
               compare: has_key
               expected: "nosuid"
               message: "The /home partition is not mounted with the 'nosuid' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/home", add_options: ["nosuid"]}
 
     - id: "1.1.2.2.1"
       desc: "Ensure /dev/shm is tmpfs"
@@ -638,6 +770,9 @@ rules:
               compare: has_key
               expected: "nodev"
               message: "The /dev/shm partition is not mounted with the 'nodev' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/dev/shm", add_options: ["nodev"]}
 
     - id: "1.1.2.2.4"
       desc: "Ensure noexec option set on /dev/shm partition"
@@ -654,6 +789,9 @@ rules:
               compare: has_key
               expected: "noexec"
               message: "The /dev/shm partition is not mounted with the 'noexec' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/dev/shm", add_options: ["noexec"]}
 
     - id: "1.1.2.2.3"
       desc: "Ensure nosuid option set on /dev/shm partition"
@@ -670,6 +808,9 @@ rules:
               compare: has_key
               expected: "nosuid"
               message: "The /dev/shm partition is not mounted with the 'nosuid' option."
+      reinforce:
+        - action: mounts.remount
+          params: {path: "/dev/shm", add_options: ["nosuid"]}
 
     - id: "2.1.1"
       desc: "Ensure autofs services are not in use"
@@ -867,6 +1008,9 @@ rules:
               key: "local_only"
               compare: is_true
               message: "An MTA is listening on a non-loopback interface or is configured to bind non-locally."
+      reinforce:
+        - action: network.configure_mta_local_only
+          params: {}
 
     - id: "1.7.1"
       desc: "Ensure /etc/motd is configured"
@@ -3164,6 +3308,11 @@ rules:
               key: "disabled"
               compare: is_true
               message: "Wireless interfaces are present with loadable, loaded, non-deny-listed, or unresolved kernel modules."
+      reinforce:
+        - action: kmod.unload
+          params: {name: "cfg80211"}
+        - action: kmod.blacklist
+          params: {name: "cfg80211"}
 
     - id: "3.1.3"
       desc: "Ensure bluetooth services are not in use"
@@ -3875,6 +4024,11 @@ rules:
               compare: equals
               expected: "active"
               message: "firewalld.service is not active."
+      reinforce_guard:
+        name: firewalld_ssh_check
+        func: firewalld.no_ssh_service
+        params: {}
+        skip_message: "SSH service/port not found in firewalld active zones. Enabling firewalld without SSH rules will lock out remote administrators. Configure SSH rules first."
       reinforce:
         - action: services.set_filestate
           params: {name: "firewalld.service", state: "enable"}
@@ -4918,6 +5072,75 @@ rules:
         - action: audit.reload_rules
           params: {}
 
+    - id: "6.3.4.1"
+      desc: "Ensure audit log files are mode 0600 or less permissive"
+      level: ["l2_server"]
+      status: automated
+      probes:
+        - name: audit_log_files
+          func: audit.inspect_audit_log_files
+          params: {max_mode: "0600"}
+      assertion:
+        all_of:
+            - actual: "%{probe.audit_log_files}"
+              key: "available"
+              compare: is_true
+              message: "Audit log directory /var/log/audit/ could not be inspected."
+            - actual: "%{probe.audit_log_files}"
+              key: "count"
+              compare: equals
+              expected: 0
+              message: "Found audit log files with permissions more permissive than 0600."
+      reinforce:
+        - action: permissions.set_attributes_for_all
+          params: {list: "%{probe.audit_log_files}", uid: 0, gid: 0, mode: "0600"}
+
+    - id: "6.3.4.2"
+      desc: "Ensure audit configuration files are mode 0640 or less permissive"
+      level: ["l2_server"]
+      status: automated
+      probes:
+        - name: audit_config_files
+          func: audit.inspect_audit_config_files
+          params: {max_mode: "0640", check_mode: true, check_ownership: false}
+      assertion:
+        all_of:
+            - actual: "%{probe.audit_config_files}"
+              key: "available"
+              compare: is_true
+              message: "Audit config directory /etc/audit/ could not be inspected."
+            - actual: "%{probe.audit_config_files}"
+              key: "count"
+              compare: equals
+              expected: 0
+              message: "Found audit configuration files with permissions more permissive than 0640."
+      reinforce:
+        - action: permissions.set_attributes_for_all
+          params: {list: "%{probe.audit_config_files}", uid: 0, gid: 0, mode: "0640"}
+
+    - id: "6.3.4.3"
+      desc: "Ensure audit configuration files are owned by root"
+      level: ["l2_server"]
+      status: automated
+      probes:
+        - name: audit_config_ownership
+          func: audit.inspect_audit_config_files
+          params: {check_mode: false, check_ownership: true, max_mode: "0777"}
+      assertion:
+        all_of:
+            - actual: "%{probe.audit_config_ownership}"
+              key: "available"
+              compare: is_true
+              message: "Audit config directory /etc/audit/ could not be inspected."
+            - actual: "%{probe.audit_config_ownership}"
+              key: "count"
+              compare: equals
+              expected: 0
+              message: "Found audit configuration files not owned by root:root."
+      reinforce:
+        - action: permissions.fix_ownership
+          params: {list: "%{probe.audit_config_ownership}", uid: 0, gid: 0}
+
     - id: "6.2.2.1"
       desc: "Ensure rsyslog is installed"
       level: ["l1_server", "l1_workstation"]
@@ -4967,6 +5190,9 @@ rules:
 
     - id: "6.2.2.3"
       desc: "Ensure journald is configured to send logs to rsyslog"
+      # NOTE: 6.2.2.3 is mutually exclusive with 6.2.1.1.4 - on hosts using
+      # journald as the primary logger, 6.2.1.1.4 takes precedence and this
+      # rule is informational only.
       level: ["l1_server", "l1_workstation"]
       status: automated
       probes:
@@ -5877,6 +6103,10 @@ rules:
               key: "configured"
               compare: is_true
               message: "The effective sshd Ciphers list contains CIS-disallowed weak ciphers."
+      reinforce_guard:
+        name: legacy_ssh_check
+        func: env_detect.is_legacy_ssh_client
+        skip_message: "Legacy OpenSSH (< 6.5) detected. Removing weak ciphers may break compatibility with management tools. Verify client support before proceeding."
       reinforce:
         - action: ssh.remove_disallowed_algorithms
           params:
@@ -6015,6 +6245,10 @@ rules:
               key: "configured"
               compare: is_true
               message: "The effective sshd KexAlgorithms list contains CIS-disallowed weak key exchange algorithms."
+      reinforce_guard:
+        name: legacy_ssh_check
+        func: env_detect.is_legacy_ssh_client
+        skip_message: "Legacy OpenSSH (< 6.5) detected. Removing weak key exchange algorithms may break compatibility with management tools. Verify client support before proceeding."
       reinforce:
         - action: ssh.remove_disallowed_algorithms
           params:
@@ -6112,6 +6346,10 @@ rules:
               key: "configured"
               compare: is_true
               message: "The effective sshd MACs list contains CIS-disallowed weak MAC algorithms."
+      reinforce_guard:
+        name: legacy_ssh_check
+        func: env_detect.is_legacy_ssh_client
+        skip_message: "Legacy OpenSSH (< 6.5) detected. Removing weak MAC algorithms may break compatibility with management tools. Verify client support before proceeding."
       reinforce:
         - action: ssh.remove_disallowed_algorithms
           params:
@@ -6369,6 +6607,10 @@ rules:
               key: "found"
               compare: is_falsy
               message: "PermitRootLogin is explicitly set to 'yes' in sshd configuration files."
+      reinforce_guard:
+        name: sudo_user_check
+        func: env_detect.no_sudo_user
+        skip_message: "No non-root sudo user detected. Disabling PermitRootLogin would lock out the system. Please create a sudo user first."
       reinforce:
         - action: file.set_key_value
           params:
@@ -6817,11 +7059,15 @@ rules:
               key: "compliant"
               compare: is_true
               message: "faillock does not include the root account, or root_unlock_time is less than 60 seconds."
+      reinforce_guard:
+        name: console_access_check
+        func: env_detect.no_console_access
+        skip_message: "No out-of-band console access detected. Enabling even_deny_root could lock out all administrators if root password is mistyped repeatedly."
       reinforce:
         - action: file.append_line
           params:
-          path: "/etc/security/faillock.conf"
-          line: "even_deny_root"
+            path: "/etc/security/faillock.conf"
+            line: "even_deny_root"
 
     - id: "5.3.3.2.1"
       desc: "Ensure password number of changed characters is configured"
@@ -7074,6 +7320,11 @@ rules:
               compare: equals
               expected: 0
               message: "pam_pwhistory.so password stack lines do not include use_authtok in both PAM files."
+      reinforce:
+        - action: pam.ensure_option
+          params: {path: "/etc/pam.d/system-auth", module: "pam_pwhistory.so", option: "use_authtok", kind: "password"}
+        - action: pam.ensure_option
+          params: {path: "/etc/pam.d/password-auth", module: "pam_pwhistory.so", option: "use_authtok", kind: "password"}
 
     - id: "5.3.3.4.1"
       desc: "Ensure pam_unix does not include nullok"
@@ -7110,6 +7361,11 @@ rules:
               compare: equals
               expected: 0
               message: "pam_unix.so password stack lines include remember= in one or more PAM files."
+      reinforce:
+        - action: pam.remove_option
+          params: {path: "/etc/pam.d/system-auth", module: "pam_unix.so", option_prefix: "remember=", kind: "password"}
+        - action: pam.remove_option
+          params: {path: "/etc/pam.d/password-auth", module: "pam_unix.so", option_prefix: "remember=", kind: "password"}
 
     - id: "5.3.3.4.3"
       desc: "Ensure pam_unix includes a strong password hashing algorithm"
@@ -7146,6 +7402,11 @@ rules:
               compare: equals
               expected: 0
               message: "pam_unix.so password stack lines do not include use_authtok in both PAM files."
+      reinforce:
+        - action: pam.ensure_option
+          params: {path: "/etc/pam.d/system-auth", module: "pam_unix.so", option: "use_authtok", kind: "password"}
+        - action: pam.ensure_option
+          params: {path: "/etc/pam.d/password-auth", module: "pam_unix.so", option: "use_authtok", kind: "password"}
 
     - id: "5.4.1.1"
       desc: "Ensure password expiration is configured"
@@ -7959,6 +8220,72 @@ rules:
           params: {path: "/etc/security/opasswd", uid: 0, gid: 0, mode: 0600, ignore_missing: true}
         - action: permissions.set_attributes
           params: {path: "/etc/security/opasswd.old", uid: 0, gid: 0, mode: 0600, ignore_missing: true}
+
+    - id: "7.1.11"
+      desc: "Ensure world writable files and directories are secured"
+      level: ["l1_server", "l1_workstation"]
+      status: automated
+      probes:
+        - name: world_writable_files
+          func: file.find_world_writable
+          params: {max_results: 500}
+      assertion:
+        all_of:
+            - actual: "%{probe.world_writable_files}"
+              key: "available"
+              compare: is_true
+              message: "Could not scan for world-writable files."
+            - actual: "%{probe.world_writable_files}"
+              key: "count"
+              compare: equals
+              expected: 0
+              message: "Found world-writable files or directories without sticky bit."
+      reinforce:
+        - action: permissions.remove_world_writable
+          params: {list: "%{probe.world_writable_files}"}
+
+    - id: "7.1.12"
+      desc: "Ensure no unowned or ungrouped files or directories exist"
+      level: ["l1_server", "l1_workstation"]
+      status: automated
+      probes:
+        - name: unowned_files
+          func: file.find_unowned
+          params: {max_results: 500}
+      assertion:
+        all_of:
+            - actual: "%{probe.unowned_files}"
+              key: "available"
+              compare: is_true
+              message: "Could not scan for unowned files."
+            - actual: "%{probe.unowned_files}"
+              key: "count"
+              compare: equals
+              expected: 0
+              message: "Found files or directories with no owner or no group."
+      reinforce:
+        - action: permissions.fix_unowned
+          params: {list: "%{probe.unowned_files}"}
+
+    - id: "7.2.1"
+      desc: "Ensure accounts in /etc/passwd use shadowed passwords"
+      level: ["l1_server", "l1_workstation"]
+      status: automated
+      probes:
+        - name: non_shadow_entries
+          func: file.find_pattern
+          params:
+            paths: ["/etc/passwd"]
+            pattern: "^[^:]+:[^x*!:][^:]*:"
+      assertion:
+        all_of:
+            - actual: "%{probe.non_shadow_entries}"
+              key: "found"
+              compare: is_falsy
+              message: "Found accounts in /etc/passwd that do not use shadowed passwords (password field is not 'x')."
+      reinforce:
+        - action: users.convert_to_shadow_passwords
+          params: {}
 
     - id: "7.2.2"
       desc: "Ensure /etc/shadow password fields are not empty"

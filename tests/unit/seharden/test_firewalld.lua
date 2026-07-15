@@ -184,3 +184,149 @@ function test_inspect_active_zone_targets_reports_unavailable_firewall_cmd()
         assert(result.checked_count == 0, 'Expected unavailable command to check no zones')
     end)
 end
+
+--------------------------------------------------------------------------------
+-- firewalld.has_ssh_service / no_ssh_service (on-disk zone configuration)
+--------------------------------------------------------------------------------
+
+local ZONES_DIR = '/etc/firewalld/zones'
+local LIB_ZONES_DIR = '/usr/lib/firewalld/zones'
+
+local function with_zone_config(zone_dirs, files, fn)
+    firewalld_probe._test_set_dependencies({
+        lfs_dir = function(dir)
+            local names = zone_dirs[dir]
+            if not names then
+                return nil
+            end
+            local i = 0
+            return function()
+                i = i + 1
+                return names[i]
+            end
+        end,
+        io_open = function(path, mode)
+            local content = files[path]
+            if content == nil then
+                return nil
+            end
+            return {
+                read = function()
+                    return content
+                end,
+                close = function() end,
+            }
+        end,
+    })
+
+    local ok, err = pcall(fn)
+    firewalld_probe._test_set_dependencies()
+    if not ok then
+        error(err, 0)
+    end
+end
+
+local function ssh_service_zone_xml()
+    return '<?xml version="1.0" encoding="utf-8"?>\n<zone>\n  <short>Public</short>\n  <service name="ssh"/>\n  <service name="dhcpv6-client"/>\n</zone>\n'
+end
+
+local function ssh_port_zone_xml()
+    return '<?xml version="1.0" encoding="utf-8"?>\n<zone>\n  <port port="22" protocol="tcp"/>\n</zone>\n'
+end
+
+local function no_ssh_zone_xml()
+    return '<?xml version="1.0" encoding="utf-8"?>\n<zone>\n  <service name="dhcpv6-client"/>\n</zone>\n'
+end
+
+function test_has_ssh_service_with_ssh_service_in_etc_zone()
+    with_zone_config(
+        { [ZONES_DIR] = { 'public.xml' }, [LIB_ZONES_DIR] = {} },
+        { [ZONES_DIR .. '/public.xml'] = ssh_service_zone_xml() },
+        function()
+            local found, reason = firewalld_probe.has_ssh_service()
+            assert(found == true, 'Expected SSH service in /etc zone to be detected')
+            assert(type(reason) == 'string' and reason:find('SSH', 1, true), 'Expected reason to mention SSH')
+        end
+    )
+end
+
+function test_has_ssh_service_with_port_22_in_lib_zone()
+    with_zone_config(
+        { [ZONES_DIR] = {}, [LIB_ZONES_DIR] = { 'public.xml' } },
+        { [LIB_ZONES_DIR .. '/public.xml'] = ssh_port_zone_xml() },
+        function()
+            local found = firewalld_probe.has_ssh_service()
+            assert(found == true, 'Expected port 22/tcp in /usr/lib zone to be detected')
+        end
+    )
+end
+
+function test_has_ssh_service_missing_returns_false()
+    with_zone_config(
+        { [ZONES_DIR] = { 'public.xml' }, [LIB_ZONES_DIR] = { 'public.xml' } },
+        {
+            [ZONES_DIR .. '/public.xml'] = no_ssh_zone_xml(),
+            [LIB_ZONES_DIR .. '/public.xml'] = no_ssh_zone_xml(),
+        },
+        function()
+            local found = firewalld_probe.has_ssh_service()
+            assert(found == false, 'Expected false when SSH absent from all zones')
+        end
+    )
+end
+
+function test_has_ssh_service_firewalld_not_installed_returns_false()
+    with_zone_config({}, {}, function()
+        local found = firewalld_probe.has_ssh_service()
+        assert(found == false, 'Expected false when no zone configuration exists (fail-closed for the guard)')
+    end)
+end
+
+function test_has_ssh_service_does_not_match_sshuttle_service()
+    with_zone_config(
+        { [ZONES_DIR] = { 'public.xml' }, [LIB_ZONES_DIR] = {} },
+        {
+            [ZONES_DIR .. '/public.xml'] =
+                '<?xml version="1.0" encoding="utf-8"?>\n<zone>\n  <service name="sshuttle"/>\n</zone>\n',
+        },
+        function()
+            local found = firewalld_probe.has_ssh_service()
+            assert(found == false, 'Expected sshuttle not to be detected as SSH service')
+        end
+    )
+end
+
+function test_has_ssh_service_port_1022_not_matched()
+    with_zone_config(
+        { [ZONES_DIR] = { 'public.xml' }, [LIB_ZONES_DIR] = {} },
+        {
+            [ZONES_DIR .. '/public.xml'] =
+                '<?xml version="1.0" encoding="utf-8"?>\n<zone>\n  <port port="1022" protocol="tcp"/>\n</zone>\n',
+        },
+        function()
+            local found = firewalld_probe.has_ssh_service()
+            assert(found == false, 'Expected port 1022/tcp not to match SSH')
+        end
+    )
+end
+
+function test_no_ssh_service_inverts_has_ssh_service()
+    with_zone_config(
+        { [ZONES_DIR] = { 'public.xml' }, [LIB_ZONES_DIR] = {} },
+        { [ZONES_DIR .. '/public.xml'] = ssh_service_zone_xml() },
+        function()
+            local found = firewalld_probe.no_ssh_service()
+            assert(found == false, 'Expected no_ssh_service=false when SSH is configured')
+        end
+    )
+
+    with_zone_config(
+        { [ZONES_DIR] = { 'public.xml' }, [LIB_ZONES_DIR] = {} },
+        { [ZONES_DIR .. '/public.xml'] = no_ssh_zone_xml() },
+        function()
+            local found, reason = firewalld_probe.no_ssh_service()
+            assert(found == true, 'Expected no_ssh_service=true when SSH is absent')
+            assert(type(reason) == 'string' and reason:find('SSH', 1, true), 'Expected reason to mention SSH')
+        end
+    )
+end

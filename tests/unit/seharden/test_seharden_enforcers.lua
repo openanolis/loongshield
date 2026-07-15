@@ -2061,3 +2061,512 @@ function test_sudo_remove_nopasswd_preserves_other_tokens_when_stripping_authent
     assert(files[root_path]:find('authenticate', 1, true), 'Expected positive authenticate token to be preserved')
     assert(files[root_path]:find('use_pty', 1, true), 'Expected other tokens like use_pty to be preserved')
 end
+
+--------------------------------------------------------------------------------
+-- pam enforcer: remove_option and ensure_option
+--------------------------------------------------------------------------------
+
+function test_pam_remove_option_exact_match()
+    local path = '/etc/pam.d/system-auth'
+    local deps, files = make_fake_text_fs({
+        [path] = table.concat({
+            'password sufficient pam_unix.so sha512 remember=5 shadow',
+        }, '\n') .. '\n',
+    }, {
+        [path] = { type = 'file', uid = 0, gid = 0, mode = 420 },
+    })
+
+    pam_enforcer._test_set_dependencies(deps)
+
+    local ok = pam_enforcer.remove_option({
+        path = path,
+        module = 'pam_unix.so',
+        option = 'remember=5',
+        kind = 'password',
+    })
+    assert(ok == true, 'Expected remove_option to succeed')
+
+    local content = files[path]
+    assert(not content:find('remember=5', 1, true), 'Expected remember=5 to be removed')
+    assert(content:find('sha512', 1, true), 'Expected sha512 to be preserved')
+    assert(content:find('shadow', 1, true), 'Expected shadow to be preserved')
+end
+
+function test_pam_remove_option_prefix_match()
+    local path = '/etc/pam.d/system-auth'
+    local deps, files = make_fake_text_fs({
+        [path] = table.concat({
+            'password sufficient pam_unix.so sha512 remember=10 shadow',
+        }, '\n') .. '\n',
+    }, {
+        [path] = { type = 'file', uid = 0, gid = 0, mode = 420 },
+    })
+
+    pam_enforcer._test_set_dependencies(deps)
+
+    local ok = pam_enforcer.remove_option({
+        path = path,
+        module = 'pam_unix.so',
+        option_prefix = 'remember=',
+        kind = 'password',
+    })
+    assert(ok == true, 'Expected remove_option with prefix to succeed')
+
+    local content = files[path]
+    assert(not content:find('remember', 1, true), 'Expected any remember= option to be removed')
+    assert(content:find('sha512', 1, true), 'Expected sha512 to be preserved')
+    assert(content:find('shadow', 1, true), 'Expected shadow to be preserved')
+end
+
+function test_pam_remove_option_prefix_no_match_is_idempotent()
+    local path = '/etc/pam.d/system-auth'
+    local deps, files = make_fake_text_fs({
+        [path] = table.concat({
+            'password sufficient pam_unix.so sha512 shadow',
+        }, '\n') .. '\n',
+    }, {
+        [path] = { type = 'file', uid = 0, gid = 0, mode = 420 },
+    })
+
+    pam_enforcer._test_set_dependencies(deps)
+
+    local ok = pam_enforcer.remove_option({
+        path = path,
+        module = 'pam_unix.so',
+        option_prefix = 'remember=',
+        kind = 'password',
+    })
+    assert(ok == true, 'Expected remove_option to be idempotent when no match found')
+
+    local content = files[path]
+    assert(content:find('sha512', 1, true), 'Expected sha512 to be preserved')
+end
+
+function test_pam_ensure_option_appends_when_missing()
+    local path = '/etc/pam.d/system-auth'
+    local deps, files = make_fake_text_fs({
+        [path] = table.concat({
+            'password sufficient pam_unix.so sha512',
+        }, '\n') .. '\n',
+    }, {
+        [path] = { type = 'file', uid = 0, gid = 0, mode = 420 },
+    })
+
+    pam_enforcer._test_set_dependencies(deps)
+
+    local ok = pam_enforcer.ensure_option({
+        path = path,
+        module = 'pam_unix.so',
+        option = 'shadow',
+        kind = 'password',
+    })
+    assert(ok == true, 'Expected ensure_option to succeed')
+
+    local content = files[path]
+    assert(content:find('shadow', 1, true), 'Expected shadow option to be appended')
+end
+
+function test_pam_ensure_option_idempotent_when_present()
+    local path = '/etc/pam.d/system-auth'
+    local original = table.concat({
+        'password sufficient pam_unix.so sha512 shadow',
+    }, '\n') .. '\n'
+    local deps, files = make_fake_text_fs({
+        [path] = original,
+    }, {
+        [path] = { type = 'file', uid = 0, gid = 0, mode = 420 },
+    })
+
+    pam_enforcer._test_set_dependencies(deps)
+
+    local ok = pam_enforcer.ensure_option({
+        path = path,
+        module = 'pam_unix.so',
+        option = 'shadow',
+        kind = 'password',
+    })
+    assert(ok == true, 'Expected ensure_option to be idempotent')
+    assert(files[path] == original, 'Expected file content to be unchanged when option already present')
+end
+
+function test_pam_ensure_option_normalizes_trailing_whitespace()
+    local path = '/etc/pam.d/system-auth'
+    local deps, files = make_fake_text_fs({
+        [path] = 'password sufficient pam_unix.so sha512  \n',
+    }, {
+        [path] = { type = 'file', uid = 0, gid = 0, mode = 420 },
+    })
+
+    pam_enforcer._test_set_dependencies(deps)
+
+    local ok = pam_enforcer.ensure_option({
+        path = path,
+        module = 'pam_unix.so',
+        option = 'use_authtok',
+        kind = 'password',
+    })
+    assert(ok == true, 'Expected ensure_option to succeed')
+    assert(
+        files[path]:find('sha512 use_authtok', 1, true),
+        'Expected single-space separated option append, got: ' .. files[path]
+    )
+end
+
+function test_pam_remove_option_preserves_line_format_and_comment()
+    local path = '/etc/pam.d/system-auth'
+    local deps, files = make_fake_text_fs({
+        [path] = 'password    sufficient    pam_unix.so    sha512    remember=5    shadow    # keep me\n',
+    }, {
+        [path] = { type = 'file', uid = 0, gid = 0, mode = 420 },
+    })
+
+    pam_enforcer._test_set_dependencies(deps)
+
+    local ok = pam_enforcer.remove_option({
+        path = path,
+        module = 'pam_unix.so',
+        option_prefix = 'remember=',
+        kind = 'password',
+    })
+    assert(ok == true, 'Expected remove_option to succeed')
+    local content = files[path]
+    assert(not content:find('remember', 1, true), 'Expected remember= option to be removed')
+    assert(content:find('# keep me', 1, true), 'Expected in-line comment to be preserved')
+    assert(content:find('password    sufficient', 1, true), 'Expected leading formatting to be preserved')
+end
+
+--------------------------------------------------------------------------------
+-- permissions enforcer: fix_ownership, fix_unowned, remove_world_writable
+--------------------------------------------------------------------------------
+
+function test_permissions_fix_ownership_changes_non_root_owner()
+    local chown_called = nil
+
+    permissions_enforcer._test_set_dependencies({
+        fs_stat = function(path)
+            if path == '/etc/audit/auditd.conf' then
+                return make_fs_attr(1000, 1000, tonumber('640', 8))
+            end
+            return nil
+        end,
+        fs_chown = function(path, uid, gid)
+            chown_called = { path = path, uid = uid, gid = gid }
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+    })
+
+    local ok = permissions_enforcer.fix_ownership({
+        list = { details = { { path = '/etc/audit/auditd.conf' } } },
+        uid = 0,
+        gid = 0,
+    })
+    assert(ok == true, 'Expected fix_ownership to succeed')
+    assert(chown_called ~= nil, 'Expected chown to be invoked')
+    assert(chown_called.uid == 0 and chown_called.gid == 0, 'Expected chown to root:root')
+end
+
+function test_permissions_fix_ownership_skips_already_compliant()
+    local chown_called = false
+
+    permissions_enforcer._test_set_dependencies({
+        fs_stat = function()
+            return make_fs_attr(0, 0, tonumber('640', 8))
+        end,
+        fs_chown = function()
+            chown_called = true
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+    })
+
+    local ok = permissions_enforcer.fix_ownership({
+        list = { details = { { path = '/etc/audit/auditd.conf' } } },
+        uid = 0,
+        gid = 0,
+    })
+    assert(ok == true, 'Expected fix_ownership to succeed')
+    assert(chown_called == false, 'Expected chown to be skipped for already-compliant files')
+end
+
+function test_permissions_fix_ownership_rejects_symlink()
+    permissions_enforcer._test_set_dependencies({
+        fs_stat = function()
+            return make_fs_attr(1000, 1000, tonumber('640', 8))
+        end,
+        fs_chown = function()
+            error('fs_chown should not be called for symlink paths')
+        end,
+        lfs_symlinkattributes = function()
+            return { mode = 'link' }
+        end,
+    })
+
+    local ok = permissions_enforcer.fix_ownership({
+        list = { details = { { path = '/etc/audit/auditd.conf' } } },
+        uid = 0,
+        gid = 0,
+    })
+    assert(ok == true, 'Expected fix_ownership to skip symlinks without error')
+end
+
+function test_permissions_fix_ownership_requires_list()
+    local ok, err = permissions_enforcer.fix_ownership({})
+    assert(ok == nil, 'Expected fix_ownership to fail without list')
+    assert(err:find('requires list', 1, true), 'Expected error to mention list requirement')
+end
+
+function test_permissions_set_attributes_for_all_accepts_quoted_octal_string_mode()
+    -- Profiles pass modes as quoted strings ("0600") because lyaml parses
+    -- unquoted leading-zero integers as decimal; the enforcer must treat the
+    -- string as octal (600 decimal would be octal 01130, group rw + sticky).
+    local chmod_called = nil
+    permissions_enforcer._test_set_dependencies({
+        fs_stat = function()
+            return make_fs_attr(0, 0, tonumber('644', 8))
+        end,
+        fs_chmod = function(path, mode)
+            chmod_called = { path = path, mode = mode }
+            return true
+        end,
+        fs_chown = function()
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+    })
+
+    local ok = permissions_enforcer.set_attributes_for_all({
+        list = { details = { { path = '/etc/audit/auditd.conf' } } },
+        uid = 0,
+        gid = 0,
+        mode = '0600',
+    })
+    assert(ok == true, 'Expected set_attributes_for_all to succeed with string mode')
+    assert(chmod_called ~= nil, 'Expected chmod to be invoked')
+    assert(
+        chmod_called.mode == tonumber('600', 8),
+        'Expected mode 0600 (octal 384), got: ' .. tostring(chmod_called.mode)
+    )
+end
+
+--------------------------------------------------------------------------------
+-- permissions.remove_world_writable / fix_unowned (conservative semantics)
+--------------------------------------------------------------------------------
+
+local function make_lines_file(content)
+    local lines = {}
+    for line in content:gmatch('([^\n]+)') do
+        lines[#lines + 1] = line
+    end
+    return {
+        lines = function()
+            local i = 0
+            return function()
+                i = i + 1
+                return lines[i]
+            end
+        end,
+        close = function() end,
+    }
+end
+
+function test_remove_world_writable_directory_only_gains_sticky()
+    local chmod_called = nil
+    permissions_enforcer._test_set_dependencies({
+        fs_stat = function()
+            return make_fs_attr(0, 0, tonumber('777', 8))
+        end,
+        fs_chmod = function(path, mode)
+            chmod_called = { path = path, mode = mode }
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+        lfs_attributes = function()
+            return { mode = 'directory' }
+        end,
+    })
+
+    local ok = permissions_enforcer.remove_world_writable({
+        list = { details = { { path = '/var/www' } } },
+    })
+    assert(ok == true, 'Expected remove_world_writable to succeed')
+    assert(chmod_called ~= nil, 'Expected chmod to be invoked for directory')
+    assert(
+        chmod_called.mode == tonumber('1777', 8),
+        'Expected directory to gain sticky bit only (0777 -> 1777), got: ' .. tostring(chmod_called.mode)
+    )
+end
+
+function test_remove_world_writable_file_drops_other_write()
+    local chmod_called = nil
+    permissions_enforcer._test_set_dependencies({
+        fs_stat = function()
+            return make_fs_attr(0, 0, tonumber('666', 8))
+        end,
+        fs_chmod = function(path, mode)
+            chmod_called = { path = path, mode = mode }
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+        lfs_attributes = function()
+            return { mode = 'file' }
+        end,
+    })
+
+    local ok = permissions_enforcer.remove_world_writable({
+        list = { details = { { path = '/var/tmp/x' } } },
+    })
+    assert(ok == true, 'Expected remove_world_writable to succeed')
+    assert(
+        chmod_called.mode == tonumber('664', 8),
+        'Expected file to lose o+w (0666 -> 0664), got: ' .. tostring(chmod_called.mode)
+    )
+end
+
+function test_remove_world_writable_skips_setuid_file()
+    local chmod_called = false
+    permissions_enforcer._test_set_dependencies({
+        fs_stat = function()
+            return make_fs_attr(0, 0, tonumber('6755', 8))
+        end,
+        fs_chmod = function()
+            chmod_called = true
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+        lfs_attributes = function()
+            return { mode = 'file' }
+        end,
+    })
+
+    local ok = permissions_enforcer.remove_world_writable({
+        list = { details = { { path = '/usr/bin/x' } } },
+    })
+    assert(ok == true, 'Expected remove_world_writable to succeed')
+    assert(chmod_called == false, 'Expected setuid/setgid files to be skipped')
+end
+
+function test_fix_unowned_reassigns_only_missing_half()
+    local chown_called = nil
+    permissions_enforcer._test_set_dependencies({
+        io_open = function(path)
+            if path == '/etc/passwd' then
+                return make_lines_file('root:x:0:0:root:/root:/bin/bash\nalice:x:1001:1001::/home/alice:/bin/bash\n')
+            end
+            if path == '/etc/group' then
+                return make_lines_file('root:x:0:\nusers:x:100:\nalice:x:1001:\n')
+            end
+            return nil
+        end,
+        fs_stat = function()
+            -- uid=1001 is known, gid=9999 does not exist: only the gid needs fixing
+            return make_fs_attr(1001, 9999, tonumber('644', 8))
+        end,
+        fs_chown = function(path, uid, gid)
+            chown_called = { path = path, uid = uid, gid = gid }
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+        lfs_attributes = function()
+            return { mode = 'file' }
+        end,
+    })
+
+    local ok = permissions_enforcer.fix_unowned({
+        list = { details = { { path = '/srv/orphan' } } },
+    })
+    assert(ok == true, 'Expected fix_unowned to succeed')
+    assert(chown_called ~= nil, 'Expected chown to be invoked')
+    assert(
+        chown_called.uid == 1001 and chown_called.gid == 1001,
+        'Expected uid kept, gid set to owner primary group (1001:1001), got: '
+            .. tostring(chown_called.uid) .. ':' .. tostring(chown_called.gid)
+    )
+end
+
+function test_fix_unowned_unowned_uid_becomes_root_keeping_gid()
+    local chown_called = nil
+    permissions_enforcer._test_set_dependencies({
+        io_open = function(path)
+            if path == '/etc/passwd' then
+                return make_lines_file('root:x:0:0:root:/root:/bin/bash\n')
+            end
+            if path == '/etc/group' then
+                return make_lines_file('root:x:0:\nusers:x:100:\n')
+            end
+            return nil
+        end,
+        fs_stat = function()
+            -- uid=9999 does not exist, gid=100 (users) is known: only the uid needs fixing
+            return make_fs_attr(9999, 100, tonumber('644', 8))
+        end,
+        fs_chown = function(path, uid, gid)
+            chown_called = { path = path, uid = uid, gid = gid }
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+        lfs_attributes = function()
+            return { mode = 'file' }
+        end,
+    })
+
+    local ok = permissions_enforcer.fix_unowned({
+        list = { details = { { path = '/srv/orphan2' } } },
+    })
+    assert(ok == true, 'Expected fix_unowned to succeed')
+    assert(
+        chown_called.uid == 0 and chown_called.gid == 100,
+        'Expected unowned uid to become root keeping gid (0:100), got: '
+            .. tostring(chown_called.uid) .. ':' .. tostring(chown_called.gid)
+    )
+end
+
+function test_fix_unowned_skips_setuid_file()
+    local chown_called = false
+    permissions_enforcer._test_set_dependencies({
+        io_open = function(path)
+            if path == '/etc/passwd' then
+                return make_lines_file('root:x:0:0:root:/root:/bin/bash\n')
+            end
+            if path == '/etc/group' then
+                return make_lines_file('root:x:0:\nusers:x:100:\n')
+            end
+            return nil
+        end,
+        fs_stat = function()
+            return make_fs_attr(9999, 9999, tonumber('4755', 8))
+        end,
+        fs_chown = function()
+            chown_called = true
+            return true
+        end,
+        lfs_symlinkattributes = function()
+            return nil
+        end,
+        lfs_attributes = function()
+            return { mode = 'file' }
+        end,
+    })
+
+    local ok = permissions_enforcer.fix_unowned({
+        list = { details = { { path = '/srv/setuid-orphan' } } },
+    })
+    assert(ok == true, 'Expected fix_unowned to succeed')
+    assert(chown_called == false, 'Expected setuid/setgid files to be skipped')
+end

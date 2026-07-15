@@ -11,6 +11,7 @@ local M = {}
 local _default_dependencies = {
     fs_stat = fs.stat,
     io_open = io.open,
+    io_popen = io.popen,
     os_execute = os.execute,
     lfs_attributes = lfs.attributes,
     lfs_dir = lfs.dir,
@@ -671,6 +672,149 @@ function M.inspect_bootloader_config_access(params)
         all_configured = #details > 0 and invalid_count == 0,
         details = details,
     }
+end
+
+--------------------------------------------------------------------------------
+-- Filesystem-wide security probes
+--------------------------------------------------------------------------------
+
+-- Filesystem types that are virtual, runtime-only, or read-only images.
+-- They are skipped when enumerating mount points for the world-writable and
+-- unowned scans; /snap is excluded explicitly because its bind mounts may
+-- share the root filesystem.
+local VIRTUAL_FS_TYPES = {
+    proc = true, sysfs = true, devtmpfs = true, devpts = true, tmpfs = true,
+    cgroup = true, cgroup2 = true, securityfs = true, debugfs = true,
+    tracefs = true, pstore = true, bpf = true, hugetlbfs = true, mqueue = true,
+    configfs = true, fusectl = true, autofs = true, squashfs = true,
+    overlay = true, ramfs = true, rpc_pipefs = true, nfsd = true,
+    selinuxfs = true, efivarfs = true,
+}
+
+local SCAN_EXCLUDES = {
+    '/snap',
+}
+
+local function build_find_excludes()
+    local parts = {}
+    for _, p in ipairs(SCAN_EXCLUDES) do
+        parts[#parts + 1] = string.format("-path '%s/*' -prune -o", p)
+    end
+    return table.concat(parts, ' ')
+end
+
+--- Decode /proc/mounts octal escapes (\040 = space, \011 = tab, \012 = newline).
+local function unescape_mount_field(s)
+    return (s:gsub('\\(%d%d%d)', function(oct)
+        return string.char(tonumber(oct, 8))
+    end))
+end
+
+--- List local (non-virtual) mount points from /proc/mounts.
+-- Returns nil when /proc/mounts cannot be read.
+local function list_local_mount_points()
+    local f = _dependencies.io_open('/proc/mounts', 'r')
+    if not f then
+        return nil
+    end
+    local mounts = {}
+    for line in f:lines() do
+        local mnt, fstype = line:match('^%S+%s+(%S+)%s+(%S+)')
+        if mnt and not VIRTUAL_FS_TYPES[fstype] then
+            mounts[#mounts + 1] = unescape_mount_field(mnt)
+        end
+    end
+    f:close()
+    table.sort(mounts)
+    return mounts
+end
+
+local function safe_popen_read(cmd)
+    local handle = _dependencies.io_popen(cmd)
+    if not handle then
+        return nil, string.format('failed to execute: %s', cmd)
+    end
+    local output = handle:read('*a') or ''
+    handle:close()
+    return output
+end
+
+local function parse_find_output(output)
+    local results = {}
+    for path in output:gmatch('([^\n]+)') do
+        if path ~= '' then
+            results[#results + 1] = { path = path }
+        end
+    end
+    return results
+end
+
+--- Run a find scan per local mount point with -xdev so separately mounted
+-- filesystems (e.g. /home, /var) are covered as well as the root.
+-- condition is the find(1) predicate fragment selecting non-compliant paths.
+local function find_scan(max_results, condition)
+    local mounts = list_local_mount_points()
+    if not mounts then
+        return { available = false, error = 'cannot read /proc/mounts', count = 0, details = {} }
+    end
+
+    local excludes = build_find_excludes()
+    local details = {}
+    local remaining = max_results + 1
+
+    for _, mount in ipairs(mounts) do
+        if remaining <= 0 then
+            break
+        end
+        local cmd = string.format(
+            'find %s -xdev %s \\( %s \\) -print 2>/dev/null | head -n %d',
+            text.shell_escape(mount),
+            excludes,
+            condition,
+            remaining
+        )
+        local output, err = safe_popen_read(cmd)
+        if not output then
+            return { available = false, error = err, count = 0, details = {} }
+        end
+        local found = parse_find_output(output)
+        for _, item in ipairs(found) do
+            details[#details + 1] = item
+        end
+        remaining = remaining - #found
+    end
+
+    local truncated = #details > max_results
+    if truncated then
+        details[max_results + 1] = nil
+    end
+
+    return {
+        available = true,
+        count = #details,
+        truncated = truncated,
+        details = details,
+    }
+end
+
+--- Find world-writable files and directories on local filesystems.
+-- Runs find(1) per local mount point and excludes virtual/runtime paths.
+-- Returns a list of non-compliant paths.
+-- params: { max_results (optional, default 500) }
+function M.find_world_writable(params)
+    params = params or {}
+    return find_scan(
+        params.max_results or 500,
+        '-type f -perm -0002 -o -type d -perm -0002 ! -perm -1000'
+    )
+end
+
+--- Find files and directories with no owner or no group on local filesystems.
+-- Runs find(1) per local mount point and excludes virtual/runtime paths.
+-- params: { max_results (optional, default 500) }
+function M.find_unowned(params)
+    params = params or {}
+    return find_scan(params.max_results or 500, '-nouser -o -nogroup')
 end
 
 return M

@@ -120,25 +120,25 @@ function M.check(params)
     for _, path in ipairs(pam_paths) do
         local entries = common.load_pam_entries(path)
         if not entries then
-            return nil, string.format("Could not open PAM file '%s' for reading.", path)
-        end
-
-        local path_ok = false
-        local saw_history_module = false
-        for _, entry in ipairs(entries) do
-            if entry.kind == "password" and is_password_history_module(entry.module) then
-                saw_history_module = true
-                local remember = get_remember_value(entry, default_config)
-                if remember and remember >= min_remember then
-                    path_ok = true
-                    break
+            common.add_detail(details, path, "pam_file_unreadable")
+        else
+            local path_ok = false
+            local saw_history_module = false
+            for _, entry in ipairs(entries) do
+                if entry.kind == "password" and is_password_history_module(entry.module) then
+                    saw_history_module = true
+                    local remember = get_remember_value(entry, default_config)
+                    if remember and remember >= min_remember then
+                        path_ok = true
+                        break
+                    end
                 end
             end
-        end
 
-        if not path_ok then
-            common.add_detail(details, path,
-                saw_history_module and "remember_too_small_or_missing" or "module_missing")
+            if not path_ok then
+                common.add_detail(details, path,
+                    saw_history_module and "remember_too_small_or_missing" or "module_missing")
+            end
         end
     end
 

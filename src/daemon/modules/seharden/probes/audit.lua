@@ -1,4 +1,5 @@
 local lfs = require('lfs')
+local fs = require('fs')
 local audit_rules = require('seharden.shared.audit_rules')
 local text = require('seharden.shared.text')
 local user_defaults = require('seharden.shared.user_defaults')
@@ -12,8 +13,11 @@ local _default_dependencies = {
     io_popen = io.popen,
     lfs_attributes = lfs.attributes,
     lfs_dir = lfs.dir,
+    fs_stat = fs.stat,
     audit_rules_path = '/etc/audit/audit.rules',
     audit_rules_d_path = '/etc/audit/rules.d',
+    audit_log_dir = '/var/log/audit',
+    audit_conf_dir = '/etc/audit',
     login_defs_path = '/etc/login.defs',
 }
 
@@ -797,6 +801,129 @@ function M.find_syscall_rule(params)
     end
 
     return find_syscall_rule_in_lines(lines, params, auid_min)
+end
+
+--------------------------------------------------------------------------------
+-- Audit file permission probes (CIS 6.3.4.x)
+--------------------------------------------------------------------------------
+
+--- Parse a mode parameter from a profile as octal.
+-- Profiles pass modes as quoted strings ("0600") because unquoted leading-0
+-- integers are read by lyaml as decimal (600); numeric callers (tests) pass
+-- the already-octal number and are used as-is.
+local function parse_octal_mode(value, default)
+    if value == nil then
+        return default
+    end
+    if type(value) == 'number' then
+        return value
+    end
+    return tonumber(value, 8) or default
+end
+
+local function list_dir_files(dir_path)
+    local entries = {}
+    local ok, iter, dir_obj = pcall(_dependencies.lfs_dir, dir_path)
+    if not ok or not iter then
+        return nil  -- directory does not exist or is inaccessible
+    end
+    for name in iter, dir_obj do
+        if name ~= '.' and name ~= '..' then
+            entries[#entries + 1] = dir_path .. '/' .. name
+        end
+    end
+    return entries
+end
+
+--- List non-compliant audit log files under /var/log/audit/.
+-- A file is non-compliant if its mode is more permissive than max_mode
+-- or if it is not owned by root:root.
+-- params: { max_mode (octal, default 0600) }
+function M.inspect_audit_log_files(params)
+    params = params or {}
+    local max_mode = parse_octal_mode(params.max_mode, tonumber('600', 8))
+    local log_dir = _dependencies.audit_log_dir
+    local paths = list_dir_files(log_dir)
+    if not paths then
+        return { available = false, count = 0, details = {} }
+    end
+    local details = {}
+
+    for _, path in ipairs(paths) do
+        local file_attr = _dependencies.lfs_attributes(path)
+        if file_attr and file_attr.mode == 'directory' then
+            -- Only regular files are audit log files; directories such as
+            -- subdirs under /var/log/audit must not be reported or chmod'd.
+            goto continue
+        end
+
+        local attr = _dependencies.fs_stat(path)
+        if attr and (attr:mode() > max_mode or attr:uid() ~= 0 or attr:gid() ~= 0) then
+            details[#details + 1] = {
+                path = path,
+                uid = attr:uid(),
+                gid = attr:gid(),
+                mode = attr:mode(),
+            }
+        end
+
+        ::continue::
+    end
+
+    return {
+        available = true,
+        count = #details,
+        details = details,
+    }
+end
+
+--- List non-compliant audit config files under /etc/audit/.
+-- A file is non-compliant if its mode is more permissive than max_mode
+-- or if it is not owned by root:root.
+-- params: { max_mode (octal, default 0640), check_mode (bool, default true),
+--           check_ownership (bool, default true) }
+function M.inspect_audit_config_files(params)
+    params = params or {}
+    local max_mode = parse_octal_mode(params.max_mode, tonumber('640', 8))
+    local check_mode = params.check_mode ~= false
+    local check_ownership = params.check_ownership ~= false
+    local conf_dir = _dependencies.audit_conf_dir
+    local paths = list_dir_files(conf_dir)
+    if not paths then
+        return { available = false, count = 0, details = {} }
+    end
+    local details = {}
+
+    for _, path in ipairs(paths) do
+        local file_attr = _dependencies.lfs_attributes(path)
+        if file_attr and file_attr.mode == 'directory' then
+            -- Only regular files are audit configuration files; directories
+            -- such as /etc/audit/rules.d must not be reported or chmod'd.
+            goto continue
+        end
+
+        local attr = _dependencies.fs_stat(path)
+        if attr then
+            local mode_bad = check_mode and attr:mode() > max_mode
+            local owner_bad = check_ownership and (attr:uid() ~= 0 or attr:gid() ~= 0)
+            if mode_bad or owner_bad then
+                details[#details + 1] = {
+                    path = path,
+                    uid = attr:uid(),
+                    gid = attr:gid(),
+                    mode = attr:mode(),
+                }
+            end
+        end
+
+        ::continue::
+    end
+
+    return {
+        available = true,
+        count = #details,
+        details = details,
+    }
 end
 
 return M

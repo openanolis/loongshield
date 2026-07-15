@@ -21,6 +21,50 @@ function M.is_symlink(path, deps)
     return M.symlink_mode(path, deps) == 'link'
 end
 
+--- Collapse "." and ".." segments in a path (absolute or relative).
+local function normalize_path(path)
+    local parts = {}
+    for part in path:gmatch('[^/]+') do
+        if part == '..' then
+            if #parts > 0 then
+                parts[#parts] = nil
+            end
+        elseif part ~= '.' then
+            parts[#parts + 1] = part
+        end
+    end
+    if path:sub(1, 1) == '/' then
+        return '/' .. table.concat(parts, '/')
+    end
+    return table.concat(parts, '/')
+end
+
+--- Resolve a symlink chain to its final target path (bounded).
+-- Follows at most MAX_SYMLINK_HOPS links and collapses ".." segments so the
+-- returned path is directly usable; returns the input path unchanged when it
+-- is not a link or cannot be resolved further.
+function M.resolve_symlink(path, deps)
+    local MAX_SYMLINK_HOPS = 8
+    local current = path
+    for _ = 1, MAX_SYMLINK_HOPS do
+        if not M.is_symlink(current, deps) then
+            return current
+        end
+        local attr = deps.lfs_symlinkattributes(current)
+        if type(attr) ~= 'table' or not attr.target then
+            return current
+        end
+        local target = attr.target
+        if target:sub(1, 1) == '/' then
+            current = normalize_path(target)
+        else
+            local dir = current:match('^(.*)/[^/]+$') or '.'
+            current = normalize_path(dir .. '/' .. target)
+        end
+    end
+    return current
+end
+
 local function split_path(path)
     local dir = path:match('^(.*)/[^/]+$') or '.'
     local base = path:match('([^/]+)$') or path
