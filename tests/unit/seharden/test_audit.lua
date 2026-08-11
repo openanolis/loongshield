@@ -756,3 +756,171 @@ function test_inspect_privileged_command_coverage_builds_path_exec_requirements(
         assert(result.all_configured == true, "Expected matching persistent and loaded privileged command rules")
     end)
 end
+
+--------------------------------------------------------------------------------
+-- inspect_audit_log_files / inspect_audit_config_files
+--------------------------------------------------------------------------------
+
+local function make_fs_stat_attr(uid, gid, mode)
+    return {
+        uid = function() return uid end,
+        gid = function() return gid end,
+        mode = function() return mode end,
+    }
+end
+
+function test_inspect_audit_log_files_returns_available_false_when_dir_missing()
+    with_dependencies({
+        lfs_dir = function()
+            return nil
+        end,
+    }, function()
+        local result = audit_probe.inspect_audit_log_files({ max_mode = tonumber('600', 8) })
+        assert(result.available == false, 'Expected available=false when audit log dir does not exist')
+        assert(result.count == 0, 'Expected count=0 when directory is inaccessible')
+    end)
+end
+
+function test_inspect_audit_log_files_returns_available_true_with_empty_dir()
+    with_dependencies({
+        lfs_dir = function()
+            local names = { '.', '..' }
+            local i = 0
+            return function()
+                i = i + 1
+                return names[i]
+            end
+        end,
+        fs_stat = function()
+            return nil
+        end,
+    }, function()
+        local result = audit_probe.inspect_audit_log_files({ max_mode = tonumber('600', 8) })
+        assert(result.available == true, 'Expected available=true when dir exists but is empty')
+        assert(result.count == 0, 'Expected count=0 when no files present')
+    end)
+end
+
+function test_inspect_audit_log_files_detects_non_compliant_files()
+    with_dependencies({
+        lfs_dir = function()
+            local names = { '.', '..', 'audit.log' }
+            local i = 0
+            return function()
+                i = i + 1
+                return names[i]
+            end
+        end,
+        fs_stat = function(path)
+            if path == '/var/log/audit/audit.log' then
+                return make_fs_stat_attr(1000, 0, tonumber('644', 8))
+            end
+            return nil
+        end,
+    }, function()
+        local result = audit_probe.inspect_audit_log_files({ max_mode = tonumber('600', 8) })
+        assert(result.available == true, 'Expected available=true when directory exists')
+        assert(result.count == 1, 'Expected one non-compliant file')
+        assert(result.details[1].path == '/var/log/audit/audit.log', 'Expected audit.log in details')
+    end)
+end
+
+function test_inspect_audit_log_files_accepts_quoted_octal_string_mode()
+    -- Profiles pass modes as quoted strings ("0600") because lyaml parses
+    -- unquoted leading-zero integers as decimal; the probe must treat the
+    -- string as octal.
+    local file_mode = tonumber('644', 8)
+    with_dependencies({
+        lfs_dir = function()
+            local names = { '.', '..', 'audit.log' }
+            local i = 0
+            return function()
+                i = i + 1
+                return names[i]
+            end
+        end,
+        fs_stat = function(path)
+            if path == '/var/log/audit/audit.log' then
+                return make_fs_stat_attr(0, 0, file_mode)
+            end
+            return nil
+        end,
+    }, function()
+        local result = audit_probe.inspect_audit_log_files({ max_mode = '0600' })
+        assert(result.count == 1, 'Expected 0644 file to violate max_mode "0600"')
+        assert(result.details[1].path == '/var/log/audit/audit.log', 'Expected audit.log in details')
+
+        -- A 0600 file must be compliant under the same string parameter.
+        file_mode = tonumber('600', 8)
+        local result2 = audit_probe.inspect_audit_log_files({ max_mode = '0600' })
+        assert(result2.count == 0, 'Expected 0600 file to be compliant under max_mode "0600"')
+    end)
+end
+
+function test_inspect_audit_log_files_returns_available_false_when_lfs_dir_raises()
+    with_dependencies({
+        lfs_dir = function()
+            error('cannot open /var/log/audit: No such file or directory')
+        end,
+    }, function()
+        local result = audit_probe.inspect_audit_log_files({ max_mode = tonumber('600', 8) })
+        assert(result.available == false, 'Expected available=false when lfs.dir raises')
+        assert(result.count == 0, 'Expected count=0 when lfs.dir raises')
+    end)
+end
+
+function test_inspect_audit_config_files_returns_available_false_when_dir_missing()
+    with_dependencies({
+        lfs_dir = function()
+            return nil
+        end,
+    }, function()
+        local result = audit_probe.inspect_audit_config_files({})
+        assert(result.available == false, 'Expected available=false when audit config dir does not exist')
+        assert(result.count == 0, 'Expected count=0 when directory is inaccessible')
+    end)
+end
+
+function test_inspect_audit_config_files_returns_available_false_when_lfs_dir_raises()
+    with_dependencies({
+        lfs_dir = function()
+            error('cannot open /etc/audit: No such file or directory')
+        end,
+    }, function()
+        local result = audit_probe.inspect_audit_config_files({})
+        assert(result.available == false, 'Expected available=false when lfs.dir raises')
+        assert(result.count == 0, 'Expected count=0 when lfs.dir raises')
+    end)
+end
+
+function test_inspect_audit_config_files_skips_directories()
+    with_dependencies({
+        lfs_dir = function()
+            local names = { '.', '..', 'audit.rules', 'rules.d' }
+            local i = 0
+            return function()
+                i = i + 1
+                return names[i]
+            end
+        end,
+        lfs_attributes = function(path)
+            if path == '/etc/audit/rules.d' then
+                return { mode = 'directory' }
+            end
+            return { mode = 'file' }
+        end,
+        fs_stat = function(path)
+            if path == '/etc/audit/audit.rules' then
+                return make_fs_stat_attr(0, 0, tonumber('644', 8))
+            end
+            if path == '/etc/audit/rules.d' then
+                return make_fs_stat_attr(0, 0, tonumber('755', 8))
+            end
+            return nil
+        end,
+    }, function()
+        local result = audit_probe.inspect_audit_config_files({ max_mode = '0640' })
+        assert(result.count == 1, 'Expected only the rules file to be flagged, not the rules.d directory')
+        assert(result.details[1].path == '/etc/audit/audit.rules', 'Expected audit.rules in details')
+    end)
+end

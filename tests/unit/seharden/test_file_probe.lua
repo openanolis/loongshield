@@ -599,3 +599,107 @@ function test_parse_systemd_key_values_effective_merges_section_aware_dropins()
         assert(result.Compress == "yes", "Expected later lexicographic drop-ins to override main config")
     end)
 end
+
+--------------------------------------------------------------------------------
+-- find_world_writable / find_unowned (per-mount scans)
+--------------------------------------------------------------------------------
+
+local function read_handle_for(content)
+    return {
+        read = function()
+            return content
+        end,
+        close = function() end,
+    }
+end
+
+local MOUNTS_CONTENT = table.concat({
+    'rootfs / ext4 rw,relatime 0 0',
+    'tmpfs /run tmpfs rw,nosuid 0 0',
+    'proc /proc proc rw 0 0',
+    '/dev/sda2 /home xfs rw,relatime 0 0',
+}, '\n') .. '\n'
+
+function test_find_world_writable_scans_each_local_mount()
+    local commands = {}
+    with_dependencies({
+        io_open = function(path, mode)
+            assert(path == '/proc/mounts', 'Expected to read /proc/mounts')
+            return handle_for(MOUNTS_CONTENT)
+        end,
+        io_popen = function(cmd)
+            commands[#commands + 1] = cmd
+            if cmd:find("find '/home'", 1, true) then
+                return read_handle_for('/home/b\n')
+            end
+            if cmd:find("find '/'", 1, true) then
+                return read_handle_for('/tmp/a\n')
+            end
+            return read_handle_for('')
+        end,
+    }, function()
+        local result = file_probe.find_world_writable({ max_results = 10 })
+        assert(result.available == true, 'Expected scan to be available')
+        assert(result.count == 2, 'Expected findings from both local mounts, got: ' .. tostring(result.count))
+        assert(commands[1]:find("find '/' -xdev", 1, true), 'Expected first scan on root mount')
+        assert(commands[2]:find("find '/home' -xdev", 1, true), 'Expected second scan on /home mount')
+        assert(#commands == 2, 'Expected one find per local mount (virtual mounts skipped), got: ' .. tostring(#commands))
+    end)
+end
+
+function test_find_world_writable_truncates_across_mounts()
+    with_dependencies({
+        io_open = function(path, mode)
+            assert(path == '/proc/mounts', 'Expected to read /proc/mounts')
+            return handle_for(MOUNTS_CONTENT)
+        end,
+        io_popen = function(cmd)
+            if cmd:find("find '/home'", 1, true) then
+                return read_handle_for('/home/3\n/home/4\n')
+            end
+            if cmd:find("find '/'", 1, true) then
+                return read_handle_for('/tmp/1\n/tmp/2\n')
+            end
+            return read_handle_for('')
+        end,
+    }, function()
+        local result = file_probe.find_world_writable({ max_results = 3 })
+        assert(result.available == true, 'Expected scan to be available')
+        assert(result.truncated == true, 'Expected truncated flag when results exceed max_results')
+        assert(result.count == 3, 'Expected max_results findings, got: ' .. tostring(result.count))
+    end)
+end
+
+function test_find_unowned_scans_local_mounts_only()
+    local commands = {}
+    with_dependencies({
+        io_open = function(path, mode)
+            assert(path == '/proc/mounts', 'Expected to read /proc/mounts')
+            return handle_for(MOUNTS_CONTENT)
+        end,
+        io_popen = function(cmd)
+            commands[#commands + 1] = cmd
+            if cmd:find("find '/'", 1, true) then
+                return read_handle_for('/tmp/orphan\n')
+            end
+            return read_handle_for('')
+        end,
+    }, function()
+        local result = file_probe.find_unowned()
+        assert(result.available == true, 'Expected scan to be available')
+        assert(result.count == 1, 'Expected one orphaned file')
+        assert(commands[1]:find(' -nouser -o -nogroup ', 1, true), 'Expected unowned predicate')
+        assert(#commands == 2, 'Expected one find per local mount (root + /home), got: ' .. tostring(#commands))
+    end)
+end
+
+function test_find_world_writable_unavailable_when_mounts_unreadable()
+    with_dependencies({
+        io_open = function()
+            return nil
+        end,
+    }, function()
+        local result = file_probe.find_world_writable()
+        assert(result.available == false, 'Expected available=false when /proc/mounts cannot be read')
+    end)
+end

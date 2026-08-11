@@ -1,9 +1,13 @@
+local log = require('runtime.log')
 local text = require('seharden.shared.text')
+local lfs = require('lfs')
 
 local M = {}
 
 local _default_dependencies = {
     io_popen = io.popen,
+    io_open = io.open,
+    lfs_dir = lfs and lfs.dir or nil,
 }
 
 local _dependencies = {}
@@ -18,6 +22,27 @@ end
 M._test_set_dependencies()
 
 local shell_escape = text.shell_escape
+
+--- Read a whole file, or nil when it cannot be opened.
+local function read_file(path)
+    local f = _dependencies.io_open(path, 'r')
+    if not f then
+        return nil
+    end
+    local content = f:read('*a')
+    f:close()
+    return content
+end
+
+--- Heuristic check for SSH allowance in a firewalld zone XML file.
+-- Matches <service name="ssh"/> and <port port="22" protocol="tcp"/> with
+-- attributes in either order; firewalld writes these files canonically.
+-- Rich rules opening SSH are not covered by this heuristic.
+local function zone_xml_allows_ssh(xml)
+    return xml:match('service[^>]*name="ssh"')
+        or xml:match('port[^>]*port="22"[^>]*protocol="tcp"')
+        or xml:match('port[^>]*protocol="tcp"[^>]*port="22"')
+end
 
 local function zone_option(zone)
     return '--zone=' .. shell_escape(zone)
@@ -180,6 +205,50 @@ function M.inspect_active_zone_targets()
         violation_count = #violations,
         details = violations,
     }
+end
+
+--- Check whether firewalld allows SSH in its on-disk zone configuration.
+-- Reads zone XML files from /etc/firewalld/zones and the packaged defaults in
+-- /usr/lib/firewalld/zones, so the check works while firewalld is stopped
+-- (the scenario in which rule 3.3.1 needs to reinforce). When the
+-- configuration cannot be inspected (e.g. firewalld is not installed), returns
+-- false so the `no_ssh_service` guard fails closed and skips reinforcement.
+-- Returns: true, reason  when SSH is configured in firewalld
+--          false          when SSH is not found or config is unavailable
+function M.has_ssh_service(_params)
+    local zone_dirs = _dependencies.firewalld_zone_dirs
+        or { '/etc/firewalld/zones', '/usr/lib/firewalld/zones' }
+
+    for _, dir in ipairs(zone_dirs) do
+        local ok, iter, dir_obj = pcall(_dependencies.lfs_dir, dir)
+        if ok and iter then
+            for name in iter, dir_obj do
+                if name:match('%.xml$') then
+                    local content = read_file(dir .. '/' .. name)
+                    if content and zone_xml_allows_ssh(content) then
+                        return true, string.format('firewalld zone %s allows SSH in %s', name, dir)
+                    end
+                end
+            end
+        end
+    end
+
+    log.debug('firewalld.has_ssh_service: no SSH service/port in on-disk zone configuration')
+    return false
+end
+
+--- Check whether firewalld has NO SSH service or port 22 allowed in any active zone.
+-- Inverse of `has_ssh_service`, for use as a lockout-protection reinforce guard:
+-- returns truthy when enabling firewalld would drop SSH access, so that
+-- `evaluate_guard()` (truthy = skip) skips the enable/start reinforcement.
+-- Returns: true, reason  when SSH is NOT found (reinforce should be skipped)
+--          false          when SSH is configured in firewalld
+function M.no_ssh_service(params)
+    local found = M.has_ssh_service(params)
+    if found then
+        return false
+    end
+    return true, 'firewalld has no SSH service or port 22 in an active zone'
 end
 
 return M

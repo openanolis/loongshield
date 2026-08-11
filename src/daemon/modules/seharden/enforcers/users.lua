@@ -563,4 +563,18 @@ function M.fix_dotfiles(params)
     return true
 end
 
+--- Run pwconv to ensure /etc/passwd uses shadowed passwords.
+-- pwconv(8) synchronises /etc/passwd and /etc/shadow so that every
+-- account has an 'x' placeholder in /etc/passwd and the real hash
+-- (or lock marker) in /etc/shadow.  Idempotent.
+function M.convert_to_shadow_passwords(_params)
+    local cmd = 'pwconv'
+    log.info('users.convert_to_shadow_passwords: running %s', cmd)
+    local ok, _, code = _dependencies.os_execute(cmd)
+    if not ok and code ~= 0 then
+        return nil, string.format('users.convert_to_shadow_passwords: %s failed (exit %s)', cmd, tostring(code))
+    end
+    return true
+end
+
 return M

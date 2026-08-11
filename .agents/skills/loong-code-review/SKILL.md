@@ -16,6 +16,25 @@ There are two modes, both anchored at the current checkout:
 - `files <path[:lines] ...>` reviews working-tree file contents, optionally
   narrowed to line ranges.
 
+## Qoder Adaptation
+
+When running under Qoder on Windows (not Codex on Linux), deterministic bash
+scripts execute on a remote Alinux4 VM via SSH. Qoder performs the persona
+review itself, replacing the `codex exec` step.
+
+**VM connection details** (adjust the hostname/IP to match your environment):
+
+```
+# SSH target for the review VM (key-based auth)
+LCR_VM_HOST=root@192.168.86.110
+
+# Wrapper script on the VM (installed by setup)
+LCR_VM_REVIEW=/root/loongshield-review.sh
+```
+
+> If running on a Linux host with bash, python3, and git, use the native Pipeline
+> directly and ignore this Qoder section.
+
 ## Interface
 
 The skill receives one raw argument string beginning with a mode word:
@@ -58,6 +77,27 @@ SKILL="$(git rev-parse --show-toplevel)/.agents/skills/loong-code-review"
 8. Consolidate comments that share one root cause by pointing their fixes at the shared remedy.
 9. Replace `<!-- SUMMARY -->` with a concise summary of strengths, top issues by severity, and structural recommendations.
 
+### Qoder Pipeline Steps
+
+When running under Qoder, adapt the pipeline above as follows:
+
+1. **Resolve target** — Execute on the remote VM via SSH:
+   - `ssh $LCR_VM_HOST "$LCR_VM_REVIEW resolve-meta '<raw args>'" > review-meta`
+   - `ssh $LCR_VM_HOST "$LCR_VM_REVIEW resolve-input '<raw args>'" > review-input`
+   - Pull the meta file back and append `date=YYYY-MM-DD`.
+2. **Activate personas** — Same path rules as native pipeline (see below).
+3. **Build pass prompt** — Execute on the remote VM and capture stdout:
+   - `ssh $LCR_VM_HOST "$LCR_VM_REVIEW build-prompt review-input correctness"`
+4. **Spawn persona passes** — Qoder reads the prompt from step 3 and produces
+   JSON directly. See "Qoder Spawning" for details.
+5. **Save JSON fragments** — Write each persona's JSON to the VM:
+   - `cat persona.json | ssh $LCR_VM_HOST "mkdir -p /tmp/frags && cat > /tmp/frags/correctness.json"`
+6. **Assemble** — Execute on the remote VM, then pull back the result:
+   - `ssh $LCR_VM_HOST "$LCR_VM_REVIEW assemble [--overwrite] review-meta /tmp/frags review.md"`
+   - `scp $LCR_VM_HOST:/root/loongshield/review.md .`
+7-9. **Verify, consolidate, fill Summary** — Qoder performs these locally on
+   the assembled review, following the same rules as the native pipeline.
+
 ## Activation
 
 Reviewed paths are changed paths in `diff` mode and named paths in `files` mode.
@@ -86,6 +126,20 @@ codex exec "$prompt" > "$fragdir/correctness.json"
 Do not spawn a pass by re-running `loong_code_review.sh` or `run_agent.sh` from
 inside the skill. A persona pass receives a built prompt, not the skill arguments.
 
+### Qoder Spawning
+
+For Qoder, do not invoke `codex exec`. Instead, for each activated persona:
+
+1. Build the pass prompt on the VM and capture its output:
+   `prompt=$(ssh $LCR_VM_HOST "$LCR_VM_REVIEW build-prompt review-input correctness")`
+2. Read the prompt (Pass Contract + persona guidance + review input).
+3. Perform the persona review using Qoder's own reasoning, following the
+   `pass_contract.md` output format (JSON array of comment objects).
+4. Write the JSON array to a file, then transfer it to the VM via SSH:
+   `cat persona.json | ssh $LCR_VM_HOST "mkdir -p /tmp/frags && cat > /tmp/frags/correctness.json"`
+
+Do not run the review by re-invoking the whole skill from within a persona pass.
+
 ## Verification
 
 For each comment, isolate the premise and try to refute it by rereading the cited
@@ -96,6 +150,10 @@ code and relevant docs or authoritative platform references. Assign:
 - `refuted`: remove it and add a `## Retracted by verification` note with a one-line reason.
 
 Remove only on confident refutation.
+
+When running under Qoder, the reviewed code lives on the VM, not the local
+filesystem. To verify a comment, read the relevant file from the VM:
+`ssh $LCR_VM_HOST "cat /root/loongshield/src/main.c"`
 
 ## Output Format
 

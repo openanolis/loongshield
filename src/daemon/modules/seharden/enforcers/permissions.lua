@@ -51,6 +51,20 @@ local function parse_numeric_id(value, field_name, context)
     return parsed
 end
 
+--- Parse a mode parameter as octal when given as a string.
+-- Profiles pass modes as quoted strings ("0600") because unquoted leading-0
+-- integers are read by lyaml as decimal (600); numeric values (tests, legacy
+-- callers) are used as-is. Returns nil for invalid values.
+local function parse_mode_param(value)
+    if value == nil then
+        return nil
+    end
+    if type(value) == 'number' then
+        return value
+    end
+    return tonumber(value, 8)
+end
+
 -- Set file ownership and/or permissions. Idempotent (checks before writing).
 -- params: { path, uid (number, optional), gid (number, optional), mode (octal number, optional) }
 function M.set_attributes(params)
@@ -95,7 +109,7 @@ function M.set_attributes(params)
 
     -- chmod if mode specified
     if params.mode ~= nil then
-        local want_mode = tonumber(params.mode)
+        local want_mode = parse_mode_param(params.mode)
         if not want_mode then
             return nil, string.format("permissions.set_attributes: invalid mode '%s'", tostring(params.mode))
         end
@@ -131,7 +145,7 @@ function M.set_attributes_for_all(params)
 
     local want_mode
     if params.mode ~= nil then
-        want_mode = tonumber(params.mode)
+        want_mode = parse_mode_param(params.mode)
         if not want_mode then
             return nil, string.format("permissions.set_attributes_for_all: invalid mode '%s'", tostring(params.mode))
         end
@@ -242,6 +256,333 @@ function M.set_attributes_for_all(params)
         'permissions.set_attributes_for_all: changed %d, already compliant %d, skipped symlink %d, missing %d',
         changed,
         already_compliant,
+        skipped_symlink,
+        skipped_missing
+    )
+    return true
+end
+
+--------------------------------------------------------------------------------
+-- World-writable and unowned file fix helpers
+--------------------------------------------------------------------------------
+
+local WORLD_WRITABLE_BIT = tonumber('0002', 8)
+local STICKY_BIT = tonumber('1000', 8)
+local SUID_BIT = tonumber('4000', 8)
+local SGID_BIT = tonumber('2000', 8)
+
+--- Special filesystem entries that must never be chmod'd/chown'd blindly.
+local SPECIAL_MODES = {
+    ['socket'] = true,
+    ['fifo'] = true,
+    ['device'] = true,
+    ['block device'] = true,
+}
+
+local function is_special_entry(lfs_attr)
+    return lfs_attr ~= nil and SPECIAL_MODES[lfs_attr.mode] == true
+end
+
+local function has_setid_bit(mode)
+    return mode % (SUID_BIT * 2) >= SUID_BIT or mode % (SGID_BIT * 2) >= SGID_BIT
+end
+
+--- Remove world-writable permission from a list of paths (conservative).
+-- Directories only gain the sticky bit (their world-writable permission is
+-- kept, since services may depend on it); regular files lose the
+-- world-writable bit. Setuid/setgid files and special entries (sockets,
+-- fifos, devices) are skipped rather than modified.
+-- Idempotent: skips entries that are already compliant.
+-- params: { list = { details = { { path = "..." }, ... } } }
+function M.remove_world_writable(params)
+    if not params or not params.list then
+        return nil, 'permissions.remove_world_writable: requires list parameter'
+    end
+    local entries = params.list.details
+    if not entries or type(entries) ~= 'table' then
+        return nil, 'permissions.remove_world_writable: list.details must be a table'
+    end
+
+    local changed = 0
+    local skipped_symlink = 0
+    local skipped_missing = 0
+    local skipped_special = 0
+    local skipped_setid = 0
+    local errors = {}
+
+    for _, entry in ipairs(entries) do
+        local path = entry.path
+        if not path then
+            goto continue
+        end
+
+        if fsutil.is_symlink(path, _dependencies) then
+            skipped_symlink = skipped_symlink + 1
+            goto continue
+        end
+
+        local attr = _dependencies.fs_stat(path)
+        if not attr then
+            skipped_missing = skipped_missing + 1
+            goto continue
+        end
+
+        local file_attr = _dependencies.lfs_attributes(path)
+        if is_special_entry(file_attr) then
+            skipped_special = skipped_special + 1
+            goto continue
+        end
+
+        local current_mode = attr:mode()
+
+        if file_attr and file_attr.mode == 'directory' then
+            -- Directories: only ensure the sticky bit; keep permissions.
+            if current_mode % (STICKY_BIT * 2) >= STICKY_BIT then
+                goto continue
+            end
+            local new_mode = current_mode + STICKY_BIT
+            log.info('permissions.remove_world_writable: chmod %o %s (was %o)', new_mode, path, current_mode)
+            local ok, err = _dependencies.fs_chmod(path, new_mode)
+            if not ok then
+                errors[#errors + 1] = string.format("chmod failed on '%s': %s", path, tostring(err))
+                goto continue
+            end
+            changed = changed + 1
+            goto continue
+        end
+
+        -- Regular files: drop world-writable bit, skip setuid/setgid.
+        if current_mode % (WORLD_WRITABLE_BIT * 2) < WORLD_WRITABLE_BIT then
+            -- Not world-writable, already compliant
+            goto continue
+        end
+        if has_setid_bit(current_mode) then
+            skipped_setid = skipped_setid + 1
+            goto continue
+        end
+
+        local new_mode = current_mode - WORLD_WRITABLE_BIT
+        log.info('permissions.remove_world_writable: chmod %o %s (was %o)', new_mode, path, current_mode)
+        local ok, err = _dependencies.fs_chmod(path, new_mode)
+        if not ok then
+            errors[#errors + 1] = string.format("chmod failed on '%s': %s", path, tostring(err))
+            goto continue
+        end
+        changed = changed + 1
+
+        ::continue::
+    end
+
+    if #errors > 0 then
+        return nil,
+            string.format('permissions.remove_world_writable: %d error(s): %s', #errors, table.concat(errors, '; '))
+    end
+
+    log.info(
+        'permissions.remove_world_writable: changed %d, skipped symlink %d, missing %d, special %d, setid %d',
+        changed,
+        skipped_symlink,
+        skipped_missing,
+        skipped_special,
+        skipped_setid
+    )
+    return true
+end
+
+--- Load /etc/passwd uid -> primary gid map (numeric ids only).
+local function load_user_primary_gids()
+    local gids = {}
+    local f = _dependencies.io_open('/etc/passwd', 'r')
+    if not f then
+        return gids
+    end
+    for line in f:lines() do
+        local uid, gid = line:match('^[^:]+:[^:]*:(%d+):(%d+)')
+        if uid then
+            gids[tonumber(uid)] = tonumber(gid)
+        end
+    end
+    f:close()
+    return gids
+end
+
+--- Load the set of group ids that exist in /etc/group.
+local function load_group_ids()
+    local ids = {}
+    local f = _dependencies.io_open('/etc/group', 'r')
+    if not f then
+        return ids
+    end
+    for line in f:lines() do
+        local gid = line:match('^[^:]+:[^:]*:(%d+)')
+        if gid then
+            ids[tonumber(gid)] = true
+        end
+    end
+    f:close()
+    return ids
+end
+
+--- Assign ownership to a list of unowned paths (conservative).
+-- Only the missing half of the ownership is repaired: an unowned uid is set
+-- to root (gid kept), an ungrouped gid is set to the owner's primary group
+-- from /etc/passwd (falling back to the `users` gid 100). Setuid/setgid
+-- files and special entries are skipped rather than modified.
+-- Idempotent: skips entries that are already fully owned.
+-- params: { list = { details = { { path = "..." }, ... } } }
+function M.fix_unowned(params)
+    if not params or not params.list then
+        return nil, 'permissions.fix_unowned: requires list parameter'
+    end
+    local entries = params.list.details
+    if not entries or type(entries) ~= 'table' then
+        return nil, 'permissions.fix_unowned: list.details must be a table'
+    end
+
+    local user_primary_gids = load_user_primary_gids()
+    local known_group_ids = load_group_ids()
+
+    local changed = 0
+    local skipped_symlink = 0
+    local skipped_missing = 0
+    local skipped_special = 0
+    local skipped_setid = 0
+    local errors = {}
+
+    for _, entry in ipairs(entries) do
+        local path = entry.path
+        if not path then
+            goto continue
+        end
+
+        if fsutil.is_symlink(path, _dependencies) then
+            skipped_symlink = skipped_symlink + 1
+            goto continue
+        end
+
+        local attr = _dependencies.fs_stat(path)
+        if not attr then
+            skipped_missing = skipped_missing + 1
+            goto continue
+        end
+
+        local file_attr = _dependencies.lfs_attributes(path)
+        if is_special_entry(file_attr) then
+            skipped_special = skipped_special + 1
+            goto continue
+        end
+        if has_setid_bit(attr:mode()) then
+            skipped_setid = skipped_setid + 1
+            goto continue
+        end
+
+        local uid = attr:uid()
+        local gid = attr:gid()
+        local uid_known = uid == 0 or user_primary_gids[uid] ~= nil
+        local gid_known = gid == 0 or known_group_ids[gid] == true
+        if uid_known and gid_known then
+            -- Fully owned already (or the probe listed it conservatively).
+            goto continue
+        end
+
+        local want_uid = uid_known and uid or 0
+        local want_gid = gid_known and gid or (user_primary_gids[uid] or 100)
+
+        log.info('permissions.fix_unowned: chown %d:%d %s (was %d:%d)', want_uid, want_gid, path, uid, gid)
+        local ok, err = _dependencies.fs_chown(path, want_uid, want_gid)
+        if not ok then
+            errors[#errors + 1] = string.format("chown failed on '%s': %s", path, tostring(err))
+            goto continue
+        end
+        changed = changed + 1
+
+        ::continue::
+    end
+
+    if #errors > 0 then
+        return nil, string.format('permissions.fix_unowned: %d error(s): %s', #errors, table.concat(errors, '; '))
+    end
+
+    log.info(
+        'permissions.fix_unowned: changed %d, skipped symlink %d, missing %d, special %d, setid %d',
+        changed,
+        skipped_symlink,
+        skipped_missing,
+        skipped_special,
+        skipped_setid
+    )
+    return true
+end
+
+--------------------------------------------------------------------------------
+-- Ownership fix helper (uid/gid only, no mode change)
+--------------------------------------------------------------------------------
+
+--- Assign ownership (uid/gid) to a list of paths without changing mode.
+-- Idempotent: skips files already owned by the target uid:gid.
+-- params: { list = { details = { { path = "..." }, ... } }, uid (default 0), gid (default 0) }
+function M.fix_ownership(params)
+    if not params or not params.list then
+        return nil, 'permissions.fix_ownership: requires list parameter'
+    end
+    local entries = params.list.details
+    if not entries or type(entries) ~= 'table' then
+        return nil, 'permissions.fix_ownership: list.details must be a table'
+    end
+
+    local want_uid, uid_err = parse_numeric_id(params.uid or 0, 'uid', 'permissions.fix_ownership')
+    if uid_err then
+        return nil, uid_err
+    end
+    local want_gid, gid_err = parse_numeric_id(params.gid or 0, 'gid', 'permissions.fix_ownership')
+    if gid_err then
+        return nil, gid_err
+    end
+
+    local changed = 0
+    local skipped_symlink = 0
+    local skipped_missing = 0
+    local errors = {}
+
+    for _, entry in ipairs(entries) do
+        local path = entry.path
+        if not path then
+            goto continue
+        end
+
+        if fsutil.is_symlink(path, _dependencies) then
+            skipped_symlink = skipped_symlink + 1
+            goto continue
+        end
+
+        local attr = _dependencies.fs_stat(path)
+        if not attr then
+            skipped_missing = skipped_missing + 1
+            goto continue
+        end
+
+        if attr:uid() == want_uid and attr:gid() == want_gid then
+            goto continue
+        end
+
+        log.info('permissions.fix_ownership: chown %d:%d %s (was %d:%d)', want_uid, want_gid, path, attr:uid(), attr:gid())
+        local ok, err = _dependencies.fs_chown(path, want_uid, want_gid)
+        if not ok then
+            errors[#errors + 1] = string.format("chown failed on '%s': %s", path, tostring(err))
+            goto continue
+        end
+        changed = changed + 1
+
+        ::continue::
+    end
+
+    if #errors > 0 then
+        return nil, string.format('permissions.fix_ownership: %d error(s): %s', #errors, table.concat(errors, '; '))
+    end
+
+    log.info(
+        'permissions.fix_ownership: changed %d, skipped symlink %d, missing %d',
+        changed,
         skipped_symlink,
         skipped_missing
     )

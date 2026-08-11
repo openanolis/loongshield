@@ -8,13 +8,23 @@ All notable changes to this project will be documented in this file.
 - None yet.
 
 ### Added
-- None yet.
+- CIS AL3: added reinforce actions for mount options, PAM, SSH, firewalld, and file permissions rules.
+- CIS AL3: added reinforce_guard for SSH legacy detection, sudo user, console access, and firewalld SSH check.
+- CIS AL3: added rules 6.3.4.1, 6.3.4.2, 6.3.4.3, 7.1.11, 7.1.12, 7.2.1.
+- CIS AL3: expanded manual_review_required with 20+ entries.
+- `permissions.fix_ownership` enforcer for ownership-only remediation (no mode change).
+- `pam.remove_option` now supports `option_prefix` for prefix-based matching (e.g. `remember=`).
+- Rules 7.1.11/7.1.12 reinforce with conservative semantics: directories only gain the sticky bit, setuid/setgid and special files are skipped, and ungrouped files get their owner's primary group.
 
 ### Changed
-- None yet.
+- CIS AL3 profile version bumped to 0.0.4 with reinforce actions and new rules.
 
 ### Fixed
-- None yet.
+- New audit probes `inspect_audit_log_files` / `inspect_audit_config_files` return `available=false` when the audit directories do not exist (fail-closed) and skip subdirectories so only regular files are reported and reinforced.
+- CIS 6.3.4.3 reinforce uses `permissions.fix_ownership` instead of `set_attributes_for_all` (no longer requires mode).
+- CIS 5.3.3.4.2 reinforce uses `option_prefix` to remove any `remember=N` value, not just `remember=5`.
+- firewalld `has_ssh_service` now inspects the on-disk zone configuration with exact service/port token matching, so it works while firewalld is stopped and no longer matches ports such as 1022/tcp.
+- `pam.ensure_entry` now follows symlinks (e.g. authselect-managed PAM files) instead of refusing them, applying changes to the resolved target file.
 
 ## [1.2.2] - 2026-07-09
 
