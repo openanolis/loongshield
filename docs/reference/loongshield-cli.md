@@ -24,6 +24,7 @@ Local builds produce the binary at `build/src/daemon/loongshield`. Installed sys
 - `seharden`: audit or reinforce a security profile.
 - `rpm`: verify an installed RPM against a remote SBOM.
 - `lua-lsm`: inspect and manage Lua-LSM policies through securityfs.
+- `filedist`: distribute arbitrary regular files over HTTP.
 
 Run subcommand help directly:
 
@@ -40,6 +41,7 @@ loongshield version
 loongshield seharden --config agentos_baseline
 loongshield rpm --verify bash
 loongshield lua-lsm status
+loongshield filedist --help
 ```
 
 ## Documentation Map
@@ -48,3 +50,4 @@ loongshield lua-lsm status
 - SEHarden profile format: [seharden-profile-format.md](./seharden-profile-format.md)
 - RPM verification usage: [rpm-cli.md](./rpm-cli.md)
 - Lua-LSM usage: [lua-lsm-cli.md](./lua-lsm-cli.md)
+- File distribution usage: [filedist-cli.md](./filedist-cli.md)

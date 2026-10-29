@@ -232,6 +232,7 @@ function test_top_level_cli_help_version_and_error_paths()
     assert_contains(help_output, 'version       Show loongshield version information')
     assert_contains(help_output, 'seharden      OS Security benchmarks & hardening')
     assert_contains(help_output, 'rpm           RPM package SBOM verification')
+    assert_contains(help_output, 'filedist      File distribution over HTTP')
 
     local version_code, version_output = run_loongshield({ 'version' })
     assert(version_code == 0, 'Expected version command to exit 0')

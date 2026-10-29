@@ -31,16 +31,19 @@ function M.is_safe_name(name)
         if segment == '.' or segment == '..' then
             return false
         end
-        if not segment:match('^[%w%-%_%.]+$') then
+        if segment:find('%c') then
             return false
         end
     end
     return true
 end
 
---- Only policies and public keys are distributed.
-local function is_served_file(name)
-    return name:match('%.lua$') ~= nil or name:match('%.pub$') ~= nil
+local function allowed_file(name, opts)
+    local file_filter = opts and opts.file_filter
+    if type(file_filter) ~= 'function' then
+        return false
+    end
+    return file_filter(name) == true
 end
 
 --- Reject symlinks: `lfs.attributes` follows them, so use
@@ -53,7 +56,7 @@ local function entry_mode(path)
     return lfs.attributes(path, 'mode')
 end
 
-function M.list_files(dir)
+function M.list_files(dir, opts)
     local files = {}
 
     local function walk(path, prefix)
@@ -64,7 +67,7 @@ function M.list_files(dir)
                 local mode = entry_mode(full)
                 if mode == 'directory' then
                     walk(full, relative .. '/')
-                elseif mode == 'file' and is_served_file(relative) then
+                elseif mode == 'file' and allowed_file(relative, opts) then
                     files[#files + 1] = {
                         name = relative,
                         size = lfs.attributes(full, 'size') or 0,
@@ -94,9 +97,9 @@ local function respond(client, status, reason, body, content_type)
     end)
 end
 
---- Serve a policy directory over plain HTTP. GET / returns the file index as
---- JSON; GET /<name> returns one file. Only `.lua` and `.pub` files inside
---- the directory are served; symlinks are rejected. Runs until stopped.
+--- Serve a directory over plain HTTP. GET / returns the file index as JSON;
+--- GET /<name> returns one file selected by the caller's filter. Symlinks are
+--- rejected. Runs until stopped.
 function M.serve(opts)
     opts = opts or {}
     local dir = opts.dir
@@ -104,10 +107,10 @@ function M.serve(opts)
     local host = opts.host or '0.0.0.0'
 
     if type(dir) ~= 'string' or dir == '' then
-        return nil, 'server requires --dir <policy-directory>'
+        return nil, 'server requires --dir <file-directory>'
     end
     if lfs.attributes(dir, 'mode') ~= 'directory' then
-        return nil, 'policy directory not found: ' .. dir
+        return nil, 'file directory not found: ' .. dir
     end
 
     local server = luv.new_tcp()
@@ -138,7 +141,7 @@ function M.serve(opts)
 
             path = url_decode(path:match('^([^?]*)'))
             if path == '/' then
-                local index = cjson.encode({ files = M.list_files(dir) })
+                local index = cjson.encode({ files = M.list_files(dir, opts) })
                 respond(client, 200, 'OK', index, 'application/json')
                 return
             end
@@ -148,7 +151,7 @@ function M.serve(opts)
                 respond(client, 400, 'Bad Request', 'path traversal rejected\n', 'text/plain')
                 return
             end
-            if not is_served_file(name) then
+            if not allowed_file(name, opts) then
                 respond(client, 404, 'Not Found', 'not a distributable file: ' .. name .. '\n', 'text/plain')
                 return
             end
@@ -245,11 +248,11 @@ local function http_get(url)
     return body
 end
 
---- Validate a server-provided policy index before anything is fetched or
+--- Validate a server-provided file index before anything is fetched or
 --- written. Every entry must be a safe relative path and unique.
-function M.validate_index(index)
+function M.validate_index(index, opts)
     if type(index) ~= 'table' or type(index.files) ~= 'table' then
-        return nil, 'invalid policy index: files must be a list'
+        return nil, 'invalid file index: files must be a list'
     end
 
     local count = 0
@@ -259,22 +262,25 @@ function M.validate_index(index)
 
     for key in pairs(index.files) do
         if type(key) ~= 'number' or key < 1 or key > count or key % 1 ~= 0 then
-            return nil, 'invalid policy index: files must be a list'
+            return nil, 'invalid file index: files must be a list'
         end
     end
 
     if count == 0 then
-        return nil, 'invalid policy index: empty file list'
+        return nil, 'invalid file index: empty file list'
     end
 
     local seen = {}
     for i = 1, count do
         local file = index.files[i]
         if type(file) ~= 'table' or not M.is_safe_name(file.name) then
-            return nil, 'invalid policy index entry ' .. i .. ': unsafe file name'
+            return nil, 'invalid file index entry ' .. i .. ': unsafe file name'
+        end
+        if not allowed_file(file.name, opts) then
+            return nil, 'invalid file index entry ' .. i .. ': not a distributable file'
         end
         if seen[file.name] then
-            return nil, 'invalid policy index: duplicate file name ' .. file.name
+            return nil, 'invalid file index: duplicate file name ' .. file.name
         end
         seen[file.name] = true
     end
@@ -282,11 +288,11 @@ function M.validate_index(index)
     return count
 end
 
---- Pull one file, or a whole policy directory when the URL ends with '/'.
+--- Pull one file, or a whole file directory when the URL ends with '/'.
 --- Must run inside a coroutine with the libuv loop running.
 function M.pull(url, opts)
     opts = opts or {}
-    local output_dir = normalize_dir(opts.output_dir or '/etc/loongshield/lua-lsm')
+    local output_dir = normalize_dir(opts.output_dir or '/var/lib/loongshield/filedist')
 
     if url:sub(-1) == '/' then
         local index_body, index_err = http_get(url)
@@ -296,10 +302,10 @@ function M.pull(url, opts)
 
         local decoded, decode_err = cjson.decode(index_body)
         if not decoded then
-            return nil, 'invalid policy index from ' .. url .. ': ' .. tostring(decode_err)
+            return nil, 'invalid file index from ' .. url .. ': ' .. tostring(decode_err)
         end
 
-        local count, validate_err = M.validate_index(decoded)
+        local count, validate_err = M.validate_index(decoded, opts)
         if not count then
             return nil, validate_err
         end
@@ -323,6 +329,9 @@ function M.pull(url, opts)
     local name = url:match('([^/?#]+)$')
     if not M.is_safe_name(name) then
         return nil, 'unsafe file name in pull URL: ' .. tostring(name)
+    end
+    if not allowed_file(name, opts) then
+        return nil, 'not a distributable file: ' .. name
     end
 
     local body, fetch_err = http_get(url)

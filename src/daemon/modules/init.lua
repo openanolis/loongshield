@@ -9,7 +9,8 @@ assert(type(envp) == 'table')
 local commands = {
     seharden = require('seharden'),
     rpm = require('rpm'),
-    ["lua-lsm"] = require('lua_lsm')
+    ['lua-lsm'] = require('lua_lsm'),
+    filedist = require('filedist'),
 }
 
 local function print_version()
@@ -24,22 +25,23 @@ local function print_version()
     \|_______|\|_______|\|_______|\|__| \|__|\|_______|\_________\|__|\|__|\|__|\|_______|\|_______|\|_______|
                                                       \|_________|
 ]]
-    local green = "\27[32m"
-    local reset = "\27[0m"
+    local green = '\27[32m'
+    local reset = '\27[0m'
     print(green .. banner .. reset)
-    print(string.format("loongshield %s  commit %s", version.version, version.commit))
+    print(string.format('loongshield %s  commit %s', version.version, version.commit))
 end
 
 local function print_usage()
-    print("Usage: loongshield <subcommand> [options]")
-    print("")
-    print("Subcommands:")
-    print("  version       Show loongshield version information")
-    print("  seharden      OS Security benchmarks & hardening")
-    print("  rpm           RPM package SBOM verification")
-    print("  lua-lsm       Lua-LSM policy management")
-    print("")
-    print("For help on a specific subcommand: loongshield <subcommand> --help")
+    print('Usage: loongshield <subcommand> [options]')
+    print('')
+    print('Subcommands:')
+    print('  version       Show loongshield version information')
+    print('  seharden      OS Security benchmarks & hardening')
+    print('  rpm           RPM package SBOM verification')
+    print('  lua-lsm       Lua-LSM policy management')
+    print('  filedist      File distribution over HTTP')
+    print('')
+    print('For help on a specific subcommand: loongshield <subcommand> --help')
 end
 
 if #argv < 2 then
@@ -49,12 +51,12 @@ end
 
 local subcommand = argv[2]
 
-if subcommand == "--help" or subcommand == "-h" then
+if subcommand == '--help' or subcommand == '-h' then
     print_usage()
     return 0
 end
 
-if subcommand == "version" then
+if subcommand == 'version' then
     print_version()
     return 0
 end
@@ -79,7 +81,6 @@ local success, result = pcall(function()
         return 1
     end
 end)
-
 
 if not success then
     log.error(string.format("Runtime error in '%s': %s", subcommand, tostring(result)))

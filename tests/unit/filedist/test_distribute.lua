@@ -1,14 +1,15 @@
-local distribute = require('lua_lsm.distribute')
+local distribute = require('filedist.distribute')
 
 local function assert_contains(haystack, needle)
     assert(tostring(haystack):find(needle, 1, true), 'Expected text to contain: ' .. needle)
 end
 
-function test_lua_lsm_distribute_safe_name_rules()
+function test_filedist_distribute_safe_name_rules()
     assert(distribute.is_safe_name('policy.lua'))
     assert(distribute.is_safe_name('policies/01-deny.lua'))
     assert(distribute.is_safe_name('sm2.pub'))
     assert(distribute.is_safe_name('policies.d/sub-dir_1/x.pub'))
+    assert(distribute.is_safe_name('ima policy.conf'))
 
     assert(not distribute.is_safe_name(''))
     assert(not distribute.is_safe_name(nil))
@@ -21,14 +22,14 @@ function test_lua_lsm_distribute_safe_name_rules()
     assert(not distribute.is_safe_name('a//b.lua'))
     assert(not distribute.is_safe_name('a/'))
     assert(not distribute.is_safe_name('a\\b.lua'))
-    assert(not distribute.is_safe_name('a b.lua'))
     assert(not distribute.is_safe_name('a\0b.lua'))
+    assert(not distribute.is_safe_name('a\nb.lua'))
 end
 
-function test_lua_lsm_distribute_list_files_uses_allowlist_and_skips_symlinks()
+function test_filedist_distribute_list_files_serves_any_regular_file()
     local base = os.getenv('TMPDIR') or '/tmp'
     local root = base
-        .. '/loongshield_distribute_test.'
+        .. '/loongshield_filedist_test.'
         .. tostring(os.time())
         .. '.'
         .. tostring(math.random(10000, 99999))
@@ -41,57 +42,72 @@ function test_lua_lsm_distribute_list_files_uses_allowlist_and_skips_symlinks()
         file:close()
     end
 
-    write(root .. '/policies/01-deny.lua', 'return {}')
-    write(root .. '/sm2.pub', 'public key')
-    write(root .. '/private.pem', 'private key material')
-    write(root .. '/secret.KEY', 'private key material')
-    assert(os.execute('ln -s ' .. root .. '/private.pem ' .. root .. '/leak.pub'))
-    assert(os.execute('ln -s ' .. root .. ' ' .. root .. '/self-loop'))
+    write(root .. '/policies/ima-policy', 'measure func=BPRM_CHECK\n')
+    write(root .. '/app.conf', 'enabled=true\n')
+    write(root .. '/binary.dat', '\0\1\255loongshield')
+    assert(os.execute('ln -s /etc/shadow ' .. root .. '/leak.conf'))
 
-    local files = distribute.list_files(root)
+    local files = distribute.list_files(root, {
+        file_filter = function()
+            return true
+        end,
+    })
 
     local names = {}
     for _, file in ipairs(files) do
         names[file.name] = true
     end
 
-    assert(names['policies/01-deny.lua'], 'Expected lua policy in index')
-    assert(names['sm2.pub'], 'Expected public key in index')
-    assert(not names['private.pem'], 'Private key must not be indexed')
-    assert(not names['secret.KEY'], 'Non-allowlisted extension must not be indexed')
-    assert(not names['leak.pub'], 'Symlink must not be indexed')
-    assert(not names['self-loop'], 'Directory symlink must not be indexed')
+    assert(names['policies/ima-policy'], 'Expected extensionless file in index')
+    assert(names['app.conf'], 'Expected config file in index')
+    assert(names['binary.dat'], 'Expected binary file in index')
+    assert(not names['leak.conf'], 'Symlink must not be indexed')
 
     os.execute('rm -rf ' .. root)
 end
 
-function test_lua_lsm_distribute_validate_index_rejects_unsafe_entries()
+function test_filedist_distribute_validate_index_rejects_unsafe_entries()
+    local all_files = {
+        file_filter = function()
+            return true
+        end,
+    }
+
     local count, err = distribute.validate_index({
         files = {
             { name = 'policies/01.lua' },
             { name = 'sm2.pub' },
         },
-    })
+    }, all_files)
     assert(count == 2, 'Expected valid index to pass: ' .. tostring(err))
 
-    count, err = distribute.validate_index({ files = { { name = '../../etc/cron.d/x' } } })
+    count, err = distribute.validate_index({ files = { { name = '../../etc/cron.d/x' } } }, all_files)
     assert(count == nil, 'Expected traversal to be rejected')
     assert_contains(err, 'unsafe file name')
 
-    count, err = distribute.validate_index({ files = { { name = 'a.lua' }, { name = 'a.lua' } } })
+    count, err = distribute.validate_index({ files = { { name = 'a.lua' }, { name = 'a.lua' } } }, all_files)
     assert(count == nil, 'Expected duplicates to be rejected')
     assert_contains(err, 'duplicate')
 
-    count, err = distribute.validate_index({ files = {} })
+    count, err = distribute.validate_index({ files = {} }, all_files)
     assert(count == nil, 'Expected empty index to be rejected')
     assert_contains(err, 'empty')
 
-    count, err = distribute.validate_index({ files = { { name = 'a.lua' }, nil, { name = 'b.lua' } } })
+    count, err = distribute.validate_index({ files = { { name = 'a.lua' }, nil, { name = 'b.lua' } } }, all_files)
     assert(count == nil, 'Expected holes to be rejected')
 
-    count, err = distribute.validate_index({ files = { { name = 'a.lua' }, extra = 1 } })
+    count, err = distribute.validate_index({ files = { { name = 'a.lua' }, extra = 1 } }, all_files)
     assert(count == nil, 'Expected non-array keys to be rejected')
 
-    count, err = distribute.validate_index({ files = 'not-a-table' })
+    count, err = distribute.validate_index({ files = 'not-a-table' }, all_files)
     assert(count == nil, 'Expected non-table files to be rejected')
+
+    count, err = distribute.validate_index({ files = { { name = 'secret.txt' } } })
+    assert(count == nil, 'Expected missing filter to be rejected')
+    assert_contains(err, 'not a distributable file')
+
+    count, err = distribute.validate_index({
+        files = { { name = 'secret.txt' } },
+    }, all_files)
+    assert(count == 1, 'Expected arbitrary file to pass with filedist filter: ' .. tostring(err))
 end

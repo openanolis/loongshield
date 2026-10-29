@@ -34,15 +34,6 @@ local function read_file(path)
     return content
 end
 
-local function file_exists(path)
-    local file = io.open(path, 'rb')
-    if file then
-        file:close()
-        return true
-    end
-    return false
-end
-
 local function run_loongshield(args, env)
     local parts = {}
     for key, value in pairs(env or {}) do
@@ -337,7 +328,7 @@ function test_lua_lsm_cli_loads_policy_directory_in_filename_order()
     end
 end
 
-function test_lua_lsm_cli_server_distributes_policies_and_keys()
+function test_lua_lsm_cli_loads_policies_distributed_by_filedist()
     local fixture = make_fixture()
     local ok, err = pcall(function()
         local server_dir = fixture.root .. '/server'
@@ -347,7 +338,6 @@ function test_lua_lsm_cli_server_distributes_policies_and_keys()
 
         local source = read_file(fixture.policy)
         write_file(server_dir .. '/policies/01-demo.lua', source)
-        write_file(server_dir .. '/sm2.pub', PUB_PEM)
 
         local sign_code, sign_output = run_loongshield(
             { 'lua-lsm', 'sign', server_dir .. '/policies/01-demo.lua', '--key', fixture.priv },
@@ -357,9 +347,8 @@ function test_lua_lsm_cli_server_distributes_policies_and_keys()
 
         local port = 18000 + math.random(0, 1999)
         local server_cmd = table.concat({
-            'LOONGSHIELD_LUA_LSM_SECURITYFS_ROOT=' .. shell_escape(fixture.lua_root),
             shell_escape(BIN),
-            'lua-lsm',
+            'filedist',
             'server',
             '--port',
             tostring(port),
@@ -375,7 +364,7 @@ function test_lua_lsm_cli_server_distributes_policies_and_keys()
         local pull_code, pull_output
         for _ = 1, 20 do
             pull_code, pull_output = run_loongshield(
-                { 'lua-lsm', 'pull', 'http://127.0.0.1:' .. port .. '/', '--dir', client_dir },
+                { 'filedist', 'pull', 'http://127.0.0.1:' .. port .. '/', '--dir', client_dir },
                 fixture.env
             )
             if pull_code == 0 then
@@ -390,7 +379,6 @@ function test_lua_lsm_cli_server_distributes_policies_and_keys()
             error('pull failed:\n' .. tostring(pull_output))
         end
 
-        assert(read_file(client_dir .. '/sm2.pub') == PUB_PEM, 'Expected pulled public key to match')
         assert(
             read_file(client_dir .. '/policies/01-demo.lua'):find('cli_demo', 1, true),
             'Expected pulled policy content'
@@ -398,8 +386,7 @@ function test_lua_lsm_cli_server_distributes_policies_and_keys()
 
         os.execute('kill ' .. server_pid .. ' 2>/dev/null')
 
-        local import_code, import_output =
-            run_loongshield({ 'lua-lsm', 'import-key', client_dir .. '/sm2.pub' }, fixture.env)
+        local import_code, import_output = run_loongshield({ 'lua-lsm', 'import-key', fixture.pub }, fixture.env)
         assert(import_code == 0, 'import-key failed:\n' .. import_output)
 
         local load_code, load_output =
@@ -412,65 +399,16 @@ function test_lua_lsm_cli_server_distributes_policies_and_keys()
     end
 end
 
-function test_lua_lsm_cli_server_never_distributes_sensitive_files()
+function test_lua_lsm_cli_rejects_distribution_commands()
     local fixture = make_fixture()
     local ok, err = pcall(function()
-        local server_dir = fixture.root .. '/server'
-        local client_dir = fixture.root .. '/client'
-        assert(os.execute('mkdir -p ' .. shell_escape(server_dir)))
+        local server_code, server_output = run_loongshield({ 'lua-lsm', 'server' }, fixture.env)
+        assert(server_code == 1, 'Expected removed lua-lsm server command to fail:\n' .. server_output)
+        assert(server_output:find("Unknown lua-lsm command: 'server'", 1, true), server_output)
 
-        write_file(server_dir .. '/01-demo.lua', 'return { name = "cli_demo" }\n')
-        write_file(server_dir .. '/sm2.pub', PUB_PEM)
-        write_file(server_dir .. '/private.pem', 'private key material\n')
-        write_file(server_dir .. '/secret.KEY', 'private key material\n')
-        assert(os.execute('ln -s /etc/shadow ' .. server_dir .. '/leak.pub'))
-        assert(os.execute('ln -s ' .. server_dir .. ' ' .. server_dir .. '/loop'))
-
-        local port = 18000 + math.random(0, 1999)
-        local server_cmd = shell_escape(BIN)
-            .. ' lua-lsm server --port '
-            .. tostring(port)
-            .. ' --dir '
-            .. shell_escape(server_dir)
-        local server = io.popen(server_cmd .. ' > /dev/null 2>&1 & echo $!')
-        local server_pid = (server:read('*l') or ''):gsub('%s+$', '')
-        server:close()
-
-        local pull_code, pull_output
-        for _ = 1, 20 do
-            pull_code, pull_output = run_loongshield(
-                { 'lua-lsm', 'pull', 'http://127.0.0.1:' .. port .. '/', '--dir', client_dir },
-                fixture.env
-            )
-            if pull_code == 0 then
-                break
-            end
-            os.execute('sleep 0.1')
-        end
-
-        os.execute('kill ' .. server_pid .. ' 2>/dev/null')
-        assert(pull_code == 0, 'pull failed:\n' .. tostring(pull_output))
-
-        assert(read_file(client_dir .. '/01-demo.lua') ~= '', 'Expected policy to be pulled')
-        assert(read_file(client_dir .. '/sm2.pub') == PUB_PEM, 'Expected public key to be pulled')
-        assert(not file_exists(client_dir .. '/private.pem'), 'Private key must never be pulled')
-        assert(not file_exists(client_dir .. '/secret.KEY'), 'Private key with odd extension must never be pulled')
-        assert(not file_exists(client_dir .. '/leak.pub'), 'Symlink must never be pulled')
-        assert(not file_exists(client_dir .. '/loop'), 'Directory symlink must never be pulled')
-    end)
-    cleanup(fixture)
-    if not ok then
-        error(err, 0)
-    end
-end
-
-function test_lua_lsm_cli_server_rejects_invalid_port()
-    local fixture = make_fixture()
-    local ok, err = pcall(function()
-        local code, output =
-            run_loongshield({ 'lua-lsm', 'server', '--dir', fixture.root, '--port', 'not-a-number' }, fixture.env)
-        assert(code == 1, 'Expected invalid port to fail:\n' .. output)
-        assert(output:find('invalid server port', 1, true), 'Expected port error in output:\n' .. output)
+        local pull_code, pull_output = run_loongshield({ 'lua-lsm', 'pull' }, fixture.env)
+        assert(pull_code == 1, 'Expected removed lua-lsm pull command to fail:\n' .. pull_output)
+        assert(pull_output:find("Unknown lua-lsm command: 'pull'", 1, true), pull_output)
     end)
     cleanup(fixture)
     if not ok then
