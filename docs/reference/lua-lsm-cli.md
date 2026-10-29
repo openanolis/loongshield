@@ -109,14 +109,17 @@ loongshield lua-lsm import-key /etc/loongshield/sm2.pub
 On the management host:
 
 ```sh
-loongshield filedist server --port 8080 \
+loongshield filedist server --port 8443 \
+  --cert /etc/loongshield/filedist/tls.crt \
+  --key /etc/loongshield/filedist/tls.key \
   --dir /srv/loongshield/lua-lsm
 ```
 
 On each managed host:
 
 ```sh
-loongshield filedist pull http://management:8080/ \
+loongshield filedist pull https://management:8443/ \
+  --ca /etc/pki/tls/certs/management-ca.crt \
   --dir /etc/loongshield/lua-lsm
 loongshield lua-lsm load /etc/loongshield/lua-lsm/policies \
   --appraise enforce

@@ -24,7 +24,7 @@ Local builds produce the binary at `build/src/daemon/loongshield`. Installed sys
 - `seharden`: audit or reinforce a security profile.
 - `rpm`: verify an installed RPM against a remote SBOM.
 - `lua-lsm`: inspect and manage Lua-LSM policies through securityfs.
-- `filedist`: distribute arbitrary regular files over HTTP.
+- `filedist`: distribute arbitrary regular files over HTTPS.
 
 Run subcommand help directly:
 

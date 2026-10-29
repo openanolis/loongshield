@@ -16,12 +16,15 @@ Commands:
 Options:
   --dir <path>           server: directory to serve; pull: output directory
   --host <address>       Listen address for server (default 0.0.0.0)
-  --port <number>        Listen port for server (default 8080)
+  --port <number>        Listen port for server (default 8443)
+  --cert <path>          server: TLS certificate PEM
+  --key <path>           server: TLS private key PEM
+  --ca <path>            pull: trusted CA certificate PEM
   --log-level <level>    Set log level (trace, debug, info, warn, error)
   -h, --help             Show this help message
 
-The server distributes regular files only. Symlinks and path traversal are
-rejected. Pulled files are not parsed or executed by LoongShield.
+The server distributes regular files over TLS only. Symlinks and path
+traversal are rejected. Pulled files are not parsed or executed by LoongShield.
 ]]
 
 local function print_usage()
@@ -37,9 +40,25 @@ local function parse_args(argv)
         local arg = argv[i]
         local key, value = arg:match('^%-%-([%w%-]+)=(.+)$')
 
-        if key == 'dir' or key == 'host' or key == 'port' or key == 'log-level' then
+        if
+            key == 'dir'
+            or key == 'host'
+            or key == 'port'
+            or key == 'cert'
+            or key == 'key'
+            or key == 'ca'
+            or key == 'log-level'
+        then
             opts[key == 'log-level' and 'log_level' or key] = value
-        elseif arg == '--dir' or arg == '--host' or arg == '--port' or arg == '--log-level' then
+        elseif
+            arg == '--dir'
+            or arg == '--host'
+            or arg == '--port'
+            or arg == '--cert'
+            or arg == '--key'
+            or arg == '--ca'
+            or arg == '--log-level'
+        then
             if i >= #argv then
                 return nil, string.format("Option '%s' requires a value.", arg)
             end
@@ -49,6 +68,12 @@ local function parse_args(argv)
                 opts.dir = argv[i + 1]
             elseif arg == '--host' then
                 opts.host = argv[i + 1]
+            elseif arg == '--cert' then
+                opts.cert = argv[i + 1]
+            elseif arg == '--key' then
+                opts.key = argv[i + 1]
+            elseif arg == '--ca' then
+                opts.ca = argv[i + 1]
             else
                 opts.port = argv[i + 1]
             end
@@ -79,7 +104,7 @@ local function serve_files(opts)
 
     local port
     if opts.port == nil then
-        port = 8080
+        port = 8443
     else
         port = tonumber(opts.port)
         if not port or port < 1 or port > 65535 or port % 1 ~= 0 then
@@ -92,12 +117,14 @@ local function serve_files(opts)
         dir = opts.dir,
         host = opts.host,
         port = port,
+        certificate = opts.cert,
+        key = opts.key,
         file_filter = function()
             return true
         end,
         on_ready = function(host, ready_port, dir)
             print(string.format('Serving files from %s on %s:%d', dir, host, ready_port))
-            print('Pull with: loongshield filedist pull http://' .. host .. ':' .. tostring(ready_port) .. '/')
+            print('Pull with: loongshield filedist pull https://' .. host .. ':' .. tostring(ready_port) .. '/')
             io.stdout:flush()
         end,
     })
@@ -113,11 +140,20 @@ local function pull_files(url, opts)
         log.error('pull requires a file server URL')
         return 1
     end
+    if url:sub(1, 8):lower() ~= 'https://' then
+        log.error('file distribution requires an HTTPS URL')
+        return 1
+    end
+    if type(opts.ca) ~= 'string' or opts.ca == '' then
+        log.error('pull requires --ca <trusted-ca-pem>')
+        return 1
+    end
 
     local result
     local co = coroutine.create(function()
         local ok, count, pull_err = pcall(distribute.pull, url, {
             output_dir = opts.dir,
+            ca_file = opts.ca,
             file_filter = function()
                 return true
             end,

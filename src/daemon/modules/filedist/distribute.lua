@@ -2,7 +2,7 @@ local M = {}
 
 local cjson = require('cjson.safe')
 local lfs = require('lfs')
-local luv = require('luv')
+local openssl = require('openssl')
 local uvcurl = require('net.uvcurl')
 
 local function url_decode(value)
@@ -92,19 +92,107 @@ local function respond(client, status, reason, body, content_type)
         content_type,
         #body
     )
-    client:write(header .. body, function()
-        client:close()
-    end)
+    client:write(header .. body)
+    client:shutdown()
+    client:close(true)
 end
 
---- Serve a directory over plain HTTP. GET / returns the file index as JSON;
+local function read_file(path)
+    local file = assert(io.open(path, 'rb'))
+    local content = file:read('*a')
+    file:close()
+    return content
+end
+
+local function make_ssl_context(certificate_path, key_path)
+    if type(certificate_path) ~= 'string' or certificate_path == '' then
+        return nil, 'server requires --cert <tls-certificate-pem>'
+    end
+    if type(key_path) ~= 'string' or key_path == '' then
+        return nil, 'server requires --key <tls-private-key-pem>'
+    end
+    if entry_mode(certificate_path) ~= 'file' or entry_mode(key_path) ~= 'file' then
+        return nil, 'TLS certificate and key must be regular files'
+    end
+
+    local ok, result = pcall(function()
+        local context = openssl.ssl.ctx_new('TLS_server')
+        local key = openssl.pkey.read(read_file(key_path), true, 'pem')
+        local certificate = openssl.x509.read(read_file(certificate_path))
+        assert(context:use(key, certificate))
+        context:options('no_sslv2', 'no_sslv3', 'no_tlsv1', 'no_tlsv1_1')
+        return context
+    end)
+    if not ok then
+        return nil, 'failed to load TLS certificate or key: ' .. tostring(result)
+    end
+    return result
+end
+
+local function read_request(client)
+    local request = ''
+    while #request < 65536 and not request:find('\r\n\r\n', 1, true) do
+        local chunk = client:read(4096)
+        if not chunk or chunk == '' then
+            break
+        end
+        request = request .. chunk
+    end
+    return request
+end
+
+local function handle_request(client, dir, opts)
+    local request = read_request(client)
+    local path = request:match('^GET%s+(%S+)%s+HTTP')
+    if not path then
+        respond(client, 400, 'Bad Request', 'only HTTP GET is supported\n', 'text/plain')
+        return
+    end
+
+    path = url_decode(path:match('^([^?]*)'))
+    if path == '/' then
+        local index = cjson.encode({ files = M.list_files(dir, opts) })
+        respond(client, 200, 'OK', index, 'application/json')
+        return
+    end
+
+    local name = path:sub(2)
+    if not M.is_safe_name(name) then
+        respond(client, 400, 'Bad Request', 'path traversal rejected\n', 'text/plain')
+        return
+    end
+    if not allowed_file(name, opts) then
+        respond(client, 404, 'Not Found', 'not a distributable file: ' .. name .. '\n', 'text/plain')
+        return
+    end
+
+    local full = dir .. '/' .. name
+    if entry_mode(full) ~= 'file' then
+        respond(client, 404, 'Not Found', 'not found: ' .. name .. '\n', 'text/plain')
+        return
+    end
+
+    local file = io.open(full, 'rb')
+    if not file then
+        respond(client, 500, 'Internal Server Error', 'failed to open: ' .. name .. '\n', 'text/plain')
+        return
+    end
+
+    local body = file:read('*a') or ''
+    file:close()
+    respond(client, 200, 'OK', body, 'application/octet-stream')
+end
+
+--- Serve a directory over HTTPS. GET / returns the file index as JSON;
 --- GET /<name> returns one file selected by the caller's filter. Symlinks are
 --- rejected. Runs until stopped.
 function M.serve(opts)
     opts = opts or {}
     local dir = opts.dir
-    local port = tonumber(opts.port) or 8080
+    local port = tonumber(opts.port) or 8443
     local host = opts.host or '0.0.0.0'
+    local signal = require('posix.signal')
+    assert(signal.signal(signal.SIGPIPE, signal.SIG_IGN))
 
     if type(dir) ~= 'string' or dir == '' then
         return nil, 'server requires --dir <file-directory>'
@@ -113,72 +201,41 @@ function M.serve(opts)
         return nil, 'file directory not found: ' .. dir
     end
 
-    local server = luv.new_tcp()
-    local ok, bind_err = server:bind(host, port)
-    if not ok then
-        return nil, 'failed to bind ' .. host .. ':' .. tostring(port) .. ': ' .. tostring(bind_err)
+    local context, context_err = make_ssl_context(opts.certificate, opts.key)
+    if not context then
+        return nil, context_err
     end
 
-    server:listen(128, function(listen_err)
-        if listen_err then
-            return
-        end
-
-        local client = luv.new_tcp()
-        server:accept(client)
-        client:read_start(function(read_err, chunk)
-            if read_err or chunk == nil then
-                client:close()
-                return
-            end
-
-            client:read_stop()
-            local path = tostring(chunk):match('^GET%s+(%S+)%s+HTTP')
-            if not path then
-                respond(client, 400, 'Bad Request', 'only HTTP GET is supported\n', 'text/plain')
-                return
-            end
-
-            path = url_decode(path:match('^([^?]*)'))
-            if path == '/' then
-                local index = cjson.encode({ files = M.list_files(dir, opts) })
-                respond(client, 200, 'OK', index, 'application/json')
-                return
-            end
-
-            local name = path:sub(2)
-            if not M.is_safe_name(name) then
-                respond(client, 400, 'Bad Request', 'path traversal rejected\n', 'text/plain')
-                return
-            end
-            if not allowed_file(name, opts) then
-                respond(client, 404, 'Not Found', 'not a distributable file: ' .. name .. '\n', 'text/plain')
-                return
-            end
-
-            local full = dir .. '/' .. name
-            if entry_mode(full) ~= 'file' then
-                respond(client, 404, 'Not Found', 'not found: ' .. name .. '\n', 'text/plain')
-                return
-            end
-
-            local file = io.open(full, 'rb')
-            if not file then
-                respond(client, 500, 'Internal Server Error', 'failed to open: ' .. name .. '\n', 'text/plain')
-                return
-            end
-
-            local body = file:read('*a') or ''
-            file:close()
-            respond(client, 200, 'OK', body, 'application/octet-stream')
-        end)
-    end)
+    local server, server_err = context:bio(host .. ':' .. tostring(port), true)
+    if not server then
+        return nil, 'failed to bind ' .. host .. ':' .. tostring(port) .. ': ' .. tostring(server_err)
+    end
+    local bound = server:accept(true)
+    if not bound then
+        return nil, 'failed to listen on ' .. host .. ':' .. tostring(port)
+    end
 
     if opts.on_ready then
         opts.on_ready(host, port, dir)
     end
 
-    luv.run()
+    while true do
+        local client, client_err = server:accept()
+        if not client then
+            return nil, 'failed to accept TLS connection: ' .. tostring(client_err)
+        end
+
+        local ok, err = pcall(function()
+            assert(client:handshake())
+            handle_request(client, dir, opts)
+        end)
+        if not ok then
+            pcall(function()
+                client:shutdown()
+                client:close(true)
+            end)
+        end
+    end
     return 0
 end
 
@@ -237,8 +294,8 @@ local function write_downloaded(path, body)
     return true
 end
 
-local function http_get(url)
-    local body, info = uvcurl.fetch(url)
+local function http_get(url, opts)
+    local body, info = uvcurl.fetch(url, { cafile = opts and opts.ca_file })
     if not body then
         return nil, 'request failed: ' .. tostring(info and info.errno or 'unknown error')
     end
@@ -292,10 +349,16 @@ end
 --- Must run inside a coroutine with the libuv loop running.
 function M.pull(url, opts)
     opts = opts or {}
+    if url:sub(1, 8):lower() ~= 'https://' then
+        return nil, 'file distribution requires an HTTPS URL'
+    end
+    if type(opts.ca_file) ~= 'string' or opts.ca_file == '' then
+        return nil, 'pull requires --ca <trusted-ca-pem>'
+    end
     local output_dir = normalize_dir(opts.output_dir or '/var/lib/loongshield/filedist')
 
     if url:sub(-1) == '/' then
-        local index_body, index_err = http_get(url)
+        local index_body, index_err = http_get(url, opts)
         if not index_body then
             return nil, index_err
         end
@@ -312,7 +375,7 @@ function M.pull(url, opts)
 
         for i = 1, count do
             local file = decoded.files[i]
-            local body, fetch_err = http_get(url .. file.name)
+            local body, fetch_err = http_get(url .. file.name, opts)
             if not body then
                 return nil, fetch_err
             end
@@ -334,7 +397,7 @@ function M.pull(url, opts)
         return nil, 'not a distributable file: ' .. name
     end
 
-    local body, fetch_err = http_get(url)
+    local body, fetch_err = http_get(url, opts)
     if not body then
         return nil, fetch_err
     end

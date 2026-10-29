@@ -75,12 +75,12 @@ deployments should place the trust directory on the same integrity-protected
 
 ## Distributing Policies
 
-Policy files are distributed by the generic `filedist` command. Managed hosts
-pull the same directory, import the verification key out of band, and load the
-directory with `--appraise enforce`, which is the multi-host consistency
-mechanism: every host verifies the same SM2 signatures over the same policy
-set. `filedist` is intentionally transport-only and has no Lua-LSM-specific
-trust model; see its reference documentation for limits.
+Policy files are distributed by the generic `filedist` command over verified
+TLS. Managed hosts pull the same directory, import the verification key out of
+band, and load the directory with `--appraise enforce`, which is the
+multi-host consistency mechanism: every host verifies the same SM2 signatures
+over the same policy set. `filedist` is intentionally transport-only and has no
+Lua-LSM-specific trust model; see its reference documentation for limits.
 
 ## Package Layout
 

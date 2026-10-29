@@ -39,7 +39,7 @@ local function print_usage()
     print('  seharden      OS Security benchmarks & hardening')
     print('  rpm           RPM package SBOM verification')
     print('  lua-lsm       Lua-LSM policy management')
-    print('  filedist      File distribution over HTTP')
+    print('  filedist      File distribution over HTTPS')
     print('')
     print('For help on a specific subcommand: loongshield <subcommand> --help')
 end

@@ -12,7 +12,7 @@ local function uvcurl_new()
     local function check_multi_info()
         while true do
             local easy, ok, err = m:info_read(true)
-            if type(easy) == "number" then
+            if type(easy) == 'number' then
                 -- TODO: 0 there no informationals
                 break
             end
@@ -56,11 +56,11 @@ local function uvcurl_new()
         local function curl_perform(status, events)
             timer:stop()
             local evt = 0
-            if events == "r" then
+            if events == 'r' then
                 evt = curl.CSELECT_IN
-            elseif events == "w" then
+            elseif events == 'w' then
                 evt = curl.CSELECT_OUT
-            elseif events == "rw" then
+            elseif events == 'rw' then
                 evt = curl.CSELECT_IN + curl.CSELECT_OUT
             end
             m:socket_action(sockfd, evt)
@@ -68,9 +68,9 @@ local function uvcurl_new()
         end
 
         if action == curl.POLL_IN then
-            poll:start("r", curl_perform)
+            poll:start('r', curl_perform)
         elseif action == curl.POLL_OUT then
-            poll:start("w", curl_perform)
+            poll:start('w', curl_perform)
         elseif action == curl.POLL_REMOVE then
             poll:stop()
             fdpoll[sockfd] = nil
@@ -84,7 +84,7 @@ local function uvcurl_new()
     return function(url, opt, delegate)
         local req = {
             url = url,
-            delegate = delegate
+            delegate = delegate,
         }
         opt = opt or {}
 
@@ -110,8 +110,14 @@ local function uvcurl_new()
 
         easy:setopt_url(url)
         if string.sub(url, 1, 5) == 'https' then
-            easy:setopt(curl.OPT_SSL_VERIFYPEER, 0)
-            easy:setopt(curl.OPT_SSL_VERIFYHOST, 0)
+            if opt.cafile then
+                easy:setopt(curl.OPT_CAINFO, opt.cafile)
+                easy:setopt(curl.OPT_SSL_VERIFYPEER, 1)
+                easy:setopt(curl.OPT_SSL_VERIFYHOST, 2)
+            else
+                easy:setopt(curl.OPT_SSL_VERIFYPEER, 0)
+                easy:setopt(curl.OPT_SSL_VERIFYHOST, 0)
+            end
         end
 
         if opt.method == 'POST' then
@@ -166,25 +172,25 @@ local function fetch(url, option)
 
     local function oncomplete(easy, resp, err)
         local info = {
-            status          = easy:getinfo(curl.INFO_RESPONSE_CODE),
-            connectcode     = easy:getinfo(curl.INFO_HTTP_CONNECTCODE),
-            errno           = easy:getinfo(curl.INFO_OS_ERRNO),
-            cookie          = easy:getinfo(curl.INFO_COOKIELIST),
-            time_total      = easy:getinfo(curl.INFO_TOTAL_TIME),
-            effective_url   = easy:getinfo(curl.INFO_EFFECTIVE_URL),
-            redirect_count  = easy:getinfo(curl.INFO_REDIRECT_COUNT),
+            status = easy:getinfo(curl.INFO_RESPONSE_CODE),
+            connectcode = easy:getinfo(curl.INFO_HTTP_CONNECTCODE),
+            errno = easy:getinfo(curl.INFO_OS_ERRNO),
+            cookie = easy:getinfo(curl.INFO_COOKIELIST),
+            time_total = easy:getinfo(curl.INFO_TOTAL_TIME),
+            effective_url = easy:getinfo(curl.INFO_EFFECTIVE_URL),
+            redirect_count = easy:getinfo(curl.INFO_REDIRECT_COUNT),
             time_namelookup = easy:getinfo(curl.INFO_NAMELOOKUP_TIME),
-            speed_download  = easy:getinfo(curl.INFO_SPEED_DOWNLOAD)
+            speed_download = easy:getinfo(curl.INFO_SPEED_DOWNLOAD),
         }
         assert(coroutine.resume(thread, resp, info, err))
     end
 
     uvcurl(url, option, {
-        oncomplete = oncomplete
+        oncomplete = oncomplete,
     })
     return coroutine.yield()
 end
 
 return {
-    fetch = fetch
+    fetch = fetch,
 }

@@ -53,6 +53,21 @@ local function make_temp_dir()
     return path
 end
 
+local function make_tls_certificate(root)
+    assert(os.execute('mkdir -p ' .. shell_escape(root)))
+    local key = root .. '/tls.key'
+    local certificate = root .. '/tls.crt'
+    local command = table.concat({
+        'openssl req -x509 -newkey rsa:2048 -nodes -days 1',
+        '-subj ' .. shell_escape('/CN=localhost'),
+        '-addext ' .. shell_escape('subjectAltName=DNS:localhost,IP:127.0.0.1'),
+        '-keyout ' .. shell_escape(key),
+        '-out ' .. shell_escape(certificate),
+    }, ' ')
+    assert(os.execute(command), 'Failed to create TLS certificate')
+    return certificate, key
+end
+
 function test_filedist_cli_help_and_invalid_port()
     local code, output = run_loongshield({ 'filedist', '--help' })
     assert(code == 0, 'Expected filedist --help to exit 0:\n' .. output)
@@ -65,8 +80,35 @@ function test_filedist_cli_help_and_invalid_port()
     assert(output:find('invalid server port', 1, true), output)
 end
 
+function test_filedist_cli_rejects_plaintext_and_missing_ca()
+    local root = make_temp_dir()
+
+    local code, output = run_loongshield({
+        'filedist',
+        'pull',
+        'http://127.0.0.1:8443/',
+        '--dir',
+        root,
+    })
+    assert(code == 1, 'Expected plain HTTP pull to fail:\n' .. output)
+    assert(output:find('file distribution requires an HTTPS URL', 1, true), output)
+
+    code, output = run_loongshield({
+        'filedist',
+        'pull',
+        'https://127.0.0.1:8443/',
+        '--dir',
+        root,
+    })
+    assert(code == 1, 'Expected pull without CA to fail:\n' .. output)
+    assert(output:find('pull requires --ca <trusted-ca-pem>', 1, true), output)
+
+    os.execute('rm -rf ' .. shell_escape(root))
+end
+
 function test_filedist_cli_distributes_any_regular_file()
     local root = make_temp_dir()
+    local certificate, key = make_tls_certificate(root .. '/tls')
     local server_dir = root .. '/server'
     local client_dir = root .. '/client'
     assert(os.execute('mkdir -p ' .. shell_escape(server_dir .. '/policies')))
@@ -89,8 +131,13 @@ function test_filedist_cli_distributes_any_regular_file()
         shell_escape(server_dir),
         '--port',
         tostring(port),
+        '--cert',
+        shell_escape(certificate),
+        '--key',
+        shell_escape(key),
     }, ' ')
-    local server = io.popen(server_cmd .. ' > /dev/null 2>&1 & echo $!')
+    local server_log = root .. '/server.log'
+    local server = io.popen(server_cmd .. ' > ' .. shell_escape(server_log) .. ' 2>&1 & echo $!')
     local server_pid = (server:read('*l') or ''):gsub('%s+$', '')
     server:close()
     assert(server_pid ~= '', 'Failed to start filedist server')
@@ -100,9 +147,11 @@ function test_filedist_cli_distributes_any_regular_file()
         pull_code, pull_output = run_loongshield({
             'filedist',
             'pull',
-            'http://127.0.0.1:' .. port .. '/',
+            'https://127.0.0.1:' .. port .. '/',
             '--dir',
             client_dir,
+            '--ca',
+            certificate,
         })
         if pull_code == 0 then
             break
@@ -111,8 +160,25 @@ function test_filedist_cli_distributes_any_regular_file()
     end
 
     os.execute('kill ' .. server_pid .. ' 2>/dev/null')
-    assert(pull_code == 0, 'Expected filedist pull to succeed:\n' .. tostring(pull_output))
+    assert(
+        pull_code == 0,
+        'Expected filedist pull to succeed:\n' .. tostring(pull_output) .. '\nserver log:\n' .. read_file(server_log)
+    )
     assert(pull_output:find('Pulled 4 files', 1, true), pull_output)
+
+    local wrong_certificate = make_tls_certificate(root .. '/wrong-tls')
+    local reject_dir = root .. '/rejected'
+    local reject_code, reject_output = run_loongshield({
+        'filedist',
+        'pull',
+        'https://127.0.0.1:' .. port .. '/',
+        '--dir',
+        reject_dir,
+        '--ca',
+        wrong_certificate,
+    })
+    assert(reject_code == 1, 'Expected pull with an untrusted CA to fail:\n' .. reject_output)
+    assert(not file_exists(reject_dir), 'Expected rejected pull to write no files')
 
     assert(read_file(client_dir .. '/policies/ima-policy') == ima_policy)
     assert(read_file(client_dir .. '/app.conf') == 'enabled=true\n')

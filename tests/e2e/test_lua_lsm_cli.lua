@@ -133,6 +133,21 @@ return {
     }
 end
 
+local function make_tls_certificate(root)
+    assert(os.execute('mkdir -p ' .. shell_escape(root)))
+    local key = root .. '/tls.key'
+    local certificate = root .. '/tls.crt'
+    local command = table.concat({
+        'openssl req -x509 -newkey rsa:2048 -nodes -days 1',
+        '-subj ' .. shell_escape('/CN=localhost'),
+        '-addext ' .. shell_escape('subjectAltName=DNS:localhost,IP:127.0.0.1'),
+        '-keyout ' .. shell_escape(key),
+        '-out ' .. shell_escape(certificate),
+    }, ' ')
+    assert(os.execute(command), 'Failed to create TLS certificate')
+    return certificate, key
+end
+
 local function cleanup(fixture)
     if fixture then
         os.execute('rm -rf ' .. shell_escape(fixture.root))
@@ -330,6 +345,7 @@ end
 
 function test_lua_lsm_cli_loads_policies_distributed_by_filedist()
     local fixture = make_fixture()
+    local tls_certificate, tls_key = make_tls_certificate(fixture.root .. '/tls')
     local ok, err = pcall(function()
         local server_dir = fixture.root .. '/server'
         local client_dir = fixture.root .. '/client'
@@ -352,6 +368,10 @@ function test_lua_lsm_cli_loads_policies_distributed_by_filedist()
             'server',
             '--port',
             tostring(port),
+            '--cert',
+            shell_escape(tls_certificate),
+            '--key',
+            shell_escape(tls_key),
             '--dir',
             shell_escape(server_dir),
         }, ' ')
@@ -363,10 +383,15 @@ function test_lua_lsm_cli_loads_policies_distributed_by_filedist()
         local pulled = false
         local pull_code, pull_output
         for _ = 1, 20 do
-            pull_code, pull_output = run_loongshield(
-                { 'filedist', 'pull', 'http://127.0.0.1:' .. port .. '/', '--dir', client_dir },
-                fixture.env
-            )
+            pull_code, pull_output = run_loongshield({
+                'filedist',
+                'pull',
+                'https://127.0.0.1:' .. port .. '/',
+                '--dir',
+                client_dir,
+                '--ca',
+                tls_certificate,
+            }, fixture.env)
             if pull_code == 0 then
                 pulled = true
                 break
