@@ -327,3 +327,78 @@ function test_lua_lsm_cli_loads_policy_directory_in_filename_order()
         error(err, 0)
     end
 end
+
+function test_lua_lsm_cli_server_distributes_policies_and_keys()
+    local fixture = make_fixture()
+    local ok, err = pcall(function()
+        local server_dir = fixture.root .. '/server'
+        local client_dir = fixture.root .. '/client'
+        assert(os.execute('mkdir -p ' .. shell_escape(server_dir .. '/policies')))
+        assert(os.execute('mkdir -p ' .. shell_escape(client_dir)))
+
+        local source = read_file(fixture.policy)
+        write_file(server_dir .. '/policies/01-demo.lua', source)
+        write_file(server_dir .. '/sm2.pub', PUB_PEM)
+
+        local sign_code, sign_output = run_loongshield(
+            { 'lua-lsm', 'sign', server_dir .. '/policies/01-demo.lua', '--key', fixture.priv },
+            fixture.env
+        )
+        assert(sign_code == 0, 'sign failed:\n' .. sign_output)
+
+        local port = 18000 + math.random(0, 1999)
+        local server_cmd = table.concat({
+            'LOONGSHIELD_LUA_LSM_SECURITYFS_ROOT=' .. shell_escape(fixture.lua_root),
+            shell_escape(BIN),
+            'lua-lsm',
+            'server',
+            '--port',
+            tostring(port),
+            '--dir',
+            shell_escape(server_dir),
+        }, ' ')
+        local server = io.popen(server_cmd .. ' > /dev/null 2>&1 & echo $!')
+        local server_pid = (server:read('*l') or ''):gsub('%s+$', '')
+        server:close()
+        assert(server_pid ~= '', 'Failed to start policy server')
+
+        local pulled = false
+        local pull_code, pull_output
+        for _ = 1, 20 do
+            pull_code, pull_output = run_loongshield(
+                { 'lua-lsm', 'pull', 'http://127.0.0.1:' .. port .. '/', '--dir', client_dir },
+                fixture.env
+            )
+            if pull_code == 0 then
+                pulled = true
+                break
+            end
+            os.execute('sleep 0.1')
+        end
+
+        if not pulled then
+            os.execute('kill ' .. server_pid .. ' 2>/dev/null')
+            error('pull failed:\n' .. tostring(pull_output))
+        end
+
+        assert(read_file(client_dir .. '/sm2.pub') == PUB_PEM, 'Expected pulled public key to match')
+        assert(
+            read_file(client_dir .. '/policies/01-demo.lua'):find('cli_demo', 1, true),
+            'Expected pulled policy content'
+        )
+
+        os.execute('kill ' .. server_pid .. ' 2>/dev/null')
+
+        local import_code, import_output =
+            run_loongshield({ 'lua-lsm', 'import-key', client_dir .. '/sm2.pub' }, fixture.env)
+        assert(import_code == 0, 'import-key failed:\n' .. import_output)
+
+        local load_code, load_output =
+            run_loongshield({ 'lua-lsm', 'load', client_dir .. '/policies', '--appraise', 'enforce' }, fixture.env)
+        assert(load_code == 0, 'Expected pulled policy to load with verification:\n' .. load_output)
+    end)
+    cleanup(fixture)
+    if not ok then
+        error(err, 0)
+    end
+end

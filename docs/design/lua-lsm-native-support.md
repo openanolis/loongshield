@@ -11,6 +11,7 @@ Loongshield owns:
 - readiness checks for the running kernel
 - policy validation before explicit load
 - embedded SM2/SM3 policy signatures and appraisal
+- policy distribution over HTTP (`server` and `pull`)
 - securityfs read/write orchestration
 - operator CLI and packaging of example policies
 - fake-securityfs tests for normal CI
@@ -71,6 +72,19 @@ The trust store directory is part of the protected boundary: an attacker who
 can modify both the policy and the trusted keys can replace both. Production
 deployments should place the trust directory on the same integrity-protected
  footing as the rest of the LoongShield installation.
+
+## Policy Distribution
+
+`loongshield lua-lsm server --dir <path>` exposes a policy directory over
+plain HTTP: `GET /` returns a JSON file index and `GET /<name>` returns a file.
+`loongshield lua-lsm pull <url>` downloads one file or the whole index into a
+local directory. Managed hosts pull the same signed directory and load it with
+`--appraise enforce`, which is the multi-host consistency mechanism: every host
+verifies the same SM2 signatures over the same policy set.
+
+The server rejects path traversal and refuses to serve `*.key` private key
+files. Wire confidentiality relies on the transport (HTTPS URL or SSH tunnel);
+wire integrity does not, because verification happens after the pull.
 
 ## Package Layout
 

@@ -1,5 +1,7 @@
 local cjson = require('cjson.safe')
+local luv = require('luv')
 local log = require('runtime.log')
+local distribute = require('lua_lsm.distribute')
 local integrity = require('lua_lsm.integrity')
 local policy = require('lua_lsm.policy')
 local readiness = require('lua_lsm.readiness')
@@ -14,6 +16,8 @@ Usage: loongshield lua-lsm <command> [options]
 Lua-LSM Policy Manager
 
 Commands:
+  server --dir <path>    Serve policy files for pull by managed hosts
+  pull <url>             Pull policies or keys from a policy server
   status                 Show kernel readiness, trusted keys, and loaded modules
   import-key <pub.pem>   Import an SM2 public key into the trust store
   load <policy|dir>      Verify, validate, and load a policy or policy directory
@@ -24,6 +28,8 @@ Options:
   --root <path>          Override Lua-LSM securityfs root
   --config <path>        Override kernel config path used by status
   --key <path>           SM2 private key used by sign
+  --port <number>        Listen port for server (default 8080)
+  --dir <path>           server: directory to serve; pull: output directory
   --appraise <mode>      Policy appraisal: off | log | enforce (default off)
   --trust-dir <path>     Override trusted public key directory
   --json                 Machine-readable status output
@@ -67,6 +73,10 @@ local function parse_args(argv)
             opts.appraise = value
         elseif key == 'trust-dir' then
             opts.trust_dir = value
+        elseif key == 'port' then
+            opts.port = value
+        elseif key == 'dir' then
+            opts.dir = value
         elseif key == 'log-level' then
             opts.log_level = value
         elseif
@@ -75,6 +85,8 @@ local function parse_args(argv)
             or arg == '--key'
             or arg == '--appraise'
             or arg == '--trust-dir'
+            or arg == '--port'
+            or arg == '--dir'
             or arg == '--log-level'
         then
             if i >= #argv then
@@ -90,6 +102,10 @@ local function parse_args(argv)
                 opts.appraise = argv[i + 1]
             elseif arg == '--trust-dir' then
                 opts.trust_dir = argv[i + 1]
+            elseif arg == '--port' then
+                opts.port = argv[i + 1]
+            elseif arg == '--dir' then
+                opts.dir = argv[i + 1]
             else
                 opts.log_level = argv[i + 1]
             end
@@ -376,6 +392,61 @@ local function unload_policy(name, opts)
     return 0
 end
 
+local function serve_policies(opts)
+    if type(opts.dir) ~= 'string' or opts.dir == '' then
+        log.error('server requires --dir <policy-directory>')
+        return 1
+    end
+
+    local ok, err = distribute.serve({
+        dir = opts.dir,
+        port = opts.port,
+        on_ready = function(host, port, dir)
+            print(string.format('Serving Lua-LSM policies from %s on %s:%d', dir, host, port))
+            print('Pull with: loongshield lua-lsm pull http://' .. host .. ':' .. tostring(port) .. '/')
+            io.stdout:flush()
+        end,
+    })
+    if not ok then
+        log.error('Failed to start Lua-LSM policy server: %s', tostring(err))
+        return 1
+    end
+    return ok
+end
+
+local function pull_policies(url, opts)
+    if type(url) ~= 'string' or url == '' then
+        log.error('pull requires a policy server URL')
+        return 1
+    end
+
+    local result
+    local co = coroutine.create(function()
+        local ok, pulled_or_err = pcall(distribute.pull, url, { output_dir = opts.dir })
+        if ok and type(pulled_or_err) == 'number' then
+            result = pulled_or_err
+        elseif ok then
+            result = { nil, tostring(pulled_or_err) }
+        else
+            result = { nil, tostring(pulled_or_err) }
+        end
+    end)
+    coroutine.resume(co)
+    luv.run()
+
+    if type(result) ~= 'number' then
+        log.error('Failed to pull Lua-LSM policies: %s', tostring(result and result[2] or result))
+        return 1
+    end
+
+    if url:sub(-1) == '/' then
+        print(string.format('Pulled %d files from %s into %s', result, url, opts.dir or '/etc/loongshield/lua-lsm'))
+    else
+        print(string.format('Pulled %s into %s', url, opts.dir or '/etc/loongshield/lua-lsm'))
+    end
+    return 0
+end
+
 function M.run(argv)
     local opts, err = parse_args(argv or {})
     if not opts then
@@ -394,7 +465,11 @@ function M.run(argv)
         return opts.help and 0 or 1
     end
 
-    if opts.command == 'status' then
+    if opts.command == 'server' then
+        return serve_policies(opts)
+    elseif opts.command == 'pull' then
+        return pull_policies(opts.args[1], opts)
+    elseif opts.command == 'status' then
         if opts.json then
             return print_status_json(opts)
         end

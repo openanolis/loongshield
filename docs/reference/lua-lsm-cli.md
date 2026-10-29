@@ -14,6 +14,10 @@ loongshield lua-lsm <command> [options]
 
 ## Commands
 
+- `server --dir <path>`: serve a policy directory over HTTP for managed hosts
+  to pull. `GET /` returns the file index; `GET /<name>` returns one file.
+- `pull <url>`: pull one file, or a whole policy directory when the URL ends
+  with `/`, into `--dir`.
 - `status`: show kernel readiness, trusted keys, and loaded modules. Supports
   `--json` for machine-readable reporting.
 - `import-key <pub.pem>`: import an SM2 public key into the local trust store.
@@ -28,6 +32,9 @@ loongshield lua-lsm <command> [options]
 - `--root <path>`: override the Lua-LSM securityfs root.
 - `--config <path>`: override the kernel config path used by `status`.
 - `--key <path>`: SM2 private key used by `sign`.
+- `--port <number>`: listen port for `server` (default 8080).
+- `--dir <path>`: directory to serve for `server`, or output directory for
+  `pull` (default `/etc/loongshield/lua-lsm`).
 - `--appraise <mode>`: policy appraisal mode, `off`, `log`, or `enforce`.
   Defaults to `off`; verification runs only when an appraisal mode is given.
 - `--trust-dir <path>`: override the trusted public key directory.
@@ -96,6 +103,35 @@ directory. Distributing the same signed directory to many hosts and loading it
 on each gives every host the same policy set, which is the consistency
 guarantee for distributing policies across machines.
 
+## Policy Distribution
+
+LoongShield can act as both the server and the client for policy
+distribution. On the management host, serve a directory containing signed
+policies and public keys:
+
+```sh
+loongshield lua-lsm server --port 8080 --dir /srv/loongshield/lua-lsm
+```
+
+On each managed host, pull the whole directory and load it with verification:
+
+```sh
+loongshield lua-lsm pull http://management:8080/ --dir /etc/loongshield/lua-lsm
+loongshield lua-lsm import-key /etc/loongshield/lua-lsm/sm2.pub
+loongshield lua-lsm load /etc/loongshield/lua-lsm/policies --appraise enforce
+```
+
+Single files can also be pulled directly:
+
+```sh
+loongshield lua-lsm pull http://management:8080/sm2.pub --dir /etc/loongshield/lua-lsm
+```
+
+The server refuses path traversal (`..`) and private key files (`*.key`).
+Confidentiality on the wire comes from the transport: use an HTTPS URL or an
+SSH tunnel. Integrity does not depend on the transport, because policies carry
+SM2 signatures verified after the pull.
+
 ## Environment
 
 - `LOONGSHIELD_LUA_LSM_SECURITYFS_ROOT`: defaults to `/sys/kernel/security/lua`.
@@ -124,6 +160,8 @@ kernel-side securityfs write check.
 ## Examples
 
 ```sh
+loongshield lua-lsm server --port 8080 --dir /srv/loongshield/lua-lsm
+loongshield lua-lsm pull http://management:8080/ --dir /etc/loongshield/lua-lsm
 loongshield lua-lsm status
 loongshield lua-lsm status --json
 loongshield lua-lsm import-key sm2.pub
