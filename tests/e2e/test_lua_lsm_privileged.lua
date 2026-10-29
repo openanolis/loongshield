@@ -48,8 +48,8 @@ function test_lua_lsm_privileged_vm_policy_load_enforce_unload()
         return
     end
 
-    local doctor_code, doctor_output = run_loongshield({ 'lua-lsm', 'doctor' })
-    assert(doctor_code == 0, 'Lua-LSM doctor must pass before privileged e2e:\n' .. doctor_output)
+    local status_code, status_output = run_loongshield({ 'lua-lsm', 'status' })
+    assert(status_code == 0, 'Lua-LSM status must pass before privileged e2e:\n' .. status_output)
 
     local key_dir = os.getenv('TMPDIR') or '/tmp'
     local key_root = key_dir .. '/loongshield_lua_lsm_vm.' .. tostring(os.time())

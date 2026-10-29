@@ -101,7 +101,7 @@ wrappers.
 
 Normal CI uses a fake securityfs root through
 `LOONGSHIELD_LUA_LSM_SECURITYFS_ROOT` or direct module options. That covers
-status, doctor, list, load, unload, stats, and hooks behavior without requiring
+status, load, unload, sign, and import-key behavior without requiring
 privileged kernel state.
 
 Privileged end-to-end coverage should run in a VM with:

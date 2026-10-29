@@ -14,27 +14,24 @@ loongshield lua-lsm <command> [options]
 
 ## Commands
 
-- `status`: show whether the Lua-LSM securityfs ABI is present.
-- `doctor`: run readiness checks for securityfs, active LSM order, and kernel config.
-- `list`: show loaded Lua-LSM modules.
+- `status`: show kernel readiness, trusted keys, and loaded modules. Supports
+  `--json` for machine-readable reporting.
 - `import-key <pub.pem>`: import an SM2 public key into the local trust store.
-- `keys`: list trusted SM2 public keys.
-- `load <policy.lua>`: validate and load a Lua-LSM policy; verify its embedded
-  signature when `--appraise` is given.
+- `load <policy.lua | manifest.yml>`: verify, validate, and load a single policy
+  or every enabled policy in a manifest, in `order`.
 - `sign <policy.lua>`: sign a policy in place with an SM2 private key using the
   SM3 digest.
 - `unload <name>`: write the module name to `unregister`.
-- `hooks`: print `lsm_funcs` when `CONFIG_SECURITY_LUA_LSM_STATS=y`.
-- `stats`: print VM/cache stats when `CONFIG_SECURITY_LUA_LSM_STATS=y`.
 
 ## Options
 
 - `--root <path>`: override the Lua-LSM securityfs root.
-- `--config <path>`: override the kernel config path used by `doctor`.
+- `--config <path>`: override the kernel config path used by `status`.
 - `--key <path>`: SM2 private key used by `sign`.
 - `--appraise <mode>`: policy appraisal mode, `off`, `log`, or `enforce`.
   Defaults to `off`; verification runs only when an appraisal mode is given.
 - `--trust-dir <path>`: override the trusted public key directory.
+- `--json`: machine-readable `status` output.
 - `--no-validate`: skip userspace policy metadata validation before `load`.
 - `--log-level <level>`: set log level.
 - `-h`, `--help`: show command help.
@@ -82,11 +79,30 @@ After verification, `load` strips the signature trailer and writes only the
 clean Lua source to `register`; the kernel-side Lua-LSM is unaware of the
 signature format.
 
+## Manifest Loading
+
+`load` accepts a YAML manifest to load a policy set in a fixed order:
+
+```yaml
+version: "1"
+policies:
+  - name: deny_tmp_marker
+    file: deny_tmp_marker.lua
+    enabled: true
+    order: 10
+```
+
+Policies with `enabled: false` are skipped. Remaining entries load in ascending
+`order`, and policy paths resolve relative to the manifest. A load failure
+aborts the manifest. Loading the same signed manifest on many hosts gives every
+host the same policy set, which is the consistency guarantee for distributing
+policies across machines.
+
 ## Environment
 
 - `LOONGSHIELD_LUA_LSM_SECURITYFS_ROOT`: defaults to `/sys/kernel/security/lua`.
 - `LOONGSHIELD_LUA_LSM_SECURITYFS_MOUNT`: defaults to the parent of the root.
-- `LOONGSHIELD_LUA_LSM_CONFIG_FILE`: kernel config used by `doctor`.
+- `LOONGSHIELD_LUA_LSM_CONFIG_FILE`: kernel config used by `status`.
 - `LOONGSHIELD_LUA_LSM_ASSUME_CAP_MAC_ADMIN`: test-only capability bypass.
 - `LOONGSHIELD_LUA_LSM_PUBKEY_DIR`: trusted public key directory, defaults to
   `/var/lib/loongshield/lua-lsm/pubkeys`.
@@ -110,13 +126,12 @@ kernel-side securityfs write check.
 ## Examples
 
 ```sh
-loongshield lua-lsm doctor
 loongshield lua-lsm status
-loongshield lua-lsm list
+loongshield lua-lsm status --json
 loongshield lua-lsm import-key sm2.pub
-loongshield lua-lsm keys
 loongshield lua-lsm sign profiles/lua-lsm/deny_tmp_marker.lua --key sm2.key
 loongshield lua-lsm load profiles/lua-lsm/deny_tmp_marker.lua --appraise enforce
+loongshield lua-lsm load profiles/lua-lsm/manifest.yml --appraise enforce
 loongshield lua-lsm load profiles/lua-lsm/deny_tmp_marker.lua --appraise log
 loongshield lua-lsm load profiles/lua-lsm/deny_tmp_marker.lua
 loongshield lua-lsm unload deny_tmp_marker

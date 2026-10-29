@@ -1,3 +1,4 @@
+local cjson = require('cjson.safe')
 local log = require('runtime.log')
 local integrity = require('lua_lsm.integrity')
 local policy = require('lua_lsm.policy')
@@ -12,23 +13,19 @@ Usage: loongshield lua-lsm <command> [options]
 Lua-LSM Policy Manager
 
 Commands:
-  status                 Show Lua-LSM runtime status
-  doctor                 Run kernel readiness checks
-  list                   List loaded Lua-LSM modules
+  status                 Show kernel readiness, trusted keys, and loaded modules
   import-key <pub.pem>   Import an SM2 public key into the trust store
-  keys                   List trusted SM2 public keys
-  load <policy.lua>      Verify, validate, and load a Lua-LSM policy
+  load <policy|manifest> Verify, validate, and load a policy or policy manifest
   unload <name>          Unload a Lua-LSM policy by module name
   sign <policy.lua>      Sign a policy in place with an SM2 key (SM3 digest)
-  hooks                  Show supported hook stats when enabled
-  stats                  Show Lua-LSM VM/cache stats when enabled
 
 Options:
   --root <path>          Override Lua-LSM securityfs root
-  --config <path>        Override kernel config path for doctor
+  --config <path>        Override kernel config path for status
   --key <path>           SM2 private key used by sign
   --appraise <mode>      Policy appraisal: off | log | enforce (default off)
   --trust-dir <path>     Override trusted public key directory
+  --json                 Machine-readable status output
   --no-validate          Skip userspace policy metadata validation before load
   --log-level <level>    Set log level (trace, debug, info, warn, error)
   -h, --help             Show this help message
@@ -98,6 +95,8 @@ local function parse_args(argv)
             i = i + 1
         elseif arg == '--no-validate' then
             opts.no_validate = true
+        elseif arg == '--json' then
+            opts.json = true
         elseif arg == '--help' or arg == '-h' then
             opts.help = true
         elseif arg:match('^%-') then
@@ -120,32 +119,44 @@ local function yn(value)
     return value and 'yes' or 'no'
 end
 
-local function print_status(opts)
+local function collect_status(opts)
+    local doctor = readiness.doctor(opts)
     local status = securityfs.status(opts)
+    local keys = integrity.list_keys(opts)
+
+    local report = {
+        securityfs = {
+            root = status.root,
+            mount = status.securityfs_mount,
+            available = status.available,
+            version = status.version,
+        },
+        kernel = doctor.checks,
+        ready = doctor.ready,
+        trusted_keys = keys or {},
+        loaded_modules = status.modules,
+        experimental = true,
+    }
+
+    return report
+end
+
+local function print_status(opts)
+    local report = collect_status(opts)
+    local status = report.securityfs
+
     print('Lua-LSM status')
     print('  securityfs root: ' .. status.root)
-    print('  securityfs mount: ' .. status.securityfs_mount)
+    print('  securityfs mount: ' .. status.mount)
     print('  available: ' .. yn(status.available))
     if status.version then
         print('  version: ' .. status.version)
     else
         print('  version: unavailable')
     end
-    print('  loaded modules: ' .. tostring(#status.modules))
-    print('  hooks file: ' .. yn(status.hooks_available))
-    print('  stats file: ' .. yn(status.stats_available))
-    print('  experimental: yes')
 
-    return status.available and 0 or 1
-end
-
-local function print_doctor(opts)
-    local result = readiness.doctor(opts)
-    print('Lua-LSM doctor')
-    print('  securityfs root: ' .. result.root)
-    print('  securityfs mount: ' .. result.securityfs_mount)
-
-    for _, item in ipairs(result.checks) do
+    print('  kernel readiness:')
+    for _, item in ipairs(report.kernel) do
         local prefix
         if item.ok == true then
             prefix = 'OK'
@@ -154,37 +165,35 @@ local function print_doctor(opts)
         else
             prefix = 'WARN'
         end
-        print(string.format('  [%s] %s: %s', prefix, item.label, tostring(item.detail or '')))
+        print(string.format('    [%s] %s: %s', prefix, item.label, tostring(item.detail or '')))
     end
 
-    return result.ready and 0 or 1
+    if #report.trusted_keys == 0 then
+        print('  trusted keys: 0')
+    else
+        local ids = {}
+        for _, key in ipairs(report.trusted_keys) do
+            ids[#ids + 1] = key.id
+        end
+        print('  trusted keys: ' .. tostring(#report.trusted_keys) .. ' (' .. table.concat(ids, ', ') .. ')')
+    end
+
+    print('  loaded modules: ' .. tostring(#report.loaded_modules))
+    print('  experimental: yes')
+
+    return report.ready and 0 or 1
 end
 
-local function print_raw_file(label, reader, opts)
-    local content, err = reader(opts)
-    if not content then
-        log.error('%s unavailable: %s', label, tostring(err))
+local function print_status_json(opts)
+    local report = collect_status(opts)
+    local encoded, err = cjson.encode(report)
+    if not encoded then
+        log.error('Failed to encode Lua-LSM status: %s', tostring(err))
         return 1
     end
-    io.write(content)
-    if not content:match('\n$') then
-        io.write('\n')
-    end
-    return 0
-end
+    print(encoded)
 
-local function list_modules(opts)
-    local modules, raw_or_err = securityfs.list_modules(opts)
-    if not modules then
-        log.error('Lua-LSM modules unavailable: %s', tostring(raw_or_err))
-        return 1
-    end
-    if #modules == 0 then
-        print('No Lua-LSM modules loaded.')
-        return 0
-    end
-    print(raw_or_err)
-    return 0
+    return report.ready and 0 or 1
 end
 
 local function appraise_policy(source, signature, opts)
@@ -214,7 +223,7 @@ local function appraise_policy(source, signature, opts)
     return false
 end
 
-local function load_policy(path, opts)
+local function load_policy_file(path, opts)
     if type(path) ~= 'string' or path == '' then
         log.error('load requires a policy file path')
         return 1
@@ -274,6 +283,74 @@ local function load_policy(path, opts)
     return 0
 end
 
+local function dirname(path)
+    local normalized = path:gsub('/+$', '')
+    local parent = normalized:match('^(.*)/[^/]+$')
+    if parent == nil or parent == '' then
+        return '.'
+    end
+    return parent
+end
+
+local function load_manifest(path, opts)
+    local manifest, err = policy.load_manifest(path)
+    if not manifest then
+        log.error('Failed to load Lua-LSM manifest: %s', tostring(err))
+        return 1
+    end
+
+    local entries = {}
+    for _, entry in ipairs(manifest.policies) do
+        if entry.enabled ~= false then
+            entries[#entries + 1] = entry
+        end
+    end
+
+    table.sort(entries, function(a, b)
+        local order_a = a.order or math.huge
+        local order_b = b.order or math.huge
+        if order_a == order_b then
+            return tostring(a.name) < tostring(b.name)
+        end
+        return order_a < order_b
+    end)
+
+    if #entries == 0 then
+        print('No enabled Lua-LSM policies in manifest: ' .. path)
+        return 0
+    end
+
+    local base = dirname(path)
+    for _, entry in ipairs(entries) do
+        local policy_path = entry.file
+        if not policy_path:match('^/') then
+            policy_path = base .. '/' .. policy_path
+        end
+
+        log.info("Loading Lua-LSM policy '%s' from manifest", tostring(entry.name))
+        local code = load_policy_file(policy_path, opts)
+        if code ~= 0 then
+            log.error("Manifest load aborted at policy '%s'", tostring(entry.name))
+            return code
+        end
+    end
+
+    print(string.format('Loaded %d Lua-LSM policies from manifest: %s', #entries, path))
+    return 0
+end
+
+local function load_policy(path, opts)
+    if type(path) ~= 'string' or path == '' then
+        log.error('load requires a policy or manifest path')
+        return 1
+    end
+
+    if path:match('%.ya?ml$') then
+        return load_manifest(path, opts)
+    end
+    return load_policy_file(path, opts)
+end
+
 local function sign_policy(path, opts)
     if type(path) ~= 'string' or path == '' then
         log.error('sign requires a policy file path')
@@ -307,24 +384,6 @@ local function import_key(path, opts)
     end
 
     print('Imported Lua-LSM public key: ' .. id)
-    return 0
-end
-
-local function list_keys(opts)
-    local keys, err = integrity.list_keys(opts)
-    if not keys then
-        log.error('Lua-LSM trusted keys unavailable: %s', tostring(err))
-        return 1
-    end
-
-    if #keys == 0 then
-        print('No trusted Lua-LSM public keys imported.')
-        return 0
-    end
-
-    for _, key in ipairs(keys) do
-        print(key.id)
-    end
     return 0
 end
 
@@ -363,25 +422,18 @@ function M.run(argv)
     end
 
     if opts.command == 'status' then
+        if opts.json then
+            return print_status_json(opts)
+        end
         return print_status(opts)
-    elseif opts.command == 'doctor' then
-        return print_doctor(opts)
-    elseif opts.command == 'list' then
-        return list_modules(opts)
     elseif opts.command == 'import-key' then
         return import_key(opts.args[1], opts)
-    elseif opts.command == 'keys' then
-        return list_keys(opts)
     elseif opts.command == 'load' then
         return load_policy(opts.args[1], opts)
     elseif opts.command == 'sign' then
         return sign_policy(opts.args[1], opts)
     elseif opts.command == 'unload' then
         return unload_policy(opts.args[1], opts)
-    elseif opts.command == 'hooks' then
-        return print_raw_file('Lua-LSM hooks', securityfs.hooks, opts)
-    elseif opts.command == 'stats' then
-        return print_raw_file('Lua-LSM stats', securityfs.stats, opts)
     else
         log.error("Unknown lua-lsm command: '%s'", tostring(opts.command))
         print('')

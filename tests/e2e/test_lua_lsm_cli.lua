@@ -64,8 +64,10 @@ local function make_fixture()
 
     local lua_root = root .. '/security/lua'
     local trust_dir = root .. '/trust'
+    local proc_root = root .. '/proc'
     assert(os.execute('mkdir -p ' .. shell_escape(lua_root)))
     assert(os.execute('mkdir -p ' .. shell_escape(trust_dir)))
+    assert(os.execute('mkdir -p ' .. shell_escape(proc_root)))
 
     write_file(lua_root .. '/version', '1\n')
     write_file(lua_root .. '/register', '')
@@ -76,6 +78,18 @@ local function make_fixture()
 modules for lua-lsm
 name                 license      size nlsm nload shdict kvnode author
 ------------------------------------------------------------------------------------------
+]]
+    )
+    write_file(root .. '/security/lsm', 'lua\n')
+    write_file(proc_root .. '/mounts', 'securityfs ' .. root .. '/security securityfs rw 0 0\n')
+    write_file(
+        root .. '/kernel.config',
+        [[
+CONFIG_SECURITY=y
+CONFIG_SECURITYFS=y
+CONFIG_LUA=y
+CONFIG_SECURITY_LUA_LSM=y
+CONFIG_LSM="landlock,lockdown,yama,lua,bpf"
 ]]
     )
     write_file(root .. '/sm2.key', PRIV_PEM)
@@ -101,6 +115,8 @@ return {
     local env = {
         LOONGSHIELD_LUA_LSM_SECURITYFS_ROOT = lua_root,
         LOONGSHIELD_LUA_LSM_PUBKEY_DIR = trust_dir,
+        LOONGSHIELD_LUA_LSM_PROC_ROOT = proc_root,
+        LOONGSHIELD_LUA_LSM_CONFIG_FILE = root .. '/kernel.config',
         LOONGSHIELD_LUA_LSM_ASSUME_CAP_MAC_ADMIN = '1',
         LOG_LEVEL = 'info',
     }
@@ -109,6 +125,7 @@ return {
         root = root,
         lua_root = lua_root,
         trust_dir = trust_dir,
+        kernel_config = root .. '/kernel.config',
         policy = root .. '/policy.lua',
         priv = root .. '/sm2.key',
         pub = root .. '/sm2.pub',
@@ -122,9 +139,15 @@ local function cleanup(fixture)
     end
 end
 
-function test_lua_lsm_cli_import_key_and_list()
+function test_lua_lsm_cli_status_reports_readiness_keys_and_modules()
     local fixture = make_fixture()
     local ok, err = pcall(function()
+        local code, output = run_loongshield({ 'lua-lsm', 'status' }, fixture.env)
+        assert(code == 0, 'status failed:\n' .. output)
+        assert(output:find('kernel readiness', 1, true), 'Expected readiness section:\n' .. output)
+        assert(output:find('trusted keys: 0', 1, true), 'Expected zero trusted keys:\n' .. output)
+        assert(output:find('loaded modules: 0', 1, true), 'Expected zero loaded modules:\n' .. output)
+
         local code, output =
             run_loongshield({ 'lua-lsm', 'import-key', fixture.pub, '--trust-dir', fixture.trust_dir }, fixture.env)
         assert(code == 0, 'import-key failed:\n' .. output)
@@ -133,9 +156,10 @@ function test_lua_lsm_cli_import_key_and_list()
             'Expected key id in output:\n' .. output
         )
 
-        code, output = run_loongshield({ 'lua-lsm', 'keys', '--trust-dir', fixture.trust_dir }, fixture.env)
-        assert(code == 0, 'keys failed:\n' .. output)
-        assert(output:match('^%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x\n$'), 'Expected exactly one key id:\n' .. output)
+        code, output = run_loongshield({ 'lua-lsm', 'status', '--json' }, fixture.env)
+        assert(code == 0, 'status --json failed:\n' .. output)
+        assert(output:find('"trusted_keys"', 1, true), 'Expected trusted_keys in JSON:\n' .. output)
+        assert(output:find('"ready":true', 1, true), 'Expected ready=true in JSON:\n' .. output)
     end)
     cleanup(fixture)
     if not ok then
@@ -251,6 +275,70 @@ function test_lua_lsm_cli_appraise_log_allows_failed_verification()
         assert(code == 0, 'Expected tampered policy to load with appraise=log:\n' .. output)
         assert(output:find('log mode', 1, true), 'Expected log-mode warning:\n' .. output)
         assert(read_file(fixture.lua_root .. '/register') ~= '', 'Expected policy source written to register')
+    end)
+    cleanup(fixture)
+    if not ok then
+        error(err, 0)
+    end
+end
+
+function test_lua_lsm_cli_loads_manifest_in_order_and_skips_disabled()
+    local fixture = make_fixture()
+    local ok, err = pcall(function()
+        local code, output = run_loongshield({ 'lua-lsm', 'import-key', fixture.pub }, fixture.env)
+        assert(code == 0, 'import-key failed:\n' .. output)
+
+        local source = read_file(fixture.policy)
+        write_file(fixture.root .. '/first.lua', source:gsub('cli_demo', 'manifest_first'))
+        write_file(fixture.root .. '/second.lua', source:gsub('cli_demo', 'manifest_second'))
+        write_file(
+            fixture.root .. '/manifest.yml',
+            [[
+version: "1"
+policies:
+  - name: manifest_second
+    file: second.lua
+    enabled: true
+    order: 20
+  - name: manifest_disabled
+    file: disabled.lua
+    enabled: false
+    order: 5
+  - name: manifest_first
+    file: first.lua
+    enabled: true
+    order: 10
+]]
+        )
+
+        code, output =
+            run_loongshield({ 'lua-lsm', 'sign', fixture.root .. '/first.lua', '--key', fixture.priv }, fixture.env)
+        assert(code == 0, 'sign first failed:\n' .. output)
+        code, output =
+            run_loongshield({ 'lua-lsm', 'sign', fixture.root .. '/second.lua', '--key', fixture.priv }, fixture.env)
+        assert(code == 0, 'sign second failed:\n' .. output)
+
+        code, output = run_loongshield(
+            { 'lua-lsm', 'load', fixture.root .. '/manifest.yml', '--appraise', 'enforce' },
+            fixture.env
+        )
+        assert(code == 0, 'manifest load failed:\n' .. output)
+        assert(
+            output:find('Loaded 2 Lua-LSM policies from manifest', 1, true),
+            'Expected manifest summary:\n' .. output
+        )
+
+        -- The fake securityfs register is a plain file, so each load
+        -- overwrites the previous one; order is checked through the load log.
+        local first = output:find("Loading Lua-LSM policy 'manifest_first' from manifest", 1, true)
+        local second = output:find("Loading Lua-LSM policy 'manifest_second' from manifest", 1, true)
+        assert(first and second, 'Expected both policies to be loaded:\n' .. output)
+        assert(first < second, 'Expected order 10 policy before order 20 policy')
+        assert(not output:find('manifest_disabled', 1, true), 'Expected disabled policy to be skipped')
+        assert(
+            read_file(fixture.lua_root .. '/register'):find('manifest_second', 1, true),
+            'Expected last policy written to register'
+        )
     end)
     cleanup(fixture)
     if not ok then

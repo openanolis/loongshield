@@ -237,6 +237,10 @@ function M.list_keys(opts)
         return keys, 'lfs is required to list Lua-LSM trusted keys'
     end
 
+    if lfs.attributes(dir, 'mode') ~= 'directory' then
+        return keys
+    end
+
     for entry in lfs.dir(dir) do
         if entry:match('^[%w]+%.pem$') then
             local path = dir .. '/' .. entry

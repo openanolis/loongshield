@@ -55,6 +55,17 @@ local fake_lfs = {
             return names[index]
         end
     end,
+    attributes = function(path, what)
+        if what == 'mode' then
+            for name in pairs(files) do
+                if name:sub(1, #path + 1) == path .. '/' then
+                    return 'directory'
+                end
+            end
+            return nil
+        end
+        return nil
+    end,
 }
 
 local function fake_io_open(path, mode)
