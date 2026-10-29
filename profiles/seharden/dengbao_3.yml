@@ -1325,13 +1325,13 @@ rules:
           path: "/etc/audit/auditd.conf"
           key: "max_log_file"
           value: "8"
-          separator: "="
+          separator: " = "
       - action: file.set_key_value
         params:
           path: "/etc/audit/auditd.conf"
           key: "max_log_file_action"
           value: "keep_logs"
-          separator: "="
+          separator: " = "
 
   - id: "3.1.4"
     desc: "Ensure audit logs are not automatically deleted"
@@ -1357,7 +1357,7 @@ rules:
           path: "/etc/audit/auditd.conf"
           key: "max_log_file_action"
           value: "keep_logs"
-          separator: "="
+          separator: " = "
 
   - id: "3.1.5"
     desc: "Ensure the system reacts safely when audit logs are full"
@@ -1433,25 +1433,25 @@ rules:
           path: "/etc/audit/auditd.conf"
           key: "space_left_action"
           value: "syslog"
-          separator: "="
+          separator: " = "
       - action: file.set_key_value
         params:
           path: "/etc/audit/auditd.conf"
           key: "admin_space_left_action"
           value: "single"
-          separator: "="
+          separator: " = "
       - action: file.set_key_value
         params:
           path: "/etc/audit/auditd.conf"
           key: "disk_full_action"
           value: "single"
-          separator: "="
+          separator: " = "
       - action: file.set_key_value
         params:
           path: "/etc/audit/auditd.conf"
           key: "disk_error_action"
           value: "syslog"
-          separator: "="
+          separator: " = "
 
   - id: "3.2.2"
     desc: "Ensure auditing for processes that start prior to auditd is enabled"
