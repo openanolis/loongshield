@@ -1044,6 +1044,122 @@ function test_file_write_content_skips_when_content_matches()
     assert(written == false, 'Expected no write when content already matches')
 end
 
+local function replace_line_matching_dependencies(lines, written, on_write)
+    local fake_out = {
+        write = function(_, s)
+            table.insert(written, s)
+        end,
+        close = function()
+            return true
+        end,
+    }
+    file_enforcer._test_set_dependencies({
+        io_open = function(_, mode)
+            if mode == 'r' then
+                local i = 0
+                return {
+                    lines = function()
+                        return function()
+                            i = i + 1
+                            return lines[i]
+                        end
+                    end,
+                    close = function()
+                        return true
+                    end,
+                }
+            end
+            if on_write then
+                on_write()
+            end
+            return fake_out
+        end,
+        os_rename = function()
+            return true
+        end,
+        os_remove = function()
+            return true
+        end,
+    })
+end
+
+function test_file_replace_line_matching_preserves_shell_structure()
+    local written = {}
+    replace_line_matching_dependencies(
+        { 'if [ $UID -gt 199 ]; then', '     umask 002', 'else', '     umask 022', 'fi' },
+        written
+    )
+
+    local ok = file_enforcer.replace_line_matching({
+        path = '/etc/profile',
+        pattern = '^(%s*)umask%s+[0-7][0-7][0-7]',
+        replacement = '%1umask 027',
+    })
+    assert(ok == true, 'Expected replace_line_matching to succeed')
+
+    local content = table.concat(written, '\n')
+    local _, compliant = content:gsub('umask 027', '')
+    assert(compliant == 2, 'Expected both umask lines to be rewritten in place')
+    assert(content:find('     umask 027') ~= nil, 'Expected original indentation to be preserved')
+    assert(
+        content:find('else') ~= nil and content:find('%f[%a]fi%f[%A]') ~= nil,
+        'Expected the surrounding if/else/fi structure to survive'
+    )
+    assert(
+        content:find('umask 002') == nil and content:find('umask 022') == nil,
+        'Expected the weak umask values to be gone'
+    )
+end
+
+function test_file_replace_line_matching_is_idempotent()
+    local written = {}
+    local write_called = false
+    replace_line_matching_dependencies({ 'if true; then', '     umask 027', 'fi' }, written, function()
+        write_called = true
+    end)
+
+    local ok = file_enforcer.replace_line_matching({
+        path = '/etc/profile',
+        pattern = '^(%s*)umask%s+[0-7][0-7][0-7]',
+        replacement = '%1umask 027',
+    })
+    assert(ok == true, 'Expected idempotent skip to return true')
+    assert(write_called == false, 'Expected no write when every matching line is already compliant')
+end
+
+function test_file_replace_line_matching_returns_true_for_missing_file()
+    file_enforcer._test_set_dependencies({
+        io_open = function()
+            return nil
+        end,
+    })
+    local ok = file_enforcer.replace_line_matching({
+        path = '/nonexistent',
+        pattern = 'umask%s+002',
+        replacement = 'umask 027',
+    })
+    assert(ok == true, "Expected true when file doesn't exist")
+end
+
+function test_file_replace_line_matching_rejects_missing_params()
+    file_enforcer._test_set_dependencies({})
+    local ok, err = file_enforcer.replace_line_matching({ path = '/etc/profile' })
+    assert(ok == nil, 'Expected error when pattern and replacement are missing')
+    assert(err ~= nil, 'Expected error message')
+end
+
+function test_file_replace_line_matching_rejects_invalid_pattern()
+    local written = {}
+    replace_line_matching_dependencies({ 'umask 002' }, written)
+    local ok, err = file_enforcer.replace_line_matching({
+        path = '/etc/profile',
+        pattern = 'umask%',
+        replacement = 'umask 027',
+    })
+    assert(ok == nil, 'Expected error for malformed pattern')
+    assert(err ~= nil and err:find('invalid') ~= nil, 'Expected invalid pattern error message')
+end
+
 --------------------------------------------------------------------------------
 -- mounts enforcer
 --------------------------------------------------------------------------------

@@ -4,6 +4,17 @@
 
 The default bundled profile is `cis_alinux_3`, which targets the CIS Alibaba Cloud Linux 3 Benchmark v2.0.0 and similar OpenAnolis-style hosts. On other RPM-based systems, pick an explicit profile with `--config`.
 
+## Bundled Profiles
+
+| Profile | Description |
+|---|---|
+| `cis_alinux_3` | CIS Alibaba Cloud Linux 3 Benchmark v2.0.0. This is the default. |
+| `dengbao_3` | DengBao Level 3 (GB/T 22239-2019) rule set. Use it on Alibaba Cloud Linux 4. |
+| `dengbao_3_alinux3` | The same rule set, adjusted for Alibaba Cloud Linux 3. Use it on Alibaba Cloud Linux 3. |
+| `agentos_baseline` | AgentOS baseline. |
+
+On a freshly installed host both DengBao profiles carry the same 53 rules and report the same pass/fail matrix, except that `3.1.1` passes on ALinux 4 out of the box because the `auditd` service is enabled there by default.
+
 ## Syntax
 
 ```sh
@@ -95,6 +106,8 @@ loongshield seharden --config agentos_baseline --format json
 loongshield seharden --config agentos_baseline --verbose
 loongshield seharden --config agentos_baseline --log-level debug
 loongshield seharden --config cis_alinux_3 --level l1_server
+loongshield seharden --config dengbao_3_alinux3 --level l1_server
+loongshield seharden --reinforce --config dengbao_3_alinux3
 loongshield seharden --reinforce --config agentos_baseline --dry-run
 loongshield seharden --reinforce --config /etc/loongshield/seharden/dengbao_3.yml
 ```

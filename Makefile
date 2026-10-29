@@ -53,7 +53,7 @@ RPM_BUILD_REQUIRES := \
 	make \
 	openssl-devel \
 	perl-ExtUtils-MakeMaker \
-	perl-FindBin \
+	'perl(FindBin)' \
 	perl-IPC-Cmd \
 	rpm-build \
 	rpm-devel \
@@ -196,10 +196,10 @@ env-check:
 	fi; \
 	. /etc/os-release; \
 	case "$${PLATFORM_ID:-}" in \
-		platform:el9|platform:an23|platform:alnx4) ;; \
+		platform:el9|platform:an23|platform:alnx4|platform:al8) ;; \
 		*) \
 			echo "Error: unsupported local build host '$${PRETTY_NAME:-$${NAME:-unknown}}'." >&2; \
-			echo "Supported local build hosts: CentOS Stream 9 / EL9-compatible, Anolis OS 23, Alibaba Cloud Linux 4." >&2; \
+			echo "Supported local build hosts: CentOS Stream 9 / EL9-compatible, Anolis OS 23, Alibaba Cloud Linux 4, Alibaba Cloud Linux 3." >&2; \
 			echo "Use 'make docker-dev' or re-run with ALLOW_UNSUPPORTED_HOST=1 to bypass this check." >&2; \
 			exit 1; \
 			;; \

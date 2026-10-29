@@ -8,10 +8,11 @@ All notable changes to this project will be documented in this file.
 - None yet.
 
 ### Added
-- None yet.
+- `dengbao_3_alinux3` SEHarden profile for Alibaba Cloud Linux 3. It carries the same DengBao Level 3 rule set as `dengbao_3` and only replaces the system-wide umask remediation, which must rewrite the ALinux 3 `if/else` startup files in place instead of commenting them out.
+- `file.replace_line_matching` enforcer action. It rewrites matching lines in place and preserves line count, indentation, and the surrounding shell structure.
 
 ### Changed
-- None yet.
+- Local host builds are now accepted on Alibaba Cloud Linux 3, which reports `PLATFORM_ID=platform:al8`.
 
 ### Fixed
 - None yet.

@@ -7,6 +7,7 @@ This guide covers the expected workflow for Loongshield contributors.
 Loongshield is developed and tested on RPM-based Linux systems:
 
 - Alibaba Cloud Linux 4
+- Alibaba Cloud Linux 3
 - Anolis OS 23
 - EL9-compatible hosts such as CentOS Stream 9
 
