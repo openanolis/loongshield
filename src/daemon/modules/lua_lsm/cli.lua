@@ -4,6 +4,7 @@ local integrity = require('lua_lsm.integrity')
 local policy = require('lua_lsm.policy')
 local readiness = require('lua_lsm.readiness')
 local securityfs = require('lua_lsm.securityfs')
+local lfs = require('lfs')
 
 local M = {}
 
@@ -15,13 +16,13 @@ Lua-LSM Policy Manager
 Commands:
   status                 Show kernel readiness, trusted keys, and loaded modules
   import-key <pub.pem>   Import an SM2 public key into the trust store
-  load <policy|manifest> Verify, validate, and load a policy or policy manifest
+  load <policy|dir>      Verify, validate, and load a policy or policy directory
   unload <name>          Unload a Lua-LSM policy by module name
   sign <policy.lua>      Sign a policy in place with an SM2 key (SM3 digest)
 
 Options:
   --root <path>          Override Lua-LSM securityfs root
-  --config <path>        Override kernel config path for status
+  --config <path>        Override kernel config path used by status
   --key <path>           SM2 private key used by sign
   --appraise <mode>      Policy appraisal: off | log | enforce (default off)
   --trust-dir <path>     Override trusted public key directory
@@ -283,70 +284,42 @@ local function load_policy_file(path, opts)
     return 0
 end
 
-local function dirname(path)
-    local normalized = path:gsub('/+$', '')
-    local parent = normalized:match('^(.*)/[^/]+$')
-    if parent == nil or parent == '' then
-        return '.'
+local function load_directory(dir, opts)
+    local policies = {}
+    for entry in lfs.dir(dir) do
+        if entry:match('%.lua$') then
+            policies[#policies + 1] = entry
+        end
     end
-    return parent
-end
 
-local function load_manifest(path, opts)
-    local manifest, err = policy.load_manifest(path)
-    if not manifest then
-        log.error('Failed to load Lua-LSM manifest: %s', tostring(err))
+    if #policies == 0 then
+        log.error('No Lua-LSM policies found in directory: ' .. dir)
         return 1
     end
 
-    local entries = {}
-    for _, entry in ipairs(manifest.policies) do
-        if entry.enabled ~= false then
-            entries[#entries + 1] = entry
-        end
-    end
-
-    table.sort(entries, function(a, b)
-        local order_a = a.order or math.huge
-        local order_b = b.order or math.huge
-        if order_a == order_b then
-            return tostring(a.name) < tostring(b.name)
-        end
-        return order_a < order_b
-    end)
-
-    if #entries == 0 then
-        print('No enabled Lua-LSM policies in manifest: ' .. path)
-        return 0
-    end
-
-    local base = dirname(path)
-    for _, entry in ipairs(entries) do
-        local policy_path = entry.file
-        if not policy_path:match('^/') then
-            policy_path = base .. '/' .. policy_path
-        end
-
-        log.info("Loading Lua-LSM policy '%s' from manifest", tostring(entry.name))
+    table.sort(policies)
+    for _, entry in ipairs(policies) do
+        local policy_path = dir:gsub('/+$', '') .. '/' .. entry
+        log.info("Loading Lua-LSM policy '%s' from directory", entry)
         local code = load_policy_file(policy_path, opts)
         if code ~= 0 then
-            log.error("Manifest load aborted at policy '%s'", tostring(entry.name))
+            log.error("Directory load aborted at policy '%s'", entry)
             return code
         end
     end
 
-    print(string.format('Loaded %d Lua-LSM policies from manifest: %s', #entries, path))
+    print(string.format('Loaded %d Lua-LSM policies from directory: %s', #policies, dir))
     return 0
 end
 
 local function load_policy(path, opts)
     if type(path) ~= 'string' or path == '' then
-        log.error('load requires a policy or manifest path')
+        log.error('load requires a policy file or directory path')
         return 1
     end
 
-    if path:match('%.ya?ml$') then
-        return load_manifest(path, opts)
+    if lfs.attributes(path, 'mode') == 'directory' then
+        return load_directory(path, opts)
     end
     return load_policy_file(path, opts)
 end

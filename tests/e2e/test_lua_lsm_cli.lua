@@ -282,61 +282,43 @@ function test_lua_lsm_cli_appraise_log_allows_failed_verification()
     end
 end
 
-function test_lua_lsm_cli_loads_manifest_in_order_and_skips_disabled()
+function test_lua_lsm_cli_loads_policy_directory_in_filename_order()
     local fixture = make_fixture()
     local ok, err = pcall(function()
         local code, output = run_loongshield({ 'lua-lsm', 'import-key', fixture.pub }, fixture.env)
         assert(code == 0, 'import-key failed:\n' .. output)
 
+        local dir = fixture.root .. '/policies'
+        assert(os.execute('mkdir -p ' .. shell_escape(dir)))
+
         local source = read_file(fixture.policy)
-        write_file(fixture.root .. '/first.lua', source:gsub('cli_demo', 'manifest_first'))
-        write_file(fixture.root .. '/second.lua', source:gsub('cli_demo', 'manifest_second'))
-        write_file(
-            fixture.root .. '/manifest.yml',
-            [[
-version: "1"
-policies:
-  - name: manifest_second
-    file: second.lua
-    enabled: true
-    order: 20
-  - name: manifest_disabled
-    file: disabled.lua
-    enabled: false
-    order: 5
-  - name: manifest_first
-    file: first.lua
-    enabled: true
-    order: 10
-]]
-        )
+        write_file(dir .. '/20-second.lua', source:gsub('cli_demo', 'dir_second'))
+        write_file(dir .. '/10-first.lua', source:gsub('cli_demo', 'dir_first'))
+        write_file(dir .. '/notes.txt', 'not a policy, must be ignored')
 
         code, output =
-            run_loongshield({ 'lua-lsm', 'sign', fixture.root .. '/first.lua', '--key', fixture.priv }, fixture.env)
+            run_loongshield({ 'lua-lsm', 'sign', dir .. '/10-first.lua', '--key', fixture.priv }, fixture.env)
         assert(code == 0, 'sign first failed:\n' .. output)
         code, output =
-            run_loongshield({ 'lua-lsm', 'sign', fixture.root .. '/second.lua', '--key', fixture.priv }, fixture.env)
+            run_loongshield({ 'lua-lsm', 'sign', dir .. '/20-second.lua', '--key', fixture.priv }, fixture.env)
         assert(code == 0, 'sign second failed:\n' .. output)
 
-        code, output = run_loongshield(
-            { 'lua-lsm', 'load', fixture.root .. '/manifest.yml', '--appraise', 'enforce' },
-            fixture.env
-        )
-        assert(code == 0, 'manifest load failed:\n' .. output)
+        code, output = run_loongshield({ 'lua-lsm', 'load', dir, '--appraise', 'enforce' }, fixture.env)
+        assert(code == 0, 'directory load failed:\n' .. output)
         assert(
-            output:find('Loaded 2 Lua-LSM policies from manifest', 1, true),
-            'Expected manifest summary:\n' .. output
+            output:find('Loaded 2 Lua-LSM policies from directory', 1, true),
+            'Expected directory summary:\n' .. output
         )
 
         -- The fake securityfs register is a plain file, so each load
         -- overwrites the previous one; order is checked through the load log.
-        local first = output:find("Loading Lua-LSM policy 'manifest_first' from manifest", 1, true)
-        local second = output:find("Loading Lua-LSM policy 'manifest_second' from manifest", 1, true)
+        local first = output:find("Loading Lua-LSM policy '10-first.lua' from directory", 1, true)
+        local second = output:find("Loading Lua-LSM policy '20-second.lua' from directory", 1, true)
         assert(first and second, 'Expected both policies to be loaded:\n' .. output)
-        assert(first < second, 'Expected order 10 policy before order 20 policy')
-        assert(not output:find('manifest_disabled', 1, true), 'Expected disabled policy to be skipped')
+        assert(first < second, 'Expected filename order to be respected')
+        assert(not output:find('notes.txt', 1, true), 'Expected non-policy files to be ignored')
         assert(
-            read_file(fixture.lua_root .. '/register'):find('manifest_second', 1, true),
+            read_file(fixture.lua_root .. '/register'):find('dir_second', 1, true),
             'Expected last policy written to register'
         )
     end)

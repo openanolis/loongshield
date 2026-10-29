@@ -17,8 +17,8 @@ loongshield lua-lsm <command> [options]
 - `status`: show kernel readiness, trusted keys, and loaded modules. Supports
   `--json` for machine-readable reporting.
 - `import-key <pub.pem>`: import an SM2 public key into the local trust store.
-- `load <policy.lua | manifest.yml>`: verify, validate, and load a single policy
-  or every enabled policy in a manifest, in `order`.
+- `load <policy.lua | directory>`: verify, validate, and load a single policy
+  or every `.lua` policy in a directory, in filename order.
 - `sign <policy.lua>`: sign a policy in place with an SM2 private key using the
   SM3 digest.
 - `unload <name>`: write the module name to `unregister`.
@@ -79,24 +79,22 @@ After verification, `load` strips the signature trailer and writes only the
 clean Lua source to `register`; the kernel-side Lua-LSM is unaware of the
 signature format.
 
-## Manifest Loading
+## Directory Loading
 
-`load` accepts a YAML manifest to load a policy set in a fixed order:
+`load` accepts a policy directory, like `sudoers.d` or `sysctl.d`. The
+directory itself is the policy list; file presence enables a policy, file
+removal disables it, and numeric prefixes control order:
 
-```yaml
-version: "1"
-policies:
-  - name: deny_tmp_marker
-    file: deny_tmp_marker.lua
-    enabled: true
-    order: 10
+```
+policies/
+├── 01-deny_tmp_marker.lua
+└── 02-protect_home.lua
 ```
 
-Policies with `enabled: false` are skipped. Remaining entries load in ascending
-`order`, and policy paths resolve relative to the manifest. A load failure
-aborts the manifest. Loading the same signed manifest on many hosts gives every
-host the same policy set, which is the consistency guarantee for distributing
-policies across machines.
+Only `*.lua` files load, in filename order. A load failure aborts the
+directory. Distributing the same signed directory to many hosts and loading it
+on each gives every host the same policy set, which is the consistency
+guarantee for distributing policies across machines.
 
 ## Environment
 
@@ -131,7 +129,7 @@ loongshield lua-lsm status --json
 loongshield lua-lsm import-key sm2.pub
 loongshield lua-lsm sign profiles/lua-lsm/deny_tmp_marker.lua --key sm2.key
 loongshield lua-lsm load profiles/lua-lsm/deny_tmp_marker.lua --appraise enforce
-loongshield lua-lsm load profiles/lua-lsm/manifest.yml --appraise enforce
+loongshield lua-lsm load profiles/lua-lsm/ --appraise enforce
 loongshield lua-lsm load profiles/lua-lsm/deny_tmp_marker.lua --appraise log
 loongshield lua-lsm load profiles/lua-lsm/deny_tmp_marker.lua
 loongshield lua-lsm unload deny_tmp_marker
