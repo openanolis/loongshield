@@ -82,9 +82,17 @@ local directory. Managed hosts pull the same signed directory and load it with
 `--appraise enforce`, which is the multi-host consistency mechanism: every host
 verifies the same SM2 signatures over the same policy set.
 
-The server rejects path traversal and refuses to serve `*.key` private key
-files. Wire confidentiality relies on the transport (HTTPS URL or SSH tunnel);
-wire integrity does not, because verification happens after the pull.
+The server is allowlist-based: only `.lua` and `.pub` files are indexed and
+served, while symlinks and all other file types are rejected. The client applies
+the same path and index validation before writing files, so a malicious index
+cannot escape the pull directory. The initial verification key is imported out
+of band; policy content is then verified with SM2 after the pull.
+
+Current known limits are deliberately simple for the first implementation:
+the index is unsigned, so a compromised server can replay or omit an older
+signed policy set; a failed directory pull is not atomic; and plain HTTP has no
+wire confidentiality. HTTPS or an SSH tunnel can provide confidentiality, but
+the bundled downloader does not yet verify TLS certificates.
 
 ## Package Layout
 

@@ -18,6 +18,7 @@ local MAGIC = 'LULSM\x01'
 local ALGO_SM2_SM3 = 1
 
 local SM2_USER_ID = '1234567812345678'
+local SM2_CURVE_OID = string.char(0x06, 0x08, 0x2a, 0x81, 0x1c, 0xcf, 0x55, 0x01, 0x82, 0x2d)
 
 local DEFAULT_TRUST_DIR = '/var/lib/loongshield/lua-lsm/pubkeys'
 
@@ -70,6 +71,11 @@ local function load_key(pem, private)
     local key, read_err = openssl.pkey.read(pem, private, 'pem')
     if not key then
         return nil, 'failed to read SM2 key: ' .. tostring(read_err)
+    end
+
+    local der = key:export('der')
+    if type(der) ~= 'string' or not der:find(SM2_CURVE_OID, 1, true) then
+        return nil, 'key is not an SM2 key'
     end
     return key
 end

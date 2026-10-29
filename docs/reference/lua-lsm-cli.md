@@ -107,17 +107,24 @@ guarantee for distributing policies across machines.
 
 LoongShield can act as both the server and the client for policy
 distribution. On the management host, serve a directory containing signed
-policies and public keys:
+policies and public keys. Only `.lua` and `.pub` files are served; symlinks
+and every other file type are refused:
 
 ```sh
 loongshield lua-lsm server --port 8080 --dir /srv/loongshield/lua-lsm
+```
+
+The initial public key import is a trust decision and must happen out of band
+(hand-delivered, verified channel, or pre-provisioned image). Import it once:
+
+```sh
+loongshield lua-lsm import-key /etc/loongshield/sm2.pub
 ```
 
 On each managed host, pull the whole directory and load it with verification:
 
 ```sh
 loongshield lua-lsm pull http://management:8080/ --dir /etc/loongshield/lua-lsm
-loongshield lua-lsm import-key /etc/loongshield/lua-lsm/sm2.pub
 loongshield lua-lsm load /etc/loongshield/lua-lsm/policies --appraise enforce
 ```
 
@@ -127,10 +134,22 @@ Single files can also be pulled directly:
 loongshield lua-lsm pull http://management:8080/sm2.pub --dir /etc/loongshield/lua-lsm
 ```
 
-The server refuses path traversal (`..`) and private key files (`*.key`).
-Confidentiality on the wire comes from the transport: use an HTTPS URL or an
-SSH tunnel. Integrity does not depend on the transport, because policies carry
-SM2 signatures verified after the pull.
+The server refuses path traversal (`..`), symlinks, and anything that is not a
+`.lua` or `.pub` file. The client validates every index entry against the same
+rules before writing, so a malicious index cannot write outside the output
+directory. Integrity of policy content does not depend on the transport,
+because policies carry SM2 signatures verified after the pull.
+
+Known limits of the current distribution design:
+
+- The file index itself is unsigned: a compromised server can replay an older
+  policy set or omit policies. The SM2 signatures still prevent forged or
+  tampered policy content.
+- A pull that fails halfway leaves already-downloaded files in place; it does
+  not atomically swap the whole directory.
+- Plain HTTP has no wire confidentiality. HTTPS URLs and SSH tunnels work with
+  the pull client, but note that the bundled downloader currently does not
+  verify TLS certificates by default; treat HTTPS as confidentiality only.
 
 ## Environment
 

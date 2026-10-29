@@ -398,9 +398,20 @@ local function serve_policies(opts)
         return 1
     end
 
+    local port
+    if opts.port == nil then
+        port = 8080
+    else
+        port = tonumber(opts.port)
+        if not port or port < 1 or port > 65535 or port % 1 ~= 0 then
+            log.error("invalid server port: '%s'", tostring(opts.port))
+            return 1
+        end
+    end
+
     local ok, err = distribute.serve({
         dir = opts.dir,
-        port = opts.port,
+        port = port,
         on_ready = function(host, port, dir)
             print(string.format('Serving Lua-LSM policies from %s on %s:%d', dir, host, port))
             print('Pull with: loongshield lua-lsm pull http://' .. host .. ':' .. tostring(port) .. '/')
@@ -422,13 +433,13 @@ local function pull_policies(url, opts)
 
     local result
     local co = coroutine.create(function()
-        local ok, pulled_or_err = pcall(distribute.pull, url, { output_dir = opts.dir })
-        if ok and type(pulled_or_err) == 'number' then
-            result = pulled_or_err
+        local ok, count, pull_err = pcall(distribute.pull, url, { output_dir = opts.dir })
+        if ok and type(count) == 'number' then
+            result = count
         elseif ok then
-            result = { nil, tostring(pulled_or_err) }
+            result = { nil, tostring(pull_err) }
         else
-            result = { nil, tostring(pulled_or_err) }
+            result = { nil, 'pull failed: ' .. tostring(count) }
         end
     end)
     coroutine.resume(co)

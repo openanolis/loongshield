@@ -11,7 +11,49 @@ local function url_decode(value)
     end))
 end
 
-local function list_files(dir)
+--- A safe, relative, server-controlled path: no absolute paths, no `..`
+--- components, no backslash, no NUL, no empty or duplicate separators.
+function M.is_safe_name(name)
+    if type(name) ~= 'string' or name == '' then
+        return false
+    end
+    if name:find('\\', 1, true) or name:find('\0', 1, true) then
+        return false
+    end
+    if name:sub(1, 1) == '/' or name:sub(-1) == '/' then
+        return false
+    end
+    if name:find('//', 1, true) then
+        return false
+    end
+
+    for segment in name:gmatch('[^/]+') do
+        if segment == '.' or segment == '..' then
+            return false
+        end
+        if not segment:match('^[%w%-%_%.]+$') then
+            return false
+        end
+    end
+    return true
+end
+
+--- Only policies and public keys are distributed.
+local function is_served_file(name)
+    return name:match('%.lua$') ~= nil or name:match('%.pub$') ~= nil
+end
+
+--- Reject symlinks: `lfs.attributes` follows them, so use
+--- `symlinkattributes` to classify every entry first.
+local function entry_mode(path)
+    local link_mode = lfs.symlinkattributes(path, 'mode')
+    if link_mode == 'link' then
+        return 'link'
+    end
+    return lfs.attributes(path, 'mode')
+end
+
+function M.list_files(dir)
     local files = {}
 
     local function walk(path, prefix)
@@ -19,10 +61,10 @@ local function list_files(dir)
             if entry ~= '.' and entry ~= '..' then
                 local full = path .. '/' .. entry
                 local relative = prefix .. entry
-                local mode = lfs.attributes(full, 'mode')
+                local mode = entry_mode(full)
                 if mode == 'directory' then
                     walk(full, relative .. '/')
-                elseif mode == 'file' then
+                elseif mode == 'file' and is_served_file(relative) then
                     files[#files + 1] = {
                         name = relative,
                         size = lfs.attributes(full, 'size') or 0,
@@ -53,7 +95,8 @@ local function respond(client, status, reason, body, content_type)
 end
 
 --- Serve a policy directory over plain HTTP. GET / returns the file index as
---- JSON; GET /<name> returns one file. Runs until the process is stopped.
+--- JSON; GET /<name> returns one file. Only `.lua` and `.pub` files inside
+--- the directory are served; symlinks are rejected. Runs until stopped.
 function M.serve(opts)
     opts = opts or {}
     local dir = opts.dir
@@ -95,23 +138,23 @@ function M.serve(opts)
 
             path = url_decode(path:match('^([^?]*)'))
             if path == '/' then
-                local index = cjson.encode({ files = list_files(dir) })
+                local index = cjson.encode({ files = M.list_files(dir) })
                 respond(client, 200, 'OK', index, 'application/json')
                 return
             end
 
             local name = path:sub(2)
-            if name == '' or name:find('%.%.') or name:find('\\') then
+            if not M.is_safe_name(name) then
                 respond(client, 400, 'Bad Request', 'path traversal rejected\n', 'text/plain')
                 return
             end
-            if name:match('%.key$') then
-                respond(client, 403, 'Forbidden', 'refusing to serve private key: ' .. name .. '\n', 'text/plain')
+            if not is_served_file(name) then
+                respond(client, 404, 'Not Found', 'not a distributable file: ' .. name .. '\n', 'text/plain')
                 return
             end
 
             local full = dir .. '/' .. name
-            if lfs.attributes(full, 'mode') ~= 'file' then
+            if entry_mode(full) ~= 'file' then
                 respond(client, 404, 'Not Found', 'not found: ' .. name .. '\n', 'text/plain')
                 return
             end
@@ -151,6 +194,24 @@ local function mkdir_p(path)
     return true
 end
 
+local function normalize_dir(path)
+    if path:sub(1, 1) ~= '/' then
+        path = lfs.currentdir() .. '/' .. path
+    end
+
+    local parts = {}
+    for segment in path:gmatch('[^/]+') do
+        if segment == '.' then
+            -- skip
+        elseif segment == '..' then
+            table.remove(parts)
+        else
+            parts[#parts + 1] = segment
+        end
+    end
+    return '/' .. table.concat(parts, '/')
+end
+
 local function write_downloaded(path, body)
     local parent = path:match('^(.*)/[^/]+$')
     if parent and parent ~= '' then
@@ -184,11 +245,48 @@ local function http_get(url)
     return body
 end
 
+--- Validate a server-provided policy index before anything is fetched or
+--- written. Every entry must be a safe relative path and unique.
+function M.validate_index(index)
+    if type(index) ~= 'table' or type(index.files) ~= 'table' then
+        return nil, 'invalid policy index: files must be a list'
+    end
+
+    local count = 0
+    while index.files[count + 1] ~= nil do
+        count = count + 1
+    end
+
+    for key in pairs(index.files) do
+        if type(key) ~= 'number' or key < 1 or key > count or key % 1 ~= 0 then
+            return nil, 'invalid policy index: files must be a list'
+        end
+    end
+
+    if count == 0 then
+        return nil, 'invalid policy index: empty file list'
+    end
+
+    local seen = {}
+    for i = 1, count do
+        local file = index.files[i]
+        if type(file) ~= 'table' or not M.is_safe_name(file.name) then
+            return nil, 'invalid policy index entry ' .. i .. ': unsafe file name'
+        end
+        if seen[file.name] then
+            return nil, 'invalid policy index: duplicate file name ' .. file.name
+        end
+        seen[file.name] = true
+    end
+
+    return count
+end
+
 --- Pull one file, or a whole policy directory when the URL ends with '/'.
 --- Must run inside a coroutine with the libuv loop running.
 function M.pull(url, opts)
     opts = opts or {}
-    local output_dir = opts.output_dir or '/etc/loongshield/lua-lsm'
+    local output_dir = normalize_dir(opts.output_dir or '/etc/loongshield/lua-lsm')
 
     if url:sub(-1) == '/' then
         local index_body, index_err = http_get(url)
@@ -197,11 +295,17 @@ function M.pull(url, opts)
         end
 
         local decoded, decode_err = cjson.decode(index_body)
-        if not decoded or type(decoded.files) ~= 'table' then
+        if not decoded then
             return nil, 'invalid policy index from ' .. url .. ': ' .. tostring(decode_err)
         end
 
-        for _, file in ipairs(decoded.files) do
+        local count, validate_err = M.validate_index(decoded)
+        if not count then
+            return nil, validate_err
+        end
+
+        for i = 1, count do
+            local file = decoded.files[i]
             local body, fetch_err = http_get(url .. file.name)
             if not body then
                 return nil, fetch_err
@@ -213,7 +317,12 @@ function M.pull(url, opts)
             end
         end
 
-        return #decoded.files
+        return count
+    end
+
+    local name = url:match('([^/?#]+)$')
+    if not M.is_safe_name(name) then
+        return nil, 'unsafe file name in pull URL: ' .. tostring(name)
     end
 
     local body, fetch_err = http_get(url)
@@ -221,7 +330,6 @@ function M.pull(url, opts)
         return nil, fetch_err
     end
 
-    local name = url:match('([^/?#]+)$')
     local ok, write_err = write_downloaded(output_dir .. '/' .. name, body)
     if not ok then
         return nil, write_err

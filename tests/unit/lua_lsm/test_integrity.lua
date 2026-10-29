@@ -274,3 +274,24 @@ function test_lua_lsm_integrity_rejects_corrupt_trailer()
         assert(tostring(split_err):find('corrupt', 1, true), 'Unexpected error: ' .. tostring(split_err))
     end)
 end
+
+function test_lua_lsm_integrity_rejects_non_sm2_keys()
+    with_fixture(function()
+        local openssl = require('openssl')
+        local p256 = openssl.pkey.new('ec', 'prime256v1')
+        local public_pem = openssl.pkey.get_public(p256):export('pem')
+        local private_pem = p256:export('pem')
+
+        files['/incoming/p256.pub'] = public_pem
+        local imported, err = integrity.import_key('/incoming/p256.pub', opts())
+        assert(imported == nil, 'Expected non-SM2 key import to be rejected')
+        assert(tostring(err):find('not an SM2 key', 1, true), 'Unexpected error: ' .. tostring(err))
+
+        files['/incoming/p256.key'] = private_pem
+        local signed, sign_err = integrity.sign_file('/policy/demo.lua', '/incoming/p256.key', {
+            output_path = '/policy/signed.lua',
+        })
+        assert(signed == nil, 'Expected non-SM2 signing to be rejected')
+        assert(tostring(sign_err):find('not an SM2 key', 1, true), 'Unexpected error: ' .. tostring(sign_err))
+    end)
+end
