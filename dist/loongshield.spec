@@ -69,7 +69,7 @@ BuildRequires:  openssl-devel
 BuildRequires:  rpm-devel
 BuildRequires:  xz-devel
 BuildRequires:  perl-IPC-Cmd
-BuildRequires:  perl-FindBin
+BuildRequires:  perl(FindBin)
 BuildRequires:  perl-ExtUtils-MakeMaker
 BuildRequires:  which
 %description

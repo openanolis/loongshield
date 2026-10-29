@@ -266,6 +266,10 @@ function test_bundled_profiles_validate_all_level_counts_through_runtime_api()
         { path = "profiles/seharden/dengbao_3.yml", level = "l2_server", rules = 53, manual = 15 },
         { path = "profiles/seharden/dengbao_3.yml", level = "l1_workstation", rules = 53, manual = 15 },
         { path = "profiles/seharden/dengbao_3.yml", level = "l2_workstation", rules = 53, manual = 15 },
+        { path = "profiles/seharden/dengbao_3_alinux3.yml", level = "l1_server", rules = 53, manual = 15 },
+        { path = "profiles/seharden/dengbao_3_alinux3.yml", level = "l2_server", rules = 53, manual = 15 },
+        { path = "profiles/seharden/dengbao_3_alinux3.yml", level = "l1_workstation", rules = 53, manual = 15 },
+        { path = "profiles/seharden/dengbao_3_alinux3.yml", level = "l2_workstation", rules = 53, manual = 15 },
     }
 
     for _, case in ipairs(cases) do
@@ -294,6 +298,12 @@ function test_bundled_profile_selected_probe_and_enforcer_paths_resolve()
             "l2_workstation",
         } },
         { path = "profiles/seharden/dengbao_3.yml", levels = {
+            "l1_server",
+            "l2_server",
+            "l1_workstation",
+            "l2_workstation",
+        } },
+        { path = "profiles/seharden/dengbao_3_alinux3.yml", levels = {
             "l1_server",
             "l2_server",
             "l1_workstation",
@@ -348,6 +358,7 @@ function test_bundled_profiles_do_not_reuse_probe_names_within_a_rule()
         "profiles/seharden/agentos_baseline.yml",
         "profiles/seharden/cis_alinux_3.yml",
         "profiles/seharden/dengbao_3.yml",
+        "profiles/seharden/dengbao_3_alinux3.yml",
     }
 
     for _, path in ipairs(profile_paths) do
@@ -1636,6 +1647,7 @@ function test_profiles_define_localhost_conditions_for_ssh_effective_value()
         "profiles/seharden/agentos_baseline.yml",
         "profiles/seharden/cis_alinux_3.yml",
         "profiles/seharden/dengbao_3.yml",
+        "profiles/seharden/dengbao_3_alinux3.yml",
     }
     local offenders = {}
 

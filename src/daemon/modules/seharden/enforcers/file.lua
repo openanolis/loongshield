@@ -216,6 +216,82 @@ function M.comment_line_matching(params)
     return fsutil.write_lines_atomically(params.path, lines, 'file.comment_line_matching', _dependencies)
 end
 
+-- Rewrite matching lines in place, preserving line count and surrounding structure.
+-- Unlike comment_line_matching/remove_line_matching this keeps every line of a
+-- multi-line shell construct (if/then/else/fi) intact, so it is the safe action
+-- for distro defaults that live inside a conditional block.
+-- params: { path, pattern, replacement } or { paths = { ... }, pattern, replacement }
+--   'path'        - single file (not glob-expanded)
+--   'paths'       - array of files/globs, e.g. { "/etc/profile", "/etc/profile.d/*.sh" }
+--   'pattern'     - Lua pattern matched against each line
+--   'replacement' - gsub replacement; %1..%9 expand to the pattern captures
+function M.replace_line_matching(params)
+    if not params or not params.pattern or params.replacement == nil then
+        return nil, "file.replace_line_matching: requires 'pattern' and 'replacement' parameters"
+    end
+
+    local targets = {}
+    if params.paths then
+        for _, path in ipairs(path_list.expand_files(params.paths)) do
+            table.insert(targets, path)
+        end
+    elseif params.path then
+        targets = { params.path }
+    else
+        return nil, "file.replace_line_matching: requires 'path' or 'paths' parameter"
+    end
+
+    local replacement = tostring(params.replacement)
+    local any_replaced = false
+
+    for _, path in ipairs(targets) do
+        if fsutil.is_symlink(path, _dependencies) then
+            log.warn("file.replace_line_matching: refusing to overwrite symlink '%s'", path)
+            goto continue
+        end
+
+        local existing_lines, file_exists = read_existing_lines(path)
+        if not file_exists then
+            goto continue
+        end
+
+        local lines = {}
+        local replaced = 0
+        for _, line in ipairs(existing_lines) do
+            local ok_line, new_line, count = pcall(string.gsub, line, params.pattern, replacement)
+            if not ok_line then
+                return nil,
+                    string.format("file.replace_line_matching: invalid pattern/replacement: %s", tostring(new_line))
+            end
+            if count > 0 and new_line ~= line then
+                replaced = replaced + 1
+            end
+            table.insert(lines, new_line)
+        end
+
+        if replaced > 0 then
+            log.debug('Enforcer file.replace_line_matching: rewriting %d line(s) in %s', replaced, path)
+            local wrote, err =
+                fsutil.write_lines_atomically(path, lines, 'file.replace_line_matching', _dependencies)
+            if not wrote then
+                return nil,
+                    string.format("file.replace_line_matching: failed to write '%s': %s", path, tostring(err))
+            end
+            any_replaced = true
+        else
+            log.debug("file.replace_line_matching: no matching lines in '%s', skipping.", path)
+        end
+
+        ::continue::
+    end
+
+    if not any_replaced then
+        log.debug('file.replace_line_matching: no matching lines in any target, nothing to do.')
+    end
+
+    return true
+end
+
 -- Write exact content to a file. Idempotent (skips if content already matches).
 -- params: { path, content }
 --   'content' — string; may contain embedded \n for multi-line content

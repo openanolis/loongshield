@@ -7,8 +7,11 @@ This page is for contributors working on Loongshield itself. Operator-facing usa
 Loongshield currently supports local host builds on these RPM-based Linux environments:
 
 - Alibaba Cloud Linux 4 (OpenAnolis Edition)
+- Alibaba Cloud Linux 3 (OpenAnolis Edition)
 - Anolis OS 23
 - EL9-compatible hosts such as CentOS Stream 9
+
+Alibaba Cloud Linux 3 reports `PLATFORM_ID=platform:al8` in `/etc/os-release`; that is the value the host guard matches.
 
 If your host does not match one of the supported platforms, the Makefile now fails early during `make env-check`, `make buildreqs`, `make configure`, and `make bootstrap`. On unsupported hosts, use the Docker workflow in `docs/developer/docker-development.md`.
 
